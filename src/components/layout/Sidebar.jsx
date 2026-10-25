@@ -176,18 +176,24 @@ export default function Sidebar({ isOpen, onClose }) {
               </div>
               <ul className="nav-list">
                 <li>
-                  <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
+                  <NavLink
+                    to="/admin/investigations"
+                    className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                    onClick={onClose}
+                  >
                     <Radio size={18} />
                     <span>Threat Investigations</span>
-                    <span className="nav-item-badge">Stage 2B.2</span>
-                  </span>
+                  </NavLink>
                 </li>
                 <li>
-                  <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
+                  <NavLink
+                    to="/admin/attacker-profiles"
+                    className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                    onClick={onClose}
+                  >
                     <ShieldAlert size={18} />
                     <span>Attacker Profiles</span>
-                    <span className="nav-item-badge">Planned</span>
-                  </span>
+                  </NavLink>
                 </li>
                 <li>
                   <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>

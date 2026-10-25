@@ -316,9 +316,14 @@ export default function AdminOverviewPage() {
                 Priority security events detected across all enrolled tenants
               </div>
             </div>
-            <span className="demo-tag" style={{ borderColor: 'rgba(239, 68, 68, 0.4)', color: '#fca5a5' }}>
-              PRIORITY QUEUE
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="demo-tag" style={{ borderColor: 'rgba(239, 68, 68, 0.4)', color: '#fca5a5' }}>
+                PRIORITY QUEUE
+              </span>
+              <Link to="/admin/investigations" className="btn btn-secondary btn-sm">
+                <span>View Investigations →</span>
+              </Link>
+            </div>
           </div>
 
           <div className="cyber-table-container">

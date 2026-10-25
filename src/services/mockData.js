@@ -10,6 +10,8 @@ export const DEMO_DATA_DISCLAIMER = "DEMO DATA: Simulated telemetry for prototyp
 const STORAGE_KEY_APPS = 'cyber_deception_apps_v2';
 const STORAGE_KEY_SETTINGS = 'cyber_deception_settings_v2';
 const STORAGE_KEY_TENANTS = 'cyber_deception_tenants_v1';
+const STORAGE_KEY_INVESTIGATIONS = 'cyber_deception_investigations_v1';
+const STORAGE_KEY_PROFILES = 'cyber_deception_profiles_v1';
 
 // --- Default Tenants Seed Data ---
 export const DEFAULT_TENANTS = [
@@ -917,6 +919,840 @@ export const DEFAULT_AUDIT_LOGS = [
   }
 ];
 
+// --- Threat Investigations Seed Data (Stage 2B.2) ---
+export const DEFAULT_INVESTIGATIONS = [
+  {
+    id: "inv-801",
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
+    applicationIds: ["app-03"],
+    applicationNames: ["Enterprise Admin Portal"],
+    eventIds: ["evt-901", "adm-evt-101"],
+    sessionIdentifier: "sess-88f1c-d7",
+    profileId: "prof-701",
+    firstSeen: "12 mins ago",
+    firstSeenIso: "2026-10-25T15:35:00Z",
+    lastSeen: "2 mins ago",
+    lastSeenIso: "2026-10-25T15:45:00Z",
+    severity: "critical",
+    status: "Open",
+    attackCategory: "Credential Stuffing & Auth Spray",
+    observedBehaviorSummary: "High-volume distributed credential rotation targeting administrative token endpoints. Attacker triggered canary credential trap and was isolated inside synthetic auth shadow.",
+    assignedAnalyst: "Sarah Chen (Simulated)",
+    policyDecision: "Route to Deception Sandbox",
+    recordedRoutingOutcome: "Routed to Deception Sandbox",
+    policyDiscrepancy: false,
+    discrepancyDetails: null,
+    behavioralEvidence: [
+      {
+        id: "ev-801-1",
+        indicator: "Burst Authentication Failures",
+        observedFact: "140 HTTP POST requests to /manage/v1/auth/token within 60s with dictionary password payloads from IP 198.51.100.44.",
+        detectorInterpretation: "Heuristic classifier scored 0.985 confidence: Botnet-driven automated credential rotation.",
+        source: "L7 Reverse Proxy Ingress Log",
+        count: 140,
+        timeRange: "15:40:00 - 15:42:00 UTC"
+      },
+      {
+        id: "ev-801-2",
+        indicator: "Canary Credential Interaction",
+        observedFact: "Attacker payload included canary token 'CANARY_TOKEN_HASH_#88912' planted in public fake documentation.",
+        detectorInterpretation: "Canary Trap Manager confirmed high-interaction tripwire activation.",
+        source: "Canary Trap Manager Subsystem",
+        count: 1,
+        timeRange: "15:41:15 UTC"
+      },
+      {
+        id: "ev-801-3",
+        indicator: "Synthetic Decoy Dwell Time",
+        observedFact: "Actor maintained active TCP connection with decoy container 'decoy-worker-pod-89b' for 7m 14s.",
+        detectorInterpretation: "Deception Orchestrator confirmed active engagement with fabricated JWT secrets.",
+        source: "Decoy Runtime Vanguard",
+        count: 32,
+        timeRange: "15:42:00 - 15:45:00 UTC"
+      },
+      {
+        id: "ev-801-4",
+        indicator: "Unusual User-Agent Fingerprint",
+        observedFact: "Client submitted header 'python-requests/2.31.0' alternating with raw 'curl/8.1.2'.",
+        detectorInterpretation: "Protocol Inspector classified client as scripted automation rather than standard browser.",
+        source: "Protocol Inspection Engine",
+        count: 140,
+        timeRange: "15:40:00 - 15:44:00 UTC"
+      }
+    ],
+    timelineEvents: [
+      {
+        id: "tl-801-1",
+        timestamp: "2026-10-25 15:35:10 UTC",
+        eventType: "Reconnaissance Ingress",
+        observedBehavior: "GET request to /manage/login checking HTTP status code and response headers.",
+        detectionEvidence: "Normal status probe; baseline anomaly score 0.05.",
+        policyDecision: "Passthrough (Normal Ingress)",
+        routingOutcome: "Routed to Production Origin",
+        discrepancyNote: null
+      },
+      {
+        id: "tl-801-2",
+        timestamp: "2026-10-25 15:40:02 UTC",
+        eventType: "Authentication Spray Burst",
+        observedBehavior: "Rapid burst of 140 POST requests with distinct dictionary credentials within 60 seconds.",
+        detectionEvidence: "Anomaly Classifier flagged confidence 0.985 (Threshold 0.80).",
+        policyDecision: "Route to Deception Sandbox (SEC-AUTH-09)",
+        routingOutcome: "Routed to Deception Sandbox",
+        discrepancyNote: null
+      },
+      {
+        id: "tl-801-3",
+        timestamp: "2026-10-25 15:41:15 UTC",
+        eventType: "Canary Token Triggered",
+        observedBehavior: "Request body presented CANARY_TOKEN_HASH_#88912 targeting canary endpoint.",
+        detectionEvidence: "Deterministic tripwire triggered; 100% confidence malicious reconnaissance.",
+        policyDecision: "Lock Session to Sandbox",
+        routingOutcome: "Routed to Deception Sandbox",
+        discrepancyNote: null
+      },
+      {
+        id: "tl-801-4",
+        timestamp: "2026-10-25 15:42:00 UTC",
+        eventType: "Synthetic Response Dispatched",
+        observedBehavior: "Decoy container served simulated 200 OK with fabricated JWT session key.",
+        detectionEvidence: "Attacker accepted token and initiated 32 API queries against synthetic admin routes.",
+        policyDecision: "Maintain Sandbox Session",
+        routingOutcome: "Routed to Deception Sandbox",
+        discrepancyNote: null
+      }
+    ],
+    notes: [
+      {
+        id: "note-801-1",
+        author: "Sarah Chen (Simulated)",
+        timestamp: "2026-10-25 15:43:30 UTC",
+        content: "Attacker session isolated in canary auth sandbox pod. Decoy JWT keys are actively monitored for downstream usage."
+      }
+    ]
+  },
+  {
+    id: "inv-802",
+    tenantId: "tenant-medsecure-1022",
+    tenantName: "MedSecure Health Net",
+    applicationIds: ["app-11"],
+    applicationNames: ["Patient Records FHIR API"],
+    eventIds: ["adm-evt-102"],
+    sessionIdentifier: "sess-med-419b-01",
+    profileId: "prof-702",
+    firstSeen: "32 mins ago",
+    firstSeenIso: "2026-10-25T15:15:00Z",
+    lastSeen: "19 mins ago",
+    lastSeenIso: "2026-10-25T15:28:00Z",
+    severity: "critical",
+    status: "In Review",
+    attackCategory: "BOLA / Horizontal Privilege Escalation",
+    observedBehaviorSummary: "Iterative identifier enumeration probing private patient IDs across FHIR resource endpoints. Actor redirected into synthetic patient records database.",
+    assignedAnalyst: "Marcus Vance (Simulated)",
+    policyDecision: "Route to Synthetic Patient Decoy",
+    recordedRoutingOutcome: "Routed to Synthetic Patient Decoy",
+    policyDiscrepancy: false,
+    discrepancyDetails: null,
+    behavioralEvidence: [
+      {
+        id: "ev-802-1",
+        indicator: "Sequential ID Enumeration",
+        observedFact: "Client submitted 45 sequential requests from /Patient?_id=1001 to /Patient?_id=1050 in 3 minutes.",
+        detectorInterpretation: "API Behavioral Detector scored 0.94 confidence for horizontal Broken Object Level Authorization (BOLA).",
+        source: "AI Behavioral Anomaly Classifier",
+        count: 45,
+        timeRange: "15:20:00 - 15:25:00 UTC"
+      },
+      {
+        id: "ev-802-2",
+        indicator: "Synthetic FHIR Decoy Hit",
+        observedFact: "Request query string accessed CANARY_PATIENT_1042 synthetic decoy record.",
+        detectorInterpretation: "Tripwire activated; confirms systemic enumeration across non-owned healthcare entities.",
+        source: "HIPAA Zero-Trust Sandbox Sink",
+        count: 1,
+        timeRange: "15:25:12 UTC"
+      },
+      {
+        id: "ev-802-3",
+        indicator: "Automated Tooling Headers",
+        observedFact: "User-Agent header identified as python-urllib3/2.0.4 lacking expected EHR client TLS cert.",
+        detectorInterpretation: "Client classified as headless script scraping health records.",
+        source: "L7 Reverse Proxy Ingress Filter",
+        count: 45,
+        timeRange: "15:20:00 - 15:28:00 UTC"
+      }
+    ],
+    timelineEvents: [
+      {
+        id: "tl-802-1",
+        timestamp: "2026-10-25 15:15:00 UTC",
+        eventType: "Initial FHIR Query",
+        observedBehavior: "GET /api/v4/Patient?_id=1001 with valid test session cookie.",
+        detectionEvidence: "Normal single record query; benign classification.",
+        policyDecision: "Passthrough",
+        routingOutcome: "Routed to Production Origin",
+        discrepancyNote: null
+      },
+      {
+        id: "tl-802-2",
+        timestamp: "2026-10-25 15:22:10 UTC",
+        eventType: "BOLA Traversal Escalation",
+        observedBehavior: "Sequential stepping across consecutive integer IDs (1002, 1003, ...).",
+        detectionEvidence: "Behavioral classifier detected automated enumeration pattern (Confidence 0.94).",
+        policyDecision: "Route to Synthetic Patient Decoy (HIPAA-SEC-04)",
+        routingOutcome: "Routed to Synthetic Patient Decoy",
+        discrepancyNote: null
+      },
+      {
+        id: "tl-802-3",
+        timestamp: "2026-10-25 15:25:00 UTC",
+        eventType: "Canary Patient Access",
+        observedBehavior: "Targeted synthetic canary patient ID 1042.",
+        detectionEvidence: "Canary hit confirmed. High-interaction synthetic FHIR response dispatched.",
+        policyDecision: "Contain in Decoy Sandbox",
+        routingOutcome: "Routed to Synthetic Patient Decoy",
+        discrepancyNote: null
+      }
+    ],
+    notes: [
+      {
+        id: "note-802-1",
+        author: "Marcus Vance (Simulated)",
+        timestamp: "2026-10-25 15:27:00 UTC",
+        content: "Attacker has scraped 45 synthetic FHIR patient records containing fabricated medical diagnostics. Real patient database untouched."
+      }
+    ]
+  },
+  {
+    id: "inv-803",
+    tenantId: "tenant-omni-4401",
+    tenantName: "OmniLogistics Global",
+    applicationIds: ["app-21"],
+    applicationNames: ["Fleet Dispatch WebSocket"],
+    eventIds: ["adm-evt-103"],
+    sessionIdentifier: "sess-ws-omni-77a",
+    profileId: "prof-703",
+    firstSeen: "1 hr ago",
+    firstSeenIso: "2026-10-25T14:40:00Z",
+    lastSeen: "48 mins ago",
+    lastSeenIso: "2026-10-25T14:59:00Z",
+    severity: "high",
+    status: "Mitigated",
+    attackCategory: "Protocol Smuggling & Command Injection",
+    observedBehaviorSummary: "Malformed HTTP upgrade packet with embedded CRLF sequences attempting socket pipe takeover on fleet telemetry channel.",
+    assignedAnalyst: "Alex Kumar (Simulated)",
+    policyDecision: "Route to Deception Sandbox",
+    recordedRoutingOutcome: "Routed to Deception Sandbox",
+    policyDiscrepancy: false,
+    discrepancyDetails: null,
+    behavioralEvidence: [
+      {
+        id: "ev-803-1",
+        indicator: "CRLF Header Smuggling",
+        observedFact: "HTTP Upgrade request included embedded carriage return / line feed bytes followed by arbitrary host header.",
+        detectorInterpretation: "L7 Reverse Proxy parser detected HTTP request smuggling attempt (Confidence 0.92).",
+        source: "L7 Reverse Proxy Ingress Filter",
+        count: 12,
+        timeRange: "14:55:00 - 14:59:00 UTC"
+      },
+      {
+        id: "ev-803-2",
+        indicator: "Custom Client Handshake",
+        observedFact: "Client User-Agent header was set to 'Custom-WS-Client' and skipped Sec-WebSocket-Key RFC validation.",
+        detectorInterpretation: "Protocol Inspector classified handshake as custom exploit tooling.",
+        source: "Protocol Inspection Engine",
+        count: 12,
+        timeRange: "14:56:00 - 14:59:00 UTC"
+      }
+    ],
+    timelineEvents: [
+      {
+        id: "tl-803-1",
+        timestamp: "2026-10-25 14:40:15 UTC",
+        eventType: "Initial Fleet Telemetry Handshake",
+        observedBehavior: "Standard WebSocket connection request to /v1/telemetry.",
+        detectionEvidence: "Valid header format; connection accepted.",
+        policyDecision: "Passthrough",
+        routingOutcome: "Routed to Production Origin",
+        discrepancyNote: null
+      },
+      {
+        id: "tl-803-2",
+        timestamp: "2026-10-25 14:55:00 UTC",
+        eventType: "CRLF Protocol Smuggling Injection",
+        observedBehavior: "Injected newline headers into Upgrade payload targeting socket proxy pipe.",
+        detectionEvidence: "Proxy protocol filter flagged invalid header byte sequence.",
+        policyDecision: "Route to Deception Sandbox (OMNI-WS-02)",
+        routingOutcome: "Routed to Deception Sandbox",
+        discrepancyNote: null
+      },
+      {
+        id: "tl-803-3",
+        timestamp: "2026-10-25 14:59:00 UTC",
+        eventType: "Decoy Echo Session Established",
+        observedBehavior: "Client isolated in decoy-ws-sink-04 container; synthetic 101 Switching Protocols returned.",
+        detectionEvidence: "Attacker transmitted 12 telemetry control commands into isolated sink without backend effect.",
+        policyDecision: "Maintain Sandbox Session",
+        routingOutcome: "Routed to Deception Sandbox",
+        discrepancyNote: null
+      }
+    ],
+    notes: [
+      {
+        id: "note-803-1",
+        author: "Alex Kumar (Simulated)",
+        timestamp: "2026-10-25 15:02:00 UTC",
+        content: "Decoy WebSocket container terminated after attacker went silent. Extracted injection signatures added to edge WAF rule set."
+      }
+    ]
+  },
+  {
+    id: "inv-804",
+    tenantId: "tenant-aerodyn-8823",
+    tenantName: "AeroDynamics Defence Lab",
+    applicationIds: ["app-31"],
+    applicationNames: ["Telemetry Ingestion Relay"],
+    eventIds: ["adm-evt-104"],
+    sessionIdentifier: "sess-apt-993-x",
+    profileId: "prof-704",
+    firstSeen: "1.5 hrs ago",
+    firstSeenIso: "2026-10-25T14:20:00Z",
+    lastSeen: "1 hr ago",
+    lastSeenIso: "2026-10-25T14:45:00Z",
+    severity: "critical",
+    status: "In Review",
+    attackCategory: "Classified APT Reconnaissance",
+    observedBehaviorSummary: "Binary byte sequence probe matching nation-state threat signature SIG-APT-DEF-88 against defense sensor stream. Policy selected honeynet diversion, but edge relay enforced immediate air-gap block.",
+    assignedAnalyst: "Sarah Chen (Simulated)",
+    policyDecision: "Route to High-Interaction Deception Mesh",
+    recordedRoutingOutcome: "Blocked at Gateway Edge",
+    policyDiscrepancy: true,
+    discrepancyDetails: "Policy Engine selected diversion to High-Interaction Honeynet container, but Edge Ingress Relay enforced immediate TCP Reset (Block) due to classified air-gap isolation trigger before honeynet pod handoff.",
+    behavioralEvidence: [
+      {
+        id: "ev-804-1",
+        indicator: "Nation-State Threat Signature Match",
+        observedFact: "Ingress byte stream at /telemetry/v1/sync contained exact match for binary signature SIG-APT-DEF-88.",
+        detectorInterpretation: "Classified Threat Intelligence Classifier scored 0.999 confidence: APT nation-state probe.",
+        source: "Classified Threat Intelligence DB",
+        count: 1,
+        timeRange: "14:44:10 UTC"
+      },
+      {
+        id: "ev-804-2",
+        indicator: "Spoofed Protocol Framing",
+        observedFact: "TCP packet sequence contained non-standard TCP options header with military avionics framing markers.",
+        detectorInterpretation: "Hardware eBPF filter flagged proprietary telemetry emulation attempt.",
+        source: "Hardware Accelerated eBPF Filter",
+        count: 48,
+        timeRange: "14:20:00 - 14:45:00 UTC"
+      }
+    ],
+    timelineEvents: [
+      {
+        id: "tl-804-1",
+        timestamp: "2026-10-25 14:20:00 UTC",
+        eventType: "Initial Ingress Sync Probe",
+        observedBehavior: "SYN packet with experimental TCP option headers targeting port 443.",
+        detectionEvidence: "Protocol irregularity detected; placed in observation queue.",
+        policyDecision: "Monitor Only",
+        routingOutcome: "Routed to Production Origin",
+        discrepancyNote: null
+      },
+      {
+        id: "tl-804-2",
+        timestamp: "2026-10-25 14:44:10 UTC",
+        eventType: "Binary Signature Match (APT)",
+        observedBehavior: "POST /telemetry/v1/sync delivering binary payload matching SIG-APT-DEF-88.",
+        detectionEvidence: "Deterministic match with nation-state signature (Confidence 0.999).",
+        policyDecision: "Route to High-Interaction Deception Mesh (DEF-APT-01)",
+        routingOutcome: "Blocked at Gateway Edge",
+        discrepancyNote: "Discrepancy: Policy designated Honeynet routing, but Edge Ingress Relay triggered immediate TCP Reset (Air-Gap Protection Protocol)."
+      }
+    ],
+    notes: [
+      {
+        id: "note-804-1",
+        author: "Sarah Chen (Simulated)",
+        timestamp: "2026-10-25 14:48:00 UTC",
+        content: "Air-gap safety interlock engaged. Edge relay dropped connection rather than forwarding to honeynet pod because sovereign isolation tier mandates fail-closed on SIG-APT-DEF signatures."
+      }
+    ]
+  },
+  {
+    id: "inv-805",
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
+    applicationIds: ["app-01", "app-02"],
+    applicationNames: ["Customer Accounts API", "Payment Settlement Core"],
+    eventIds: ["evt-902", "evt-903"],
+    sessionIdentifier: "sess-sql-281-a",
+    profileId: "prof-705",
+    firstSeen: "42 mins ago",
+    firstSeenIso: "2026-10-25T15:05:00Z",
+    lastSeen: "17 mins ago",
+    lastSeenIso: "2026-10-25T15:30:00Z",
+    severity: "medium",
+    status: "Open",
+    attackCategory: "SQL Injection & SSRF Probing",
+    observedBehaviorSummary: "Multi-endpoint reconnaissance probing query parameters for SQL tautology syntax and AWS metadata IP callback addresses across accounts and payment endpoints.",
+    assignedAnalyst: "Unassigned",
+    policyDecision: "Deceptive Delay & Canary Injection",
+    recordedRoutingOutcome: "Routed to Deception Sandbox",
+    policyDiscrepancy: false,
+    discrepancyDetails: null,
+    behavioralEvidence: [
+      {
+        id: "ev-805-1",
+        indicator: "SQL Tautology Payload",
+        observedFact: "Query parameter 'id=1%20OR%201=1--' passed to /v2/users from IP 203.0.113.89.",
+        detectorInterpretation: "Signature match with known sqlmap automated injection tool syntax.",
+        source: "AI Behavioral Anomaly Classifier",
+        count: 6,
+        timeRange: "15:28:00 - 15:30:00 UTC"
+      },
+      {
+        id: "ev-805-2",
+        indicator: "SSRF Link-Local Callback",
+        observedFact: "POST webhook parameter contained link-local IP 169.254.169.254 targeting cloud IAM credentials.",
+        detectorInterpretation: "Cloud metadata exfiltration signature confirmed (Confidence 0.96).",
+        source: "L7 Reverse Proxy Ingress Filter",
+        count: 2,
+        timeRange: "15:10:00 - 15:12:00 UTC"
+      }
+    ],
+    timelineEvents: [
+      {
+        id: "tl-805-1",
+        timestamp: "2026-10-25 15:10:00 UTC",
+        eventType: "SSRF Parameter Injected",
+        observedBehavior: "Callback parameter directed to 169.254.169.254/latest/meta-data/.",
+        detectionEvidence: "Cloud metadata probe detected.",
+        policyDecision: "Redirect to Canary Sink (SEC-SSRF-01)",
+        routingOutcome: "Routed to Deception Sandbox",
+        discrepancyNote: null
+      },
+      {
+        id: "tl-805-2",
+        timestamp: "2026-10-25 15:30:00 UTC",
+        eventType: "SQL Injection Probe",
+        observedBehavior: "Tautology query parameter passed to Customer Accounts API.",
+        detectionEvidence: "Sqlmap pattern match; synthetic DB error returned with 1200ms delay.",
+        policyDecision: "Deceptive Delay & Canary Injection",
+        routingOutcome: "Routed to Deception Sandbox",
+        discrepancyNote: null
+      }
+    ],
+    notes: [
+      {
+        id: "note-805-1",
+        author: "Alex Kumar (Simulated)",
+        timestamp: "2026-10-25 15:32:00 UTC",
+        content: "Attacker probing multiple Apex FinTech endpoints in sequence. Deceptive latency injection successfully slowed automated scanner throughput by 84%."
+      }
+    ]
+  },
+  {
+    id: "inv-806",
+    tenantId: "tenant-nexushub-3319",
+    tenantName: "NexusHub SaaS Ecosystem",
+    applicationIds: ["app-41"],
+    applicationNames: ["Developer API Mesh"],
+    eventIds: [],
+    sessionIdentifier: "sess-scan-pub-09",
+    profileId: "prof-706",
+    firstSeen: "3 hrs ago",
+    firstSeenIso: "2026-10-25T13:00:00Z",
+    lastSeen: "2.7 hrs ago",
+    lastSeenIso: "2026-10-25T13:15:00Z",
+    severity: "low",
+    status: "Closed",
+    attackCategory: "Automated Vulnerability Scanner Probe",
+    observedBehaviorSummary: "High-frequency public crawler probing GraphQL introspection endpoints without valid tenant API credentials.",
+    assignedAnalyst: "Automated Gateway Bot",
+    policyDecision: "Rate Limit Only",
+    recordedRoutingOutcome: "Not Recorded",
+    policyDiscrepancy: false,
+    discrepancyDetails: "Ingress proxy ephemeral buffer was flushed before routing confirmation packet was written to long-term storage.",
+    behavioralEvidence: [
+      {
+        id: "ev-806-1",
+        indicator: "Schema Introspection Probe",
+        observedFact: "High-frequency POST queries requesting __schema and __type definitions.",
+        detectorInterpretation: "Standard automated reconnaissance; benign crawler or unauthenticated scanner.",
+        source: "GraphQL Schema Filter",
+        count: 310,
+        timeRange: "13:00:00 - 13:15:00 UTC"
+      }
+    ],
+    timelineEvents: [
+      {
+        id: "tl-806-1",
+        timestamp: "2026-10-25 13:00:00 UTC",
+        eventType: "Schema Introspection Attempt",
+        observedBehavior: "POST /graphql with __schema query.",
+        detectionEvidence: "Public schema probe; rate limit threshold approaching.",
+        policyDecision: "Rate Limit Only",
+        routingOutcome: "Not Recorded",
+        discrepancyNote: null
+      }
+    ],
+    notes: [
+      {
+        id: "note-806-1",
+        author: "Automated Gateway Bot",
+        timestamp: "2026-10-25 13:16:00 UTC",
+        content: "Automated crawler ceased requests following 429 Too Many Requests response. Incident closed automatically."
+      }
+    ]
+  }
+];
+
+// --- Attacker Behavior Profiles Seed Data (Stage 2B.2) ---
+export const DEFAULT_ATTACKER_PROFILES = [
+  {
+    id: "prof-701",
+    sessionIdentifiers: ["sess-88f1c-d7", "sess-88f1c-e2"],
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
+    applicationIds: ["app-03", "app-01"],
+    applicationNames: ["Enterprise Admin Portal", "Customer Accounts API"],
+    firstSeen: "45 mins ago",
+    firstSeenIso: "2026-10-25T15:00:00Z",
+    lastSeen: "2 mins ago",
+    lastSeenIso: "2026-10-25T15:45:00Z",
+    observedRequestCount: 342,
+    observedAuthFailures: 140,
+    distinctEndpointCount: 5,
+    associatedEventCount: 2,
+    decoyInteractionCount: 14,
+    behavioralClassification: "Decoy interaction observed",
+    behavioralIndicators: [
+      {
+        indicator: "High-frequency dictionary credential spray",
+        supportingObservations: "Submitted 140 password variants to administrative auth endpoint in 60s.",
+        observationCount: 140,
+        timeRange: "15:40:00 - 15:42:00 UTC"
+      },
+      {
+        indicator: "Canary credential trigger",
+        supportingObservations: "Presented canary JWT hash CANARY_TOKEN_HASH_#88912 harvested from decoy documentation.",
+        observationCount: 1,
+        timeRange: "15:41:15 UTC"
+      },
+      {
+        indicator: "Decoy container engagement",
+        supportingObservations: "Maintained active session with decoy-worker-pod-89b for 7m 14s.",
+        observationCount: 32,
+        timeRange: "15:42:00 - 15:45:00 UTC"
+      }
+    ],
+    linkedInvestigationIds: ["inv-801"],
+    associatedEventIds: ["evt-901", "adm-evt-101"],
+    behaviorHistory: [
+      {
+        timestamp: "2026-10-25 15:00:00 UTC",
+        phase: "Initial Endpoint Discovery",
+        observation: "Crawled public login pages and HTTP headers with python-requests tool."
+      },
+      {
+        timestamp: "2026-10-25 15:40:00 UTC",
+        phase: "Automated Credential Spray",
+        observation: "Shifted to dictionary attack against administrative token endpoint."
+      },
+      {
+        timestamp: "2026-10-25 15:42:00 UTC",
+        phase: "Synthetic Decoy Containment",
+        observation: "Rerouted to fake auth shadow container; engaged with fabricated credentials."
+      }
+    ],
+    deceptionInteractions: [
+      {
+        timestamp: "2026-10-25 15:42:00 UTC",
+        decoyType: "Fake Admin Auth API Sandbox",
+        targetEndpoint: "/manage/v1/auth/token",
+        canaryHit: "CANARY_TOKEN_HASH_#88912",
+        dwellTime: "7m 14s",
+        actionsLogged: 32,
+        fakeResponseStatus: "200 OK (Fabricated Session Key Returned)"
+      },
+      {
+        timestamp: "2026-10-25 15:43:45 UTC",
+        decoyType: "Simulated Tenant Management Microservice",
+        targetEndpoint: "/manage/v1/tenants/list",
+        canaryHit: "None (Internal Decoy Route)",
+        dwellTime: "2m 10s",
+        actionsLogged: 8,
+        fakeResponseStatus: "200 OK (Synthetic Tenant Schemas)"
+      }
+    ]
+  },
+  {
+    id: "prof-702",
+    sessionIdentifiers: ["sess-med-419b-01"],
+    tenantId: "tenant-medsecure-1022",
+    tenantName: "MedSecure Health Net",
+    applicationIds: ["app-11"],
+    applicationNames: ["Patient Records FHIR API"],
+    firstSeen: "35 mins ago",
+    firstSeenIso: "2026-10-25T15:10:00Z",
+    lastSeen: "19 mins ago",
+    lastSeenIso: "2026-10-25T15:28:00Z",
+    observedRequestCount: 184,
+    observedAuthFailures: 38,
+    distinctEndpointCount: 12,
+    associatedEventCount: 1,
+    decoyInteractionCount: 8,
+    behavioralClassification: "Repeated authentication failures",
+    behavioralIndicators: [
+      {
+        indicator: "Sequential BOLA patient ID scraping",
+        supportingObservations: "45 sequential integer queries from /Patient?_id=1001 to 1050.",
+        observationCount: 45,
+        timeRange: "15:20:00 - 15:25:00 UTC"
+      },
+      {
+        indicator: "Expired token reuse",
+        supportingObservations: "38 requests presented expired test bearer tokens attempting replay attacks.",
+        observationCount: 38,
+        timeRange: "15:12:00 - 15:18:00 UTC"
+      }
+    ],
+    linkedInvestigationIds: ["inv-802"],
+    associatedEventIds: ["adm-evt-102"],
+    behaviorHistory: [
+      {
+        timestamp: "2026-10-25 15:10:00 UTC",
+        phase: "Token Replay Probing",
+        observation: "Attempted replay of expired authentication headers across EHR routes."
+      },
+      {
+        timestamp: "2026-10-25 15:20:00 UTC",
+        phase: "Horizontal Object ID Traversal",
+        observation: "Systematic enumeration of sequential patient record identifiers."
+      }
+    ],
+    deceptionInteractions: [
+      {
+        timestamp: "2026-10-25 15:25:00 UTC",
+        decoyType: "Synthetic FHIR Decoy Sandbox",
+        targetEndpoint: "/api/v4/Patient?_id=1042",
+        canaryHit: "CANARY_PATIENT_1042",
+        dwellTime: "9m 40s",
+        actionsLogged: 45,
+        fakeResponseStatus: "200 OK (Generated Synthetic Records)"
+      }
+    ]
+  },
+  {
+    id: "prof-703",
+    sessionIdentifiers: ["sess-ws-omni-77a"],
+    tenantId: "tenant-omni-4401",
+    tenantName: "OmniLogistics Global",
+    applicationIds: ["app-21"],
+    applicationNames: ["Fleet Dispatch WebSocket"],
+    firstSeen: "1.2 hrs ago",
+    firstSeenIso: "2026-10-25T14:30:00Z",
+    lastSeen: "48 mins ago",
+    lastSeenIso: "2026-10-25T14:59:00Z",
+    observedRequestCount: 96,
+    observedAuthFailures: 0,
+    distinctEndpointCount: 3,
+    associatedEventCount: 1,
+    decoyInteractionCount: 4,
+    behavioralClassification: "Multiple suspicious indicators",
+    behavioralIndicators: [
+      {
+        indicator: "HTTP CRLF header smuggling",
+        supportingObservations: "Injected carriage-return and line-feed bytes into WebSocket Upgrade header.",
+        observationCount: 12,
+        timeRange: "14:55:00 - 14:59:00 UTC"
+      },
+      {
+        indicator: "Non-standard WebSocket client headers",
+        supportingObservations: "Custom-WS-Client omitted RFC required Sec-WebSocket-Key headers.",
+        observationCount: 12,
+        timeRange: "14:56:00 - 14:59:00 UTC"
+      }
+    ],
+    linkedInvestigationIds: ["inv-803"],
+    associatedEventIds: ["adm-evt-103"],
+    behaviorHistory: [
+      {
+        timestamp: "2026-10-25 14:30:00 UTC",
+        phase: "Normal Telemetry Stream",
+        observation: "Clean telemetry frames submitted via standard client connection."
+      },
+      {
+        timestamp: "2026-10-25 14:55:00 UTC",
+        phase: "Protocol Smuggling Attempt",
+        observation: "Injected malformed CRLF sequences to bypass proxy validation."
+      }
+    ],
+    deceptionInteractions: [
+      {
+        timestamp: "2026-10-25 14:59:00 UTC",
+        decoyType: "Mock WebSocket Echo Server",
+        targetEndpoint: "/v1/telemetry/ws",
+        canaryHit: "None (Protocol Signature)",
+        dwellTime: "4m 10s",
+        actionsLogged: 12,
+        fakeResponseStatus: "101 Switching Protocols (Isolated Decoy)"
+      }
+    ]
+  },
+  {
+    id: "prof-704",
+    sessionIdentifiers: ["sess-apt-993-x"],
+    tenantId: "tenant-aerodyn-8823",
+    tenantName: "AeroDynamics Defence Lab",
+    applicationIds: ["app-31"],
+    applicationNames: ["Telemetry Ingestion Relay"],
+    firstSeen: "1.5 hrs ago",
+    firstSeenIso: "2026-10-25T14:20:00Z",
+    lastSeen: "1 hr ago",
+    lastSeenIso: "2026-10-25T14:45:00Z",
+    observedRequestCount: 48,
+    observedAuthFailures: 0,
+    distinctEndpointCount: 2,
+    associatedEventCount: 1,
+    decoyInteractionCount: 0,
+    behavioralClassification: "Reconnaissance-like behavior",
+    behavioralIndicators: [
+      {
+        indicator: "Classified binary signature match",
+        supportingObservations: "Payload matched classified nation-state scanning pattern SIG-APT-DEF-88.",
+        observationCount: 1,
+        timeRange: "14:44:10 UTC"
+      },
+      {
+        indicator: "Non-standard TCP options framing",
+        supportingObservations: "Raw TCP SYN packets contained non-standard TCP option bytes.",
+        observationCount: 48,
+        timeRange: "14:20:00 - 14:45:00 UTC"
+      }
+    ],
+    linkedInvestigationIds: ["inv-804"],
+    associatedEventIds: ["adm-evt-104"],
+    behaviorHistory: [
+      {
+        timestamp: "2026-10-25 14:20:00 UTC",
+        phase: "Stealth SYN Fingerprinting",
+        observation: "Probed edge ingress ports with non-standard TCP options."
+      },
+      {
+        timestamp: "2026-10-25 14:44:00 UTC",
+        phase: "Targeted Payload Delivery",
+        observation: "Delivered binary probe; connection immediately reset by air-gap fail-safe."
+      }
+    ],
+    deceptionInteractions: []
+  },
+  {
+    id: "prof-705",
+    sessionIdentifiers: ["sess-sql-281-a"],
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
+    applicationIds: ["app-01", "app-02"],
+    applicationNames: ["Customer Accounts API", "Payment Settlement Core"],
+    firstSeen: "45 mins ago",
+    firstSeenIso: "2026-10-25T15:00:00Z",
+    lastSeen: "17 mins ago",
+    lastSeenIso: "2026-10-25T15:30:00Z",
+    observedRequestCount: 125,
+    observedAuthFailures: 4,
+    distinctEndpointCount: 7,
+    associatedEventCount: 2,
+    decoyInteractionCount: 6,
+    behavioralClassification: "Multiple suspicious indicators",
+    behavioralIndicators: [
+      {
+        indicator: "Automated SQL injection scanning",
+        supportingObservations: "Sqlmap signature detected probing tautology conditions on /v2/users.",
+        observationCount: 6,
+        timeRange: "15:28:00 - 15:30:00 UTC"
+      },
+      {
+        indicator: "SSRF cloud metadata callback",
+        supportingObservations: "Attempted callback to 169.254.169.254 AWS metadata address.",
+        observationCount: 2,
+        timeRange: "15:10:00 - 15:12:00 UTC"
+      }
+    ],
+    linkedInvestigationIds: ["inv-805"],
+    associatedEventIds: ["evt-902", "evt-903"],
+    behaviorHistory: [
+      {
+        timestamp: "2026-10-25 15:00:00 UTC",
+        phase: "Broad Ingress Crawling",
+        observation: "Scanned checkout and accounts endpoints looking for webhook callback parameters."
+      },
+      {
+        timestamp: "2026-10-25 15:28:00 UTC",
+        phase: "SQL Injection Probing",
+        observation: "Injected tautology queries; slowed by synthetic latency sandbox."
+      }
+    ],
+    deceptionInteractions: [
+      {
+        timestamp: "2026-10-25 15:12:00 UTC",
+        decoyType: "Synthetic AWS IMDSv2 Decoy",
+        targetEndpoint: "/checkout/webhook",
+        canaryHit: "CANARY_IAM_ROLE_FAKE_ADMIN",
+        dwellTime: "5m 02s",
+        actionsLogged: 9,
+        fakeResponseStatus: "200 OK (Dispatched Canary AWS Access Keys)"
+      },
+      {
+        timestamp: "2026-10-25 15:30:00 UTC",
+        decoyType: "Synthetic PostgreSQL 14 Trap",
+        targetEndpoint: "/v2/users",
+        canaryHit: "None (Pattern Match)",
+        dwellTime: "1m 18s",
+        actionsLogged: 6,
+        fakeResponseStatus: "500 Internal Error (Fake PG Stack Trace)"
+      }
+    ]
+  },
+  {
+    id: "prof-706",
+    sessionIdentifiers: ["sess-scan-pub-09"],
+    tenantId: "tenant-nexushub-3319",
+    tenantName: "NexusHub SaaS Ecosystem",
+    applicationIds: ["app-41"],
+    applicationNames: ["Developer API Mesh"],
+    firstSeen: "3 hrs ago",
+    firstSeenIso: "2026-10-25T13:00:00Z",
+    lastSeen: "2.7 hrs ago",
+    lastSeenIso: "2026-10-25T13:15:00Z",
+    observedRequestCount: 310,
+    observedAuthFailures: 0,
+    distinctEndpointCount: 18,
+    associatedEventCount: 0,
+    decoyInteractionCount: 0,
+    behavioralClassification: "Unclassified",
+    behavioralIndicators: [
+      {
+        indicator: "Broad-spectrum public endpoint spidering",
+        supportingObservations: "Crawled 18 distinct public API routes requesting GraphQL schema definitions.",
+        observationCount: 310,
+        timeRange: "13:00:00 - 13:15:00 UTC"
+      }
+    ],
+    linkedInvestigationIds: ["inv-806"],
+    associatedEventIds: [],
+    behaviorHistory: [
+      {
+        timestamp: "2026-10-25 13:00:00 UTC",
+        phase: "Automated Crawling",
+        observation: "High-frequency unauthenticated spider probing GraphQL schemas."
+      }
+    ],
+    deceptionInteractions: []
+  }
+];
+
 // --- Storage Accessors & Local Persistence Layer ---
 
 function getStoredApps() {
@@ -951,6 +1787,48 @@ function getStoredTenants() {
     console.warn("Could not read stored tenants, using defaults", e);
   }
   return DEFAULT_TENANTS;
+}
+
+function getStoredInvestigations() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_INVESTIGATIONS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn("Could not read stored investigations, using defaults", e);
+  }
+  return DEFAULT_INVESTIGATIONS;
+}
+
+function setStoredInvestigations(investigations) {
+  try {
+    localStorage.setItem(STORAGE_KEY_INVESTIGATIONS, JSON.stringify(investigations));
+  } catch (e) {
+    console.warn("Could not persist investigations", e);
+  }
+}
+
+function getStoredProfiles() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_PROFILES);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn("Could not read stored attacker profiles, using defaults", e);
+  }
+  return DEFAULT_ATTACKER_PROFILES;
+}
+
+function setStoredProfiles(profiles) {
+  try {
+    localStorage.setItem(STORAGE_KEY_PROFILES, JSON.stringify(profiles));
+  } catch (e) {
+    console.warn("Could not persist attacker profiles", e);
+  }
 }
 
 // --- Public Service Methods for Tenants (Stage 2B.1) ---
@@ -1032,6 +1910,138 @@ export const getPlatformAuditLogs = async (filters = {}) => {
   }
 
   return list;
+};
+
+// --- Public Service Methods for Threat Investigations (Stage 2B.2) ---
+
+export const getInvestigations = async (filters = {}) => {
+  let list = [...getStoredInvestigations()];
+
+  if (filters.search) {
+    const q = filters.search.toLowerCase().trim();
+    list = list.filter(inv =>
+      inv.id.toLowerCase().includes(q) ||
+      inv.tenantName.toLowerCase().includes(q) ||
+      inv.sessionIdentifier.toLowerCase().includes(q) ||
+      inv.attackCategory.toLowerCase().includes(q) ||
+      (inv.applicationNames && inv.applicationNames.some(name => name.toLowerCase().includes(q))) ||
+      inv.observedBehaviorSummary.toLowerCase().includes(q)
+    );
+  }
+
+  if (filters.severity && filters.severity !== 'all') {
+    list = list.filter(inv => inv.severity === filters.severity);
+  }
+
+  if (filters.status && filters.status !== 'all') {
+    list = list.filter(inv => inv.status === filters.status);
+  }
+
+  if (filters.tenantId && filters.tenantId !== 'all') {
+    list = list.filter(inv => inv.tenantId === filters.tenantId);
+  }
+
+  // Sorting
+  const sortBy = filters.sortBy || 'activity-desc';
+  const severityRank = { critical: 4, high: 3, medium: 2, low: 1 };
+  list.sort((a, b) => {
+    if (sortBy === 'severity-desc') {
+      const diff = (severityRank[b.severity] || 0) - (severityRank[a.severity] || 0);
+      if (diff !== 0) return diff;
+      return new Date(b.lastSeenIso) - new Date(a.lastSeenIso);
+    }
+    if (sortBy === 'activity-desc') {
+      return new Date(b.lastSeenIso) - new Date(a.lastSeenIso);
+    }
+    if (sortBy === 'firstseen-asc') {
+      return new Date(a.firstSeenIso) - new Date(b.firstSeenIso);
+    }
+    if (sortBy === 'firstseen-desc') {
+      return new Date(b.firstSeenIso) - new Date(a.firstSeenIso);
+    }
+    return 0;
+  });
+
+  return list;
+};
+
+export const getInvestigationById = async (id) => {
+  const list = getStoredInvestigations();
+  return list.find(inv => inv.id === id) || null;
+};
+
+export const addInvestigationNote = async (investigationId, noteData) => {
+  const list = getStoredInvestigations();
+  const index = list.findIndex(inv => inv.id === investigationId);
+  if (index === -1) {
+    throw new Error(`Investigation ${investigationId} not found`);
+  }
+
+  const existingNotes = list[index].notes || [];
+  const newNote = {
+    id: `note-${Date.now()}`,
+    author: noteData.author || "Security Analyst (Simulated)",
+    timestamp: new Date().toISOString(),
+    content: noteData.content.trim()
+  };
+
+  const updatedInv = {
+    ...list[index],
+    notes: [newNote, ...existingNotes]
+  };
+
+  list[index] = updatedInv;
+  setStoredInvestigations(list);
+  return updatedInv;
+};
+
+// --- Public Service Methods for Attacker Behavior Profiles (Stage 2B.2) ---
+
+export const getAttackerProfiles = async (filters = {}) => {
+  let list = [...getStoredProfiles()];
+
+  if (filters.search) {
+    const q = filters.search.toLowerCase().trim();
+    list = list.filter(p =>
+      p.id.toLowerCase().includes(q) ||
+      (p.sessionIdentifiers && p.sessionIdentifiers.some(s => s.toLowerCase().includes(q))) ||
+      p.tenantName.toLowerCase().includes(q) ||
+      p.behavioralClassification.toLowerCase().includes(q) ||
+      (p.applicationNames && p.applicationNames.some(name => name.toLowerCase().includes(q)))
+    );
+  }
+
+  if (filters.tenantId && filters.tenantId !== 'all') {
+    list = list.filter(p => p.tenantId === filters.tenantId);
+  }
+
+  if (filters.classification && filters.classification !== 'all') {
+    list = list.filter(p => p.behavioralClassification === filters.classification);
+  }
+
+  const sortBy = filters.sortBy || 'activity-desc';
+  list.sort((a, b) => {
+    if (sortBy === 'activity-desc') {
+      return new Date(b.lastSeenIso) - new Date(a.lastSeenIso);
+    }
+    if (sortBy === 'events-desc') {
+      return (b.associatedEventCount || 0) - (a.associatedEventCount || 0);
+    }
+    if (sortBy === 'requests-desc') {
+      return (b.observedRequestCount || 0) - (a.observedRequestCount || 0);
+    }
+    if (sortBy === 'decoys-desc') {
+      return (b.decoyInteractionCount || 0) - (a.decoyInteractionCount || 0);
+    }
+    return 0;
+  });
+
+  return list;
+};
+
+export const getAttackerProfileById = async (id) => {
+  const list = getStoredProfiles();
+  return list.find(p => p.id === id) || null;
 };
 
 // --- Public Service Methods for Applications (Owner Portal) ---

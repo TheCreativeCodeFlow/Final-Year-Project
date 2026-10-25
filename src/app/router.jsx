@@ -21,12 +21,16 @@ import SecurityEventDetailsPage from '../pages/owner/SecurityEventDetailsPage';
 import IntegrationsPage from '../pages/owner/IntegrationsPage';
 import OwnerSettingsPage from '../pages/owner/OwnerSettingsPage';
 
-// Gateway Administrator Pages (Stage 2B.1)
+// Gateway Administrator Pages (Stage 2B.1 & 2B.2)
 import AdminOverviewPage from '../pages/admin/AdminOverviewPage';
 import TenantsListPage from '../pages/admin/TenantsListPage';
 import TenantDetailsPage from '../pages/admin/TenantDetailsPage';
 import GatewayHealthPage from '../pages/admin/GatewayHealthPage';
 import AuditLogsPage from '../pages/admin/AuditLogsPage';
+import InvestigationsListPage from '../pages/admin/InvestigationsListPage';
+import InvestigationDetailsPage from '../pages/admin/InvestigationDetailsPage';
+import AttackerProfilesListPage from '../pages/admin/AttackerProfilesListPage';
+import AttackerProfileDetailsPage from '../pages/admin/AttackerProfileDetailsPage';
 
 export default function AppRouter() {
   const { isAuthenticated, role, ROLES } = useAuth();
@@ -185,6 +189,51 @@ export default function AppRouter() {
           <RoleGuard requiredRole={ROLES.ADMIN}>
             <AppShell>
               <AuditLogsPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      {/* Threat Investigations & Attacker Profiles (Stage 2B.2) */}
+      <Route
+        path="/admin/investigations"
+        element={
+          <RoleGuard requiredRole={ROLES.ADMIN}>
+            <AppShell>
+              <InvestigationsListPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/admin/investigations/:investigationId"
+        element={
+          <RoleGuard requiredRole={ROLES.ADMIN}>
+            <AppShell>
+              <InvestigationDetailsPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/admin/attacker-profiles"
+        element={
+          <RoleGuard requiredRole={ROLES.ADMIN}>
+            <AppShell>
+              <AttackerProfilesListPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/admin/attacker-profiles/:profileId"
+        element={
+          <RoleGuard requiredRole={ROLES.ADMIN}>
+            <AppShell>
+              <AttackerProfileDetailsPage />
             </AppShell>
           </RoleGuard>
         }
