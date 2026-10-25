@@ -21,8 +21,12 @@ import SecurityEventDetailsPage from '../pages/owner/SecurityEventDetailsPage';
 import IntegrationsPage from '../pages/owner/IntegrationsPage';
 import OwnerSettingsPage from '../pages/owner/OwnerSettingsPage';
 
-// Admin Pages
+// Gateway Administrator Pages (Stage 2B.1)
 import AdminOverviewPage from '../pages/admin/AdminOverviewPage';
+import TenantsListPage from '../pages/admin/TenantsListPage';
+import TenantDetailsPage from '../pages/admin/TenantDetailsPage';
+import GatewayHealthPage from '../pages/admin/GatewayHealthPage';
+import AuditLogsPage from '../pages/admin/AuditLogsPage';
 
 export default function AppRouter() {
   const { isAuthenticated, role, ROLES } = useAuth();
@@ -130,13 +134,57 @@ export default function AppRouter() {
         }
       />
 
-      {/* Gateway Administrator Routes */}
+      {/* Gateway Administrator Routes - Protected by RoleGuard (Stage 2B.1) */}
       <Route
         path="/admin/overview"
         element={
           <RoleGuard requiredRole={ROLES.ADMIN}>
             <AppShell>
               <AdminOverviewPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/admin/tenants"
+        element={
+          <RoleGuard requiredRole={ROLES.ADMIN}>
+            <AppShell>
+              <TenantsListPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/admin/tenants/:tenantId"
+        element={
+          <RoleGuard requiredRole={ROLES.ADMIN}>
+            <AppShell>
+              <TenantDetailsPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/admin/health"
+        element={
+          <RoleGuard requiredRole={ROLES.ADMIN}>
+            <AppShell>
+              <GatewayHealthPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/admin/audit-logs"
+        element={
+          <RoleGuard requiredRole={ROLES.ADMIN}>
+            <AppShell>
+              <AuditLogsPage />
             </AppShell>
           </RoleGuard>
         }

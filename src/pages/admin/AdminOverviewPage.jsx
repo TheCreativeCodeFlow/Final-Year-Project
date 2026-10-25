@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Shield,
   Activity,
@@ -11,7 +12,9 @@ import {
   Clock,
   CheckCircle2,
   Cpu,
-  RefreshCw
+  RefreshCw,
+  Layers,
+  ArrowRight
 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import MetricCard from '../../components/common/MetricCard';
@@ -60,8 +63,8 @@ export default function AdminOverviewPage() {
   return (
     <>
       <PageHeader
-        title="Gateway Administrator Overview"
-        badge="Platform Operations Console"
+        title="Platform Operations Overview"
+        badge="Gateway Admin Console"
         description="Global reverse proxy mesh status, multi-tenant isolation, AI deception engine health, and active investigations."
         actions={
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -144,7 +147,7 @@ export default function AdminOverviewPage() {
                   <span>Platform Ingress vs. Deceptive Decoy Diversions</span>
                 </div>
                 <div className="cyber-card-subtitle">
-                  Aggregated requests across all 18 active tenant environments
+                  Aggregated requests across all active tenant environments (Visual Simulation)
                 </div>
               </div>
               <span className="demo-tag">AGGREGATE TIME SERIES</span>
@@ -255,9 +258,9 @@ export default function AdminOverviewPage() {
                 Operational status of proxy nodes, detection models, and deception runners
               </div>
             </div>
-            <span className="demo-tag" style={{ color: '#34d399', borderColor: 'rgba(16, 185, 129, 0.4)' }}>
-              ALL 5 SUBSYSTEMS HEALTHY
-            </span>
+            <Link to="/admin/health" className="btn btn-secondary btn-sm">
+              <span>View Full Health Matrix →</span>
+            </Link>
           </div>
 
           <div className="cyber-table-container">
@@ -272,14 +275,14 @@ export default function AdminOverviewPage() {
                 </tr>
               </thead>
               <tbody>
-                {components.map((comp) => (
+                {components.slice(0, 5).map((comp) => (
                   <tr key={comp.id}>
                     <td>
                       <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{comp.name}</div>
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Subsystem Ref: {comp.id}</div>
                     </td>
                     <td>
-                      <StatusBadge status={comp.status} label="Operational" />
+                      <StatusBadge status={comp.status === 'healthy' ? 'operational' : comp.status} label={comp.status} />
                     </td>
                     <td>
                       <span className="mono-tag">{comp.cluster}</span>
@@ -338,19 +341,21 @@ export default function AdminOverviewPage() {
                       {evt.timestamp}
                     </td>
                     <td>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{evt.tenant}</div>
+                      <Link to={`/admin/tenants/${evt.tenantId || 'tenant-apex-9941'}`} style={{ fontWeight: 600, color: '#60a5fa' }}>
+                        {evt.tenantName || evt.tenant}
+                      </Link>
                     </td>
                     <td style={{ color: 'var(--text-secondary)' }}>
-                      {evt.target}
+                      {evt.application || evt.target}
                     </td>
                     <td>
                       <span className="mono-tag">{evt.sourceIp}</span>
                     </td>
                     <td>
-                      <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{evt.threatType}</div>
+                      <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{evt.vector || evt.threatType}</div>
                     </td>
                     <td>
-                      <StatusBadge status="diverted" label={evt.deceptionStatus} />
+                      <StatusBadge status="diverted" label={evt.gatewayAction || evt.deceptionStatus} />
                     </td>
                     <td>
                       <StatusBadge status={evt.severity} />
@@ -374,7 +379,9 @@ export default function AdminOverviewPage() {
                 Immutable record of administrative operations and policy adjustments
               </div>
             </div>
-            <span className="demo-tag">AUDIT LOG</span>
+            <Link to="/admin/audit-logs" className="btn btn-secondary btn-sm">
+              <span>View All Audit Logs →</span>
+            </Link>
           </div>
 
           <div className="cyber-table-container">
@@ -396,7 +403,7 @@ export default function AdminOverviewPage() {
                       {aud.timestamp}
                     </td>
                     <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
-                      {aud.adminUser}
+                      {aud.actor || aud.adminUser}
                     </td>
                     <td>
                       <span className="mono-tag" style={{ color: '#93c5fd' }}>{aud.action}</span>
@@ -408,7 +415,7 @@ export default function AdminOverviewPage() {
                       <span className="mono-tag">{aud.ip}</span>
                     </td>
                     <td>
-                      <StatusBadge status={aud.status} label="Executed" />
+                      <StatusBadge status={aud.result === 'Success' ? 'operational' : 'critical'} label={aud.result || aud.status} />
                     </td>
                   </tr>
                 ))}

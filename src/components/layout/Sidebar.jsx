@@ -12,7 +12,10 @@ import {
   Shuffle,
   Users,
   LogOut,
-  X
+  X,
+  Server,
+  ShieldAlert,
+  GitBranch
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -133,42 +136,78 @@ export default function Sidebar({ isOpen, onClose }) {
                     onClick={onClose}
                   >
                     <LayoutDashboard size={18} />
-                    <span>System Overview</span>
+                    <span>Platform Overview</span>
                   </NavLink>
                 </li>
                 <li>
-                  <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
+                  <NavLink
+                    to="/admin/tenants"
+                    className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                    onClick={onClose}
+                  >
                     <Users size={18} />
-                    <span>Tenant Management</span>
-                    <span className="nav-item-badge">Stage 2</span>
+                    <span>Tenants</span>
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink
+                    to="/admin/health"
+                    className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                    onClick={onClose}
+                  >
+                    <Server size={18} />
+                    <span>Gateway Health</span>
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink
+                    to="/admin/audit-logs"
+                    className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                    onClick={onClose}
+                  >
+                    <FileText size={18} />
+                    <span>Audit Logs</span>
+                  </NavLink>
+                </li>
+              </ul>
+
+              <div className="nav-section-title" style={{ marginTop: '1.25rem' }}>
+                Advanced Operations
+              </div>
+              <ul className="nav-list">
+                <li>
+                  <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
+                    <Radio size={18} />
+                    <span>Threat Investigations</span>
+                    <span className="nav-item-badge">Stage 2B.2</span>
+                  </span>
+                </li>
+                <li>
+                  <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
+                    <ShieldAlert size={18} />
+                    <span>Attacker Profiles</span>
+                    <span className="nav-item-badge">Planned</span>
                   </span>
                 </li>
                 <li>
                   <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
                     <Network size={18} />
-                    <span>Deception Mesh</span>
-                    <span className="nav-item-badge">Stage 2</span>
+                    <span>Deception Environments</span>
+                    <span className="nav-item-badge">Planned</span>
                   </span>
                 </li>
                 <li>
                   <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
-                    <Radio size={18} />
-                    <span>Threat Telemetry</span>
-                    <span className="nav-item-badge">Stage 2</span>
+                    <GitBranch size={18} />
+                    <span>Deception State Graph</span>
+                    <span className="nav-item-badge">Planned</span>
                   </span>
                 </li>
                 <li>
                   <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
                     <Sliders size={18} />
-                    <span>Cluster Policies</span>
-                    <span className="nav-item-badge">Stage 2</span>
-                  </span>
-                </li>
-                <li>
-                  <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
-                    <FileText size={18} />
-                    <span>Audit Events</span>
-                    <span className="nav-item-badge">Stage 2</span>
+                    <span>Policies & Strategies</span>
+                    <span className="nav-item-badge">Stage 2C</span>
                   </span>
                 </li>
               </ul>
