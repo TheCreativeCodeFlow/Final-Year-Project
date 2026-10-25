@@ -78,25 +78,44 @@ export default function Sidebar({ isOpen, onClose }) {
                   </NavLink>
                 </li>
                 <li>
-                  <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
+                  <NavLink
+                    to="/owner/applications"
+                    className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                    onClick={onClose}
+                  >
                     <Layers size={18} />
-                    <span>Protected Apps</span>
-                    <span className="nav-item-badge">Stage 2</span>
-                  </span>
+                    <span>Applications</span>
+                  </NavLink>
                 </li>
                 <li>
-                  <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
+                  <NavLink
+                    to="/owner/events"
+                    className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                    onClick={onClose}
+                  >
                     <Activity size={18} />
                     <span>Security Events</span>
-                    <span className="nav-item-badge">Stage 2</span>
-                  </span>
+                  </NavLink>
                 </li>
                 <li>
-                  <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
-                    <Shuffle size={18} />
-                    <span>Deception Rules</span>
-                    <span className="nav-item-badge">Stage 2</span>
-                  </span>
+                  <NavLink
+                    to="/owner/integrations"
+                    className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                    onClick={onClose}
+                  >
+                    <Network size={18} />
+                    <span>Integrations</span>
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink
+                    to="/owner/settings"
+                    className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                    onClick={onClose}
+                  >
+                    <Sliders size={18} />
+                    <span>Settings</span>
+                  </NavLink>
                 </li>
               </ul>
             </div>
