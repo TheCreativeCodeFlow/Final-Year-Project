@@ -16,7 +16,8 @@ import {
   Server,
   ShieldAlert,
   GitBranch,
-  Compass
+  Compass,
+  PlayCircle
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -234,6 +235,16 @@ export default function Sidebar({ isOpen, onClose }) {
                   >
                     <Compass size={18} />
                     <span>Strategy Management</span>
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink
+                    to="/admin/gateway-simulator"
+                    className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                    onClick={onClose}
+                  >
+                    <PlayCircle size={18} />
+                    <span>Gateway Simulator</span>
                   </NavLink>
                 </li>
               </ul>

@@ -39,6 +39,7 @@ import DeceptionPolicyFormPage from '../pages/admin/DeceptionPolicyFormPage';
 import DeceptionPolicyDetailsPage from '../pages/admin/DeceptionPolicyDetailsPage';
 import DeceptionStrategiesPage from '../pages/admin/DeceptionStrategiesPage';
 import DeceptionStrategyDetailsPage from '../pages/admin/DeceptionStrategyDetailsPage';
+import GatewaySimulatorPage from '../pages/admin/GatewaySimulatorPage';
 
 export default function AppRouter() {
   const { isAuthenticated, role, ROLES } = useAuth();
@@ -354,6 +355,18 @@ export default function AppRouter() {
           <RoleGuard requiredRole={ROLES.ADMIN}>
             <AppShell>
               <DeceptionStrategyDetailsPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      {/* End-to-End Gateway Decision Simulator (Stage 2B.5) */}
+      <Route
+        path="/admin/gateway-simulator"
+        element={
+          <RoleGuard requiredRole={ROLES.ADMIN}>
+            <AppShell>
+              <GatewaySimulatorPage />
             </AppShell>
           </RoleGuard>
         }
