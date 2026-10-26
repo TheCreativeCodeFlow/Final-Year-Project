@@ -15,7 +15,8 @@ import {
   X,
   Server,
   ShieldAlert,
-  GitBranch
+  GitBranch,
+  Compass
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -216,11 +217,24 @@ export default function Sidebar({ isOpen, onClose }) {
                   </NavLink>
                 </li>
                 <li>
-                  <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
+                  <NavLink
+                    to="/admin/deception-policies"
+                    className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                    onClick={onClose}
+                  >
                     <Sliders size={18} />
-                    <span>Policies & Strategies</span>
-                    <span className="nav-item-badge">Stage 2C</span>
-                  </span>
+                    <span>Deception Policies</span>
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink
+                    to="/admin/deception-strategies"
+                    className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                    onClick={onClose}
+                  >
+                    <Compass size={18} />
+                    <span>Strategy Management</span>
+                  </NavLink>
                 </li>
               </ul>
             </div>

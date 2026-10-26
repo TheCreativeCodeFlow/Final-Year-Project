@@ -16,6 +16,10 @@ const STORAGE_KEY_ENVIRONMENTS = 'cyber_deception_environments_v1';
 const STORAGE_KEY_ASSETS = 'cyber_deception_assets_v1';
 const STORAGE_KEY_RELATIONSHIPS = 'cyber_deception_relationships_v1';
 const STORAGE_KEY_TRANSITIONS = 'cyber_deception_transitions_v1';
+const STORAGE_KEY_POLICIES = 'cyber_deception_policies_v1';
+const STORAGE_KEY_STRATEGIES = 'cyber_deception_strategies_v1';
+const STORAGE_KEY_POLICY_HISTORY = 'cyber_deception_policy_history_v1';
+const STORAGE_KEY_STRATEGY_SCENARIOS = 'cyber_deception_strategy_scenarios_v1';
 
 // --- Default Tenants Seed Data ---
 export const DEFAULT_TENANTS = [
@@ -2782,6 +2786,636 @@ export const DEFAULT_DSG_TRANSITIONS = [
   }
 ];
 
+// --- Default Deception Policies Seed Data ---
+export const DEFAULT_DECEPTION_POLICIES = [
+  {
+    id: "pol-sec-01",
+    name: "Apex Retail Banking Authentication Tarpit & Tripwire Policy",
+    description: "Enforces progressive response latency and canary credential provisioning when brute-force dictionary bursts or credential-stuffing patterns are detected targeting retail auth APIs.",
+    scope: "environment",
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
+    environmentId: "env-apex-auth-01",
+    environmentName: "Apex Retail Banking Auth Shadow",
+    category: "suspicious_activity_handling",
+    priority: 10,
+    status: "Enabled (Simulated)",
+    triggerConditions: [
+      "Repeated authentication failures >= 25 within 60s sliding window",
+      "Anomaly confidence score >= 0.85 from behavioral detection engine",
+      "Ingress URI matches sensitive auth endpoints (/manage/v1/auth/*)"
+    ],
+    requiredEvidence: [
+      "Structured HTTP request log with client IP and user-agent header",
+      "Behavioral anomaly vector scoring burst frequency and dictionary diversity",
+      "Session fingerprint token assigned by gateway ingress proxy"
+    ],
+    permittedActions: [
+      "Divert session into dedicated synthetic auth sandbox (env-apex-auth-01)",
+      "Inject simulated exponential tarpit response delay (200ms - 1500ms)",
+      "Serve synthetic superadmin persona (ast-apex-user-01) with mock directory claims",
+      "Present simulated RS256 JWT key and canary token #88912"
+    ],
+    prohibitedActions: [
+      "Modify real production user database or authentication authority",
+      "Expose real tenant secrets, credentials, or production signing keys",
+      "Permit outbound egress traffic from honeynet worker container",
+      "Silently route suspicious traffic to real origin if sandbox allocation fails"
+    ],
+    safetyConstraints: [
+      "Tenant Isolation: Strict VPC namespace containment; cross-tenant traversal prohibited",
+      "Fail-Safe Interlock: If sandbox container is unresponsive, fail closed with HTTP 429",
+      "Missing Evidence Guard: Unrecorded telemetry shall never be treated as verified safe traffic"
+    ],
+    humanReviewRequired: false,
+    owner: "Sarah Chen (Platform Ops)",
+    associatedStrategyIds: ["strat-auth-01", "strat-canary-01"],
+    createdAt: "2026-08-15T10:00:00Z",
+    updatedAt: "2026-10-25T15:42:00Z"
+  },
+  {
+    id: "pol-sec-02",
+    name: "MedSecure FHIR Broken Object Level Authorization (BOLA) Decoy Policy",
+    description: "Governs isolation and synthetic record emulation when sequential identifier enumeration is observed traversing FHIR healthcare patient resource endpoints.",
+    scope: "environment",
+    tenantId: "tenant-medsecure-1022",
+    tenantName: "MedSecure Health Net",
+    environmentId: "env-med-fhir-02",
+    environmentName: "MedSecure FHIR Synthetic Records Vault",
+    category: "deception_routing_eligibility",
+    priority: 15,
+    status: "Enabled (Simulated)",
+    triggerConditions: [
+      "Sequential GET queries across >= 10 distinct patient ID keys within 30s",
+      "Zero legitimate authorization token binding to targeted patient IDs",
+      "Request URI matches /api/v4/Patient/* or /api/v4/DiagnosticReport/*"
+    ],
+    requiredEvidence: [
+      "API gateway access log recording enumeration pattern",
+      "Decoded JWT token subject mismatch with requested resource IDs",
+      "Client TLS fingerprint hash and JA4 signature"
+    ],
+    permittedActions: [
+      "Divert requests to synthetic FHIR resource sandbox (env-med-fhir-02)",
+      "Generate fabricated patient demographic records with realistic synthetics",
+      "Seed diagnostic report record containing canary tracking token #1042",
+      "Increment lateral observation score in attacker behavior profile"
+    ],
+    prohibitedActions: [
+      "Expose genuine patient electronic health records (EHR) under any condition",
+      "Allow outbound connections from FHIR sandbox to production clinical systems",
+      "Treat missing patient consent telemetry as verified authorization",
+      "Bypass HIPAA boundary audit logging during synthetic diversion"
+    ],
+    safetyConstraints: [
+      "HIPAA Zero-Trust Boundary: Real patient databases must remain physically isolated",
+      "Strict tenant boundary isolation: medsecure tenant sandbox cannot access other tenants",
+      "Fail-safe interlock: If synthetic generator fails, drop connection immediately"
+    ],
+    humanReviewRequired: true,
+    owner: "Alex Vance (SecOps Lead)",
+    associatedStrategyIds: ["strat-bola-02", "strat-canary-01"],
+    createdAt: "2026-08-20T11:30:00Z",
+    updatedAt: "2026-10-25T15:25:00Z"
+  },
+  {
+    id: "pol-sec-03",
+    name: "Global Honeynet Egress and Outbound Traffic Containment Policy",
+    description: "Platform-wide mandatory containment rule ensuring zero unsolicited network egress originates from any synthetic deception asset, honeynet worker, or sandbox pod.",
+    scope: "platform",
+    tenantId: null,
+    tenantName: "Platform-Wide",
+    environmentId: null,
+    environmentName: "All Deception Environments",
+    category: "isolation_egress_restrictions",
+    priority: 1,
+    status: "Enabled (Simulated)",
+    triggerConditions: [
+      "Any outbound SYN packet initiated from honeynet container or sandbox namespace",
+      "DNS resolution request for external domain originating inside decoy network",
+      "Raw socket creation attempt inside synthetic pod"
+    ],
+    requiredEvidence: [
+      "Linux eBPF kernel network trace or Cilium network policy alert",
+      "Container PID and namespace identifier matching registered decoy scope"
+    ],
+    permittedActions: [
+      "Immediately drop outbound packet at kernel/eBPF boundary with zero RST dispatch",
+      "Capture socket payload and destination IP for threat intelligence attribution",
+      "Quarantine honeynet container and preserve memory snapshot for forensics",
+      "Trigger immediate high-severity administrative alert and escalation"
+    ],
+    prohibitedActions: [
+      "Permit outbound connections to reach external internet or cloud VPC infrastructure",
+      "Permit decoy containers to scan or probe internal gateway management networks",
+      "Allow automated scripts to disable egress filters without multi-party authorization",
+      "Silently bypass egress policy for diagnostic testing in production clusters"
+    ],
+    safetyConstraints: [
+      "Absolute Egress Block: Default-deny all outbound traffic across all decoy namespaces",
+      "Tenant Isolation: Decoy pods must never share network namespaces across tenants",
+      "Fail-Closed Design: Kernel network filter failure causes instant container termination"
+    ],
+    humanReviewRequired: false,
+    owner: "Sarah Chen (Platform Ops)",
+    associatedStrategyIds: ["strat-egress-03", "strat-contain-06"],
+    createdAt: "2026-06-01T08:00:00Z",
+    updatedAt: "2026-10-25T16:00:00Z"
+  },
+  {
+    id: "pol-sec-04",
+    name: "AeroDynamics Sovereign Air-Gap Threat Neutralization & Interlock Policy",
+    description: "High-assurance fail-safe policy for defense telemetry systems. Mandates immediate hardware TCP reset and air-gap interlock when classified nation-state exploit signatures are observed.",
+    scope: "tenant",
+    tenantId: "tenant-aerodyn-8823",
+    tenantName: "AeroDynamics Defence Lab",
+    environmentId: "env-aero-apt-04",
+    environmentName: "AeroDynamics Classified Sensor Honey-Mesh",
+    category: "fail_safe_handling",
+    priority: 5,
+    status: "Review Required",
+    triggerConditions: [
+      "Binary payload matches classified APT signature SIG-APT-DEF-88",
+      "Sensor telemetry ingestion packet contains shellcode or ROP chain patterns",
+      "Simulated air-gap beacon tripwire triggered by adversary probe"
+    ],
+    requiredEvidence: [
+      "Deep packet inspection byte-stream offset matching classified threat indicator",
+      "Calculated threat confidence score == 1.00 (Hard positive signature)",
+      "Hardware cryptoprocessor tamper status clean"
+    ],
+    permittedActions: [
+      "Enforce immediate TCP Reset at eBPF level, dropping ingress connection",
+      "Lock target IP into gateway boundary blocklist for 48 hours",
+      "Preserve binary payload in write-once forensic storage volume",
+      "Escalate incident to Tier-3 Sovereign Defense analyst team"
+    ],
+    prohibitedActions: [
+      "Allow classified threat actor to prolong interaction beyond initial signature match",
+      "Permit honeynet payload diversion when fail-closed interlock is active",
+      "Forward suspicious binary to unverified secondary processing queues",
+      "Treat missing behavioral evidence as low-confidence or safe"
+    ],
+    safetyConstraints: [
+      "Sovereign Defense Interlock: Air-gap integrity overrides observational deception goals",
+      "Strict tenant boundary isolation: aero tenant resources isolated from commercial tenants",
+      "Explicit execution verification required before marking incident mitigated"
+    ],
+    humanReviewRequired: true,
+    owner: "Sarah Chen (Platform Ops)",
+    associatedStrategyIds: ["strat-airgap-04"],
+    createdAt: "2026-06-12T09:00:00Z",
+    updatedAt: "2026-10-25T14:48:00Z"
+  },
+  {
+    id: "pol-sec-05",
+    name: "NexusHub GraphQL Introspection Poisoning & Canary Injection Policy",
+    description: "Directs unauthenticated API recon crawlers to a synthetic GraphQL schema graph with honey-fields and canary API tokens to track downstream credential reuse.",
+    scope: "environment",
+    tenantId: "tenant-nexushub-3319",
+    tenantName: "NexusHub SaaS Ecosystem",
+    environmentId: "env-nexus-api-05",
+    environmentName: "NexusHub GraphQL Schema Poisoning Sandbox",
+    category: "synthetic_asset_modification",
+    priority: 30,
+    status: "Draft",
+    triggerConditions: [
+      "GraphQL introspection query (__schema or __type) received from untrusted IP",
+      "Missing valid Bearer developer token or expired API key presented",
+      "Introspection query AST depth score >= 4"
+    ],
+    requiredEvidence: [
+      "Parsed GraphQL query AST demonstrating full schema extraction intent",
+      "Client HTTP request metadata lacking valid developer session claims"
+    ],
+    permittedActions: [
+      "Serve poisoned synthetic schema definition with fake deprecated mutations",
+      "Inject canary developer API key into simulated schema comment fields",
+      "Monitor global SIEM telemetry for unauthorized presentation of canary key"
+    ],
+    prohibitedActions: [
+      "Expose genuine internal microservice schema or private mutations",
+      "Alter production GraphQL gateway routing tables or endpoint resolvers",
+      "Allow unauthenticated introspection on real developer portal"
+    ],
+    safetyConstraints: [
+      "Tenant boundary isolation: NexusHub schema mutations cannot reference other tenants",
+      "Synthetic only: All returned types and field resolvers must remain purely mock"
+    ],
+    humanReviewRequired: false,
+    owner: "Alex Vance (SecOps Lead)",
+    associatedStrategyIds: ["strat-graphql-05"],
+    createdAt: "2026-09-05T12:00:00Z",
+    updatedAt: "2026-10-25T13:16:00Z"
+  },
+  {
+    id: "pol-sec-06",
+    name: "OmniLogistics WebSocket Smuggling Session Termination & Drain Policy",
+    description: "Terminates and isolates sessions attempting HTTP protocol smuggling or raw socket injection against logistics dispatch WebSocket endpoints.",
+    scope: "environment",
+    tenantId: "tenant-omni-4401",
+    tenantName: "OmniLogistics Global",
+    environmentId: "env-omni-fleet-03",
+    environmentName: "OmniLogistics Fleet Protocol Decoy Sink",
+    category: "session_termination",
+    priority: 20,
+    status: "Enabled (Simulated)",
+    triggerConditions: [
+      "HTTP Upgrade header contains CRLF byte injection or malformed chunked encoding",
+      "WebSocket framing payload violates RFC 6455 opcode specifications",
+      "Repeated socket pipe resets exceeding 15 failures per minute"
+    ],
+    requiredEvidence: [
+      "Raw byte stream capture displaying protocol smuggling delimiters",
+      "Gateway reverse proxy anomaly flag for malformed Upgrade negotiation"
+    ],
+    permittedActions: [
+      "Immediately close real client socket and divert subsequent IP traffic to decoy echo sink",
+      "Record session telemetry in threat investigation queue",
+      "Issue WebSocket close frame 1008 (Policy Violation) after 500ms tarpit delay"
+    ],
+    prohibitedActions: [
+      "Allow malformed socket packets to reach real fleet dispatch microservices",
+      "Attempt protocol recovery on corrupted socket frames",
+      "Route to unmonitored drop sink without telemetry capture"
+    ],
+    safetyConstraints: [
+      "Tenant isolation: WebSocket sink isolated to omni-fleet container pool",
+      "Missing evidence guard: Indeterminate socket anomalies must fail closed"
+    ],
+    humanReviewRequired: false,
+    owner: "Sarah Chen (Platform Ops)",
+    associatedStrategyIds: ["strat-contain-06"],
+    createdAt: "2026-08-28T14:15:00Z",
+    updatedAt: "2026-10-25T14:59:00Z"
+  },
+  {
+    id: "pol-sec-07",
+    name: "Canary Token Global Tripwire & Immediate Session Quarantine Policy",
+    description: "Platform-wide policy triggering immediate high-confidence containment and analyst alerting when any registered canary token signature is accessed or presented.",
+    scope: "platform",
+    tenantId: null,
+    tenantName: "Platform-Wide",
+    environmentId: null,
+    environmentName: "All Deception Environments",
+    category: "canary_token_response",
+    priority: 2,
+    status: "Enabled (Simulated)",
+    triggerConditions: [
+      "Incoming request matches known active canary token hash or cryptographic canary key",
+      "Downloaded synthetic document canary beacon opened with DNS callback",
+      "Canary database credentials presented to any gateway ingress endpoint"
+    ],
+    requiredEvidence: [
+      "Cryptographic match against platform registered canary token registry",
+      "Active request payload or header containing token signature",
+      "Correlation with recorded origin IP and TLS session state"
+    ],
+    permittedActions: [
+      "Lock current session into strict honeynet sandbox namespace with zero egress",
+      "Elevate attacker profile classification to Confirmed Malicious Actor (1.00)",
+      "Notify Security Operations Center via priority PagerDuty / Slack webhook",
+      "Seed secondary lateral movement canary assets to track exfiltration objectives"
+    ],
+    prohibitedActions: [
+      "Dismiss canary token activation as benign regardless of source IP reputation",
+      "Allow token-bearing sessions to access real backend services",
+      "Mutate canary token database during active investigation"
+    ],
+    safetyConstraints: [
+      "Zero Egress: All canary-engaged sessions locked to sandbox",
+      "Tenant Isolation: Decoy credentials cannot cross tenant boundaries"
+    ],
+    humanReviewRequired: true,
+    owner: "Sarah Chen (Platform Ops)",
+    associatedStrategyIds: ["strat-canary-01", "strat-contain-06"],
+    createdAt: "2026-07-10T10:00:00Z",
+    updatedAt: "2026-10-25T15:41:00Z"
+  }
+];
+
+// --- Default Deception Strategies Seed Data ---
+export const DEFAULT_DECEPTION_STRATEGIES = [
+  {
+    id: "strat-auth-01",
+    name: "Adaptive Credential Exhaustion & Progressive Tarpit",
+    description: "Absorbs brute-force and dictionary authentication attacks by dynamically spinning up high-interaction fake auth containers, serving synthetic credentials, and imposing exponential latency.",
+    category: "reconnaissance_diversion",
+    applicableEnvironmentTypes: ["High-interaction honeynet", "Synthetic API environment"],
+    compatiblePolicyIds: ["pol-sec-01", "pol-sec-03"],
+    requiredEvidence: [
+      "Dictionary attack pattern >= 25 attempts/min",
+      "Client anomaly score >= 0.85",
+      "Session fingerprint token verified"
+    ],
+    intendedSyntheticStateChanges: [
+      "Provision container decoy-worker-pod-89b to absorb authentication traffic",
+      "Seed synthetic persona (ast-apex-user-01) with ClusterAdmin role claims",
+      "Expose fake JWT signing key (ast-apex-cred-01) in mock response token"
+    ],
+    safetyConstraints: [
+      "Zero egress allowed from honeynet container",
+      "No real database connectivity permitted",
+      "Strict isolation to apex-auth sandbox namespace"
+    ],
+    humanReviewRequired: false,
+    status: "Active (Simulated)",
+    associatedEnvironmentIds: ["env-apex-auth-01"],
+    updatedAt: "2026-10-25T15:42:00Z"
+  },
+  {
+    id: "strat-canary-01",
+    name: "High-Interaction Canary Token Tripwire Deployment",
+    description: "Strategically places cryptographic and document canary tokens inside synthetic API responses, mock tables, and downloaded PDFs to track downstream credential reuse.",
+    category: "canary_token_placement",
+    applicableEnvironmentTypes: ["High-interaction honeynet", "Synthetic API environment", "Low-interaction decoy"],
+    compatiblePolicyIds: ["pol-sec-01", "pol-sec-02", "pol-sec-07"],
+    requiredEvidence: [
+      "Adversary traversal detected into synthetic document or credential store",
+      "Telemetry confirms request reached synthetic layer"
+    ],
+    intendedSyntheticStateChanges: [
+      "Embed canary token CANARY_TOKEN_HASH_#88912 into mock JWT claims",
+      "Create synthetic document ast-apex-doc-01 referencing PCI audit findings",
+      "Link canary token tripwire ast-apex-canary-01 to monitor endpoint"
+    ],
+    safetyConstraints: [
+      "Tokens must be cryptographically distinguishable from production secrets",
+      "All token activations must log to write-once platform audit trail"
+    ],
+    humanReviewRequired: false,
+    status: "Active (Simulated)",
+    associatedEnvironmentIds: ["env-apex-auth-01", "env-med-fhir-02"],
+    updatedAt: "2026-10-25T15:41:00Z"
+  },
+  {
+    id: "strat-bola-02",
+    name: "Sequential Object Identifier Emulation & Trap Infiltration",
+    description: "Counters Broken Object Level Authorization (BOLA) enumeration by generating plausible fake healthcare resource graphs that lead to synthetic patient records with embedded tripwires.",
+    category: "synthetic_lateral_path_construction",
+    applicableEnvironmentTypes: ["Synthetic API environment"],
+    compatiblePolicyIds: ["pol-sec-02", "pol-sec-03"],
+    requiredEvidence: [
+      "Sequential ID enumeration across >= 10 patient IDs within 30s",
+      "JWT token subject mismatch against targeted resource"
+    ],
+    intendedSyntheticStateChanges: [
+      "Serve synthetic patient resource ast-med-doc-01 with mock oncology lab values",
+      "Create synthetic relationship CAN_ACCESS linking physician persona to mock record",
+      "Activate tripwire ast-med-canary-01 on first download attempt"
+    ],
+    safetyConstraints: [
+      "Zero genuine patient records accessible under any circumstances",
+      "Strict HIPAA boundary containment"
+    ],
+    humanReviewRequired: true,
+    status: "Active (Simulated)",
+    associatedEnvironmentIds: ["env-med-fhir-02"],
+    updatedAt: "2026-10-25T15:25:00Z"
+  },
+  {
+    id: "strat-egress-03",
+    name: "Kernel-Level Zero-Egress Network Isolation Interlock",
+    description: "Platform-wide enforcement strategy blocking all outbound traffic attempts from synthetic assets at the Linux eBPF layer while capturing adversary command-and-control metadata.",
+    category: "observation_intensification",
+    applicableEnvironmentTypes: ["High-interaction honeynet", "Synthetic enterprise network", "Synthetic API environment", "Low-interaction decoy"],
+    compatiblePolicyIds: ["pol-sec-03"],
+    requiredEvidence: [
+      "Outbound connection attempt detected from honeynet container PID",
+      "Cilium eBPF network trace verified"
+    ],
+    intendedSyntheticStateChanges: [
+      "Quarantine honeynet container into isolated memory snapshot state",
+      "Log destination IP and port to threat profile lateral movement ledger",
+      "Maintain synthetic responsive shell locally without external network transit"
+    ],
+    safetyConstraints: [
+      "Absolute default-deny egress on all synthetic interfaces",
+      "Kernel-level enforcement independent of container user permissions"
+    ],
+    humanReviewRequired: false,
+    status: "Active (Simulated)",
+    associatedEnvironmentIds: ["env-apex-auth-01", "env-med-fhir-02", "env-omni-fleet-03", "env-aero-apt-04"],
+    updatedAt: "2026-10-25T16:00:00Z"
+  },
+  {
+    id: "strat-airgap-04",
+    name: "Air-Gap Interlock with Fail-Closed TCP Reset",
+    description: "High-assurance defense strategy overriding normal honeynet diversion with immediate TCP reset and forensic memory freeze when nation-state APT signatures are recognized.",
+    category: "analyst_escalation",
+    applicableEnvironmentTypes: ["Synthetic enterprise network"],
+    compatiblePolicyIds: ["pol-sec-04"],
+    requiredEvidence: [
+      "Binary payload matches classified threat indicator SIG-APT-DEF-88",
+      "Confidence score == 1.00 (Hard positive signature)"
+    ],
+    intendedSyntheticStateChanges: [
+      "Issue immediate hardware TCP Reset terminating ingress socket",
+      "Lock client IP at edge gateway boundary blocklist for 48 hours",
+      "Snapshot packet buffer to immutable forensic archive"
+    ],
+    safetyConstraints: [
+      "Air-gap defense interlock supersedes honeynet diversion",
+      "Requires manual Tier-3 analyst review to release IP block"
+    ],
+    humanReviewRequired: true,
+    status: "Under Review",
+    associatedEnvironmentIds: ["env-aero-apt-04"],
+    updatedAt: "2026-10-25T14:48:00Z"
+  },
+  {
+    id: "strat-contain-06",
+    name: "Protocol Anomaly Tarpit & Protocol Smuggling Containment",
+    description: "Absorbs malformed HTTP Upgrade and WebSocket pipe-tampering exploits into isolated echo containers with delayed disconnection to drain attacker resources.",
+    category: "session_containment",
+    applicableEnvironmentTypes: ["Low-interaction decoy"],
+    compatiblePolicyIds: ["pol-sec-06", "pol-sec-03", "pol-sec-07"],
+    requiredEvidence: [
+      "CRLF injection in Upgrade negotiation headers",
+      "RFC 6455 framing violation detected"
+    ],
+    intendedSyntheticStateChanges: [
+      "Divert session into mock container decoy-ws-sink-04",
+      "Inject 500ms protocol response delay before closing socket",
+      "Capture raw byte stream into security event log"
+    ],
+    safetyConstraints: [
+      "Zero traversal into internal dispatch microservices",
+      "Container CPU and memory throttled to prevent resource exhaustion"
+    ],
+    humanReviewRequired: false,
+    status: "Active (Simulated)",
+    associatedEnvironmentIds: ["env-omni-fleet-03"],
+    updatedAt: "2026-10-25T14:59:00Z"
+  }
+];
+
+// --- Default Policy Change History ---
+export const DEFAULT_POLICY_CHANGE_HISTORY = [
+  {
+    id: "pch-01",
+    policyId: "pol-sec-01",
+    timestamp: "2026-10-25 14:30:00 UTC",
+    previousStatus: "Draft",
+    newStatus: "Enabled (Simulated)",
+    changeDescription: "Adjusted brute force burst threshold from 50 to 25 attempts/min; updated canary token reference #88912.",
+    actor: "Sarah Chen (Platform Ops)"
+  },
+  {
+    id: "pch-02",
+    policyId: "pol-sec-02",
+    timestamp: "2026-10-25 13:45:00 UTC",
+    previousStatus: "Review Required",
+    newStatus: "Enabled (Simulated)",
+    changeDescription: "Approved BOLA sequential traversal detection parameters and integrated FHIR v4 DiagnosticReport canary schema #1042.",
+    actor: "Alex Vance (SecOps Lead)"
+  },
+  {
+    id: "pch-03",
+    policyId: "pol-sec-04",
+    timestamp: "2026-10-25 14:50:00 UTC",
+    previousStatus: "Enabled (Simulated)",
+    newStatus: "Review Required",
+    changeDescription: "Flagged policy discrepancy: Air-gap interlock enforced hardware TCP Reset during APT-88 incident while policy specified honeynet diversion.",
+    actor: "Sarah Chen (Platform Ops)"
+  },
+  {
+    id: "pch-04",
+    policyId: "pol-sec-05",
+    timestamp: "2026-10-25 12:15:00 UTC",
+    previousStatus: "Not Recorded",
+    newStatus: "Draft",
+    changeDescription: "Initial policy draft authored for NexusHub GraphQL introspection AST poisoning.",
+    actor: "Alex Vance (SecOps Lead)"
+  }
+];
+
+// --- Default Strategy Evaluation Scenarios ---
+export const DEFAULT_STRATEGY_EVALUATION_SCENARIOS = {
+  recon_activity: {
+    key: "recon_activity",
+    name: "Reconnaissance-like Activity",
+    description: "Adversary probes public landing pages and sends exploratory HTTP HEAD / OPTIONS requests across administrative endpoints.",
+    simulatedEvidence: "High-frequency path enumeration (20 requests / 10s), user-agent indicates automated reconnaissance tool (Nuclei/v2.9).",
+    evidenceAvailable: [
+      "Path enumeration frequency: 2.0 req/s",
+      "User-Agent: Nuclei/v2.9.15 (Automated Scanner)",
+      "Zero valid session cookies presented"
+    ],
+    satisfiedPreconditions: [
+      "Origin IP is outside trusted CIDR blocks",
+      "Targeted endpoint matches configured deception route scope"
+    ],
+    unknownConditions: [
+      "Adversary ultimate objective (credential theft vs denial-of-service)",
+      "Threat actor organizational affiliation"
+    ],
+    relevantPolicyIds: ["pol-sec-01", "pol-sec-05"],
+    eligibilityResult: {
+      status: "Eligible (Simulated)",
+      reason: "Reconnaissance behavior matches criteria for lightweight diversion. Strategy can deploy preliminary fake endpoints without consuming deep sandbox memory.",
+      proposedSyntheticAction: "Expose synthetic login form and register IP into observation ledger."
+    }
+  },
+  repeated_auth_failures: {
+    key: "repeated_auth_failures",
+    name: "Repeated Authentication Failures",
+    description: "Burst of 40 consecutive failed POST /auth/login attempts presenting dictionary usernames (admin, root, test, superadmin).",
+    simulatedEvidence: "Authentication failure rate = 40/min, dictionary variety score = 0.94, origin IP lacks historical legitimate sessions.",
+    evidenceAvailable: [
+      "Authentication failure counter: 40 failed attempts in 60s",
+      "Dictionary entropy score: 0.94 (brute force pattern confirmed)",
+      "Anomaly score from detection engine: 0.95"
+    ],
+    satisfiedPreconditions: [
+      "Failure threshold (>= 25/min) satisfied",
+      "Targeted environment (env-apex-auth-01) is active and has available sandbox slots",
+      "Associated policy pol-sec-01 permits progressive tarpit"
+    ],
+    unknownConditions: [
+      "Whether adversary holds valid credentials in secondary un-probed accounts"
+    ],
+    relevantPolicyIds: ["pol-sec-01", "pol-sec-03"],
+    eligibilityResult: {
+      status: "Eligible (Simulated)",
+      reason: "High-confidence credential stuffing attack detected. Strategy is fully eligible for simulated execution under policy pol-sec-01.",
+      proposedSyntheticAction: "Allocate container decoy-worker-pod-89b, impose 800ms exponential tarpit latency, and issue fake superadmin token."
+    }
+  },
+  recorded_canary_interaction: {
+    key: "recorded_canary_interaction",
+    name: "Recorded Canary-Token Interaction",
+    description: "Client request explicitly presents canary credential hash CANARY_TOKEN_HASH_#88912 harvested from synthetic documentation.",
+    simulatedEvidence: "Cryptographic token match against active canary registry, zero legitimate operational use exists for this token signature.",
+    evidenceAvailable: [
+      "Token signature: CANARY_TOKEN_HASH_#88912 (Registered Tripwire)",
+      "Token planted location: ast-apex-doc-01 (Fake PCI Audit Spec)",
+      "Threat confidence score: 1.00 (Hard positive tripwire)"
+    ],
+    satisfiedPreconditions: [
+      "Token match verified against immutable platform registry",
+      "Policy pol-sec-07 authorizes immediate session quarantine",
+      "Honeynet sandbox namespace is isolated"
+    ],
+    unknownConditions: [
+      "Method of token retrieval by external third parties if token was leaked"
+    ],
+    relevantPolicyIds: ["pol-sec-01", "pol-sec-07", "pol-sec-02"],
+    eligibilityResult: {
+      status: "Requires Review",
+      reason: "High-consequence tripwire activated. Strategy is eligible, but policy pol-sec-07 mandates human-in-the-loop analyst sign-off before secondary canary deployment.",
+      proposedSyntheticAction: "Lock session to zero-egress sandbox and page on-call SecOps analyst."
+    }
+  },
+  missing_incomplete_telemetry: {
+    key: "missing_incomplete_telemetry",
+    name: "Missing or Incomplete Telemetry",
+    description: "Reverse proxy packet arrives with stripped TCP options, missing client IP header, and corrupted detection engine telemetry.",
+    simulatedEvidence: "Missing Evidence: telemetry vector is null, anomaly detector returned timeout (ERR_TIMEOUT_TELEMETRY).",
+    evidenceAvailable: [
+      "Protocol: HTTP/1.1 over TLS 1.3",
+      "Headers: Corrupted/Stripped by upstream proxy",
+      "Behavioral Telemetry: Not Recorded (Telemetry Pipeline Timeout)"
+    ],
+    satisfiedPreconditions: [],
+    unknownConditions: [
+      "Client IP Address (Unknown)",
+      "Anomaly Score (Not Recorded)",
+      "Session Fingerprint (Unknown)",
+      "Historical Reputation (Not Recorded)"
+    ],
+    relevantPolicyIds: ["pol-sec-03", "pol-sec-04"],
+    eligibilityResult: {
+      status: "Ineligible",
+      reason: "Mandatory Safety Invariant: Missing or incomplete telemetry must NEVER be treated as safe or normal traffic. Strategy evaluation is prohibited when required behavioral evidence is unknown.",
+      proposedSyntheticAction: "Fail closed: Reject packet with HTTP 400 and log pipeline telemetry failure."
+    }
+  },
+  isolation_constraint_triggered: {
+    key: "isolation_constraint_triggered",
+    name: "Isolation Constraint Triggered",
+    description: "Adversary inside synthetic sandbox attempts raw socket egress to external command-and-control server (198.51.100.44:443).",
+    simulatedEvidence: "Linux eBPF kernel event: honeynet container attempted unsolicited outbound SYN packet across external interface.",
+    evidenceAvailable: [
+      "Process PID: 41092 inside container decoy-worker-pod-89b",
+      "Socket call: connect() to 198.51.100.44:443 (Outbound SYN)",
+      "Kernel eBPF verdict: DROP_DISPATCH"
+    ],
+    satisfiedPreconditions: [
+      "Container PID verified within registered deception scope"
+    ],
+    unknownConditions: [
+      "Payload intended for external C2 destination"
+    ],
+    relevantPolicyIds: ["pol-sec-03"],
+    eligibilityResult: {
+      status: "Ineligible",
+      reason: "Strict Containment Interlock: Outbound egress attempt violates platform zero-egress policy pol-sec-03. Deception strategy execution is halted; container must be quarantined immediately.",
+      proposedSyntheticAction: "Enforce kernel packet drop, freeze container memory snapshot, and terminate socket."
+    }
+  }
+};
+
 // --- Storage Accessors & Local Persistence Layer ---
 
 function getStoredApps() {
@@ -2941,6 +3575,90 @@ function setStoredTransitions(transitions) {
     localStorage.setItem(STORAGE_KEY_TRANSITIONS, JSON.stringify(transitions));
   } catch (e) {
     console.warn("Could not persist transitions", e);
+  }
+}
+
+function getStoredPolicies() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_POLICIES);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn("Could not read stored policies, using defaults", e);
+  }
+  return DEFAULT_DECEPTION_POLICIES;
+}
+
+function setStoredPolicies(policies) {
+  try {
+    localStorage.setItem(STORAGE_KEY_POLICIES, JSON.stringify(policies));
+  } catch (e) {
+    console.warn("Could not persist policies", e);
+  }
+}
+
+function getStoredStrategies() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_STRATEGIES);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn("Could not read stored strategies, using defaults", e);
+  }
+  return DEFAULT_DECEPTION_STRATEGIES;
+}
+
+function setStoredStrategies(strategies) {
+  try {
+    localStorage.setItem(STORAGE_KEY_STRATEGIES, JSON.stringify(strategies));
+  } catch (e) {
+    console.warn("Could not persist strategies", e);
+  }
+}
+
+function getStoredPolicyHistory() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_POLICY_HISTORY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn("Could not read stored policy history, using defaults", e);
+  }
+  return DEFAULT_POLICY_CHANGE_HISTORY;
+}
+
+function setStoredPolicyHistory(history) {
+  try {
+    localStorage.setItem(STORAGE_KEY_POLICY_HISTORY, JSON.stringify(history));
+  } catch (e) {
+    console.warn("Could not persist policy history", e);
+  }
+}
+
+function getStoredScenarios() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_STRATEGY_SCENARIOS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch (e) {
+    console.warn("Could not read stored scenarios, using defaults", e);
+  }
+  return DEFAULT_STRATEGY_EVALUATION_SCENARIOS;
+}
+
+function setStoredScenarios(scenarios) {
+  try {
+    localStorage.setItem(STORAGE_KEY_STRATEGY_SCENARIOS, JSON.stringify(scenarios));
+  } catch (e) {
+    console.warn("Could not persist scenarios", e);
   }
 }
 
@@ -3265,6 +3983,375 @@ export const getDsgTransitions = async (environmentId = null) => {
     return transitions.filter(t => t.environmentId === environmentId);
   }
   return [...transitions];
+};
+
+// --- Public Service Methods for Deception Policies & Strategies (Stage 2B.4) ---
+
+/**
+ * Deterministic rule-based policy validation function.
+ * Validates required fields, priority ranges, environment existence,
+ * tenant/environment scoping consistency, action contradictions, isolation safeguards,
+ * and research integrity constraints.
+ */
+export const validateDeceptionPolicy = (policy) => {
+  const issues = [];
+  let status = 'Valid';
+
+  if (!policy) {
+    return { isValid: false, status: 'Invalid', issues: [{ type: 'error', message: 'Policy definition is null or missing.' }] };
+  }
+
+  // 1. Required fields
+  if (!policy.name || !policy.name.trim()) {
+    issues.push({ type: 'error', message: 'Policy name is required.' });
+  }
+  if (!policy.scope) {
+    issues.push({ type: 'error', message: 'Policy scope (platform, tenant, or environment) is required.' });
+  }
+  if (!policy.category) {
+    issues.push({ type: 'error', message: 'Policy category is required.' });
+  }
+  if (typeof policy.priority !== 'number' || isNaN(policy.priority)) {
+    issues.push({ type: 'error', message: 'Priority must be a valid numeric value.' });
+  } else if (policy.priority < 1 || policy.priority > 100) {
+    issues.push({ type: 'error', message: 'Priority must be between 1 (highest priority) and 100 (lowest priority).' });
+  }
+
+  // 2. Scope consistency with tenant and environment
+  if (policy.scope === 'tenant' && !policy.tenantId) {
+    issues.push({ type: 'error', message: 'Tenant selection is required for tenant-scoped policies.' });
+  }
+  if (policy.scope === 'environment') {
+    if (!policy.tenantId) {
+      issues.push({ type: 'error', message: 'Tenant selection is required for environment-scoped policies.' });
+    }
+    if (!policy.environmentId) {
+      issues.push({ type: 'error', message: 'Environment selection is required for environment-scoped policies.' });
+    } else {
+      // Validate that environment exists in platform registry
+      const environments = getStoredEnvironments();
+      const matchedEnv = environments.find(e => e.id === policy.environmentId);
+      if (!matchedEnv) {
+        issues.push({ type: 'error', message: `Referenced environment "${policy.environmentId}" does not exist in the platform registry.` });
+      } else if (policy.tenantId && matchedEnv.tenantId !== policy.tenantId) {
+        issues.push({
+          type: 'error',
+          message: `Tenant/Environment mismatch: Environment "${matchedEnv.name}" belongs to tenant "${matchedEnv.tenantName}" (${matchedEnv.tenantId}), which conflicts with selected tenant "${policy.tenantId}".`
+        });
+      }
+    }
+  }
+
+  // 3. Contradiction check between permitted and prohibited synthetic actions
+  const permitted = policy.permittedActions || [];
+  const prohibited = policy.prohibitedActions || [];
+  const permittedLower = permitted.map(p => p.toLowerCase());
+  const prohibitedLower = prohibited.map(p => p.toLowerCase());
+
+  // Check direct action contradiction
+  permittedLower.forEach(p => {
+    if (prohibitedLower.some(pr => pr === p || (pr.includes('modify real') && p.includes('modify real')) || (pr.includes('production') && p.includes('production credential')))) {
+      issues.push({
+        type: 'error',
+        message: `Contradictory action detected: Action "${p}" appears in both permitted and prohibited configurations.`
+      });
+    }
+  });
+
+  // Check prohibited real application/infrastructure modifications
+  if (permittedLower.some(p => p.includes('modify real') || p.includes('production database') || p.includes('real origin credentials') || p.includes('production clinical'))) {
+    issues.push({
+      type: 'error',
+      message: 'Safety Boundary Violation: A deception policy must NEVER permit modification of real production applications, databases, or live credentials.'
+    });
+  }
+
+  // 4. Isolation and tenant boundary constraint check
+  const safety = policy.safetyConstraints || [];
+  const safetyJoined = safety.join(' ').toLowerCase();
+  const hasIsolationConstraint = safetyJoined.includes('isolation') || safetyJoined.includes('boundary') || safetyJoined.includes('containment') || safetyJoined.includes('namespace');
+  if (!hasIsolationConstraint) {
+    issues.push({
+      type: 'warning',
+      message: 'Isolation Safeguard Warning: Safety constraints do not explicitly mandate tenant isolation, boundary containment, or sandbox namespace isolation.'
+    });
+  }
+
+  // 5. Research integrity: Missing telemetry must never qualify as safe
+  const triggerJoined = (policy.triggerConditions || []).join(' ').toLowerCase();
+  const evidenceJoined = (policy.requiredEvidence || []).join(' ').toLowerCase();
+  if (triggerJoined.includes('missing evidence is safe') || triggerJoined.includes('missing telemetry is safe') || evidenceJoined.includes('treat missing as safe') || triggerJoined.includes('bypass if missing')) {
+    issues.push({
+      type: 'error',
+      message: 'Research Integrity Violation: Missing or unrecorded telemetry must NEVER be treated as verified safe or benign traffic.'
+    });
+  }
+
+  // 6. Terminology & enforcement claim check
+  if (policy.status === 'Active' || policy.status === 'Enforced' || policy.status === 'Live') {
+    issues.push({
+      type: 'warning',
+      message: 'Demonstration Terminology Notice: In this prototype, policies cannot claim live gateway enforcement. Use "Enabled (Simulated)" instead.'
+    });
+  }
+
+  const hasErrors = issues.some(i => i.type === 'error');
+  const hasWarnings = issues.some(i => i.type === 'warning');
+
+  if (hasErrors) {
+    status = 'Invalid';
+  } else if (hasWarnings) {
+    status = 'Warnings';
+  } else {
+    status = 'Valid';
+  }
+
+  return {
+    isValid: !hasErrors,
+    status,
+    issues
+  };
+};
+
+export const getDeceptionPolicies = async (filters = {}) => {
+  let list = [...getStoredPolicies()];
+
+  if (filters.search) {
+    const q = filters.search.toLowerCase().trim();
+    list = list.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      p.id.toLowerCase().includes(q) ||
+      p.description.toLowerCase().includes(q) ||
+      (p.tenantName && p.tenantName.toLowerCase().includes(q)) ||
+      (p.environmentName && p.environmentName.toLowerCase().includes(q)) ||
+      (p.owner && p.owner.toLowerCase().includes(q))
+    );
+  }
+
+  if (filters.scope && filters.scope !== 'all') {
+    list = list.filter(p => p.scope === filters.scope);
+  }
+
+  if (filters.tenantId && filters.tenantId !== 'all') {
+    list = list.filter(p => p.tenantId === filters.tenantId);
+  }
+
+  if (filters.environmentId && filters.environmentId !== 'all') {
+    list = list.filter(p => p.environmentId === filters.environmentId);
+  }
+
+  if (filters.category && filters.category !== 'all') {
+    list = list.filter(p => p.category === filters.category);
+  }
+
+  if (filters.status && filters.status !== 'all') {
+    list = list.filter(p => p.status === filters.status);
+  }
+
+  return list;
+};
+
+export const getDeceptionPolicyById = async (id) => {
+  const list = getStoredPolicies();
+  return list.find(p => p.id === id) || null;
+};
+
+export const saveDeceptionPolicy = async (policyData) => {
+  const policies = getStoredPolicies();
+  const history = getStoredPolicyHistory();
+  const now = new Date().toISOString();
+
+  let savedPolicy = null;
+
+  if (policyData.id) {
+    // Update existing policy
+    const idx = policies.findIndex(p => p.id === policyData.id);
+    if (idx !== -1) {
+      const existing = policies[idx];
+      const previousStatus = existing.status;
+      const newStatus = policyData.status || existing.status;
+
+      savedPolicy = {
+        ...existing,
+        ...policyData,
+        updatedAt: now
+      };
+
+      policies[idx] = savedPolicy;
+
+      // Log history entry if status changed or description modified
+      const newHistoryEntry = {
+        id: `pch-${String(history.length + 1).padStart(2, '0')}`,
+        policyId: savedPolicy.id,
+        timestamp: `${now.slice(0, 10)} ${now.slice(11, 19)} UTC`,
+        previousStatus: previousStatus || "Draft",
+        newStatus: newStatus,
+        changeDescription: `Policy "${savedPolicy.name}" updated. Status: ${newStatus}.`,
+        actor: policyData.editorActor || "Sarah Chen (Platform Ops)"
+      };
+
+      history.unshift(newHistoryEntry);
+      setStoredPolicyHistory(history);
+    }
+  }
+
+  if (!savedPolicy) {
+    // Create new policy
+    const nextNumber = policies.length + 1;
+    const newId = `pol-sec-${String(nextNumber).padStart(2, '0')}`;
+
+    savedPolicy = {
+      id: newId,
+      name: policyData.name || "Untitled Deception Policy",
+      description: policyData.description || "",
+      scope: policyData.scope || "environment",
+      tenantId: policyData.tenantId || null,
+      tenantName: policyData.tenantName || null,
+      environmentId: policyData.environmentId || null,
+      environmentName: policyData.environmentName || null,
+      category: policyData.category || "suspicious_activity_handling",
+      priority: Number(policyData.priority) || 50,
+      status: policyData.status || "Draft",
+      triggerConditions: policyData.triggerConditions || [],
+      requiredEvidence: policyData.requiredEvidence || [],
+      permittedActions: policyData.permittedActions || [],
+      prohibitedActions: policyData.prohibitedActions || [],
+      safetyConstraints: policyData.safetyConstraints || [
+        "Tenant Isolation: Strict container namespace containment",
+        "Zero Egress: Outbound traffic from synthetic decoys prohibited"
+      ],
+      humanReviewRequired: Boolean(policyData.humanReviewRequired),
+      owner: policyData.owner || "Sarah Chen (Platform Ops)",
+      associatedStrategyIds: policyData.associatedStrategyIds || [],
+      createdAt: now,
+      updatedAt: now
+    };
+
+    policies.unshift(savedPolicy);
+
+    // Initial history record
+    const initialHistoryEntry = {
+      id: `pch-${String(history.length + 1).padStart(2, '0')}`,
+      policyId: savedPolicy.id,
+      timestamp: `${now.slice(0, 10)} ${now.slice(11, 19)} UTC`,
+      previousStatus: "Not Recorded",
+      newStatus: savedPolicy.status,
+      changeDescription: `Initial policy draft authored: "${savedPolicy.name}".`,
+      actor: savedPolicy.owner
+    };
+
+    history.unshift(initialHistoryEntry);
+    setStoredPolicyHistory(history);
+  }
+
+  setStoredPolicies(policies);
+  return savedPolicy;
+};
+
+export const deleteDeceptionPolicy = async (id) => {
+  const policies = getStoredPolicies();
+  const filtered = policies.filter(p => p.id !== id);
+  if (filtered.length !== policies.length) {
+    setStoredPolicies(filtered);
+    return true;
+  }
+  return false;
+};
+
+export const getDeceptionStrategies = async (filters = {}) => {
+  let list = [...getStoredStrategies()];
+
+  if (filters.search) {
+    const q = filters.search.toLowerCase().trim();
+    list = list.filter(s =>
+      s.name.toLowerCase().includes(q) ||
+      s.id.toLowerCase().includes(q) ||
+      s.description.toLowerCase().includes(q) ||
+      s.category.toLowerCase().includes(q)
+    );
+  }
+
+  if (filters.category && filters.category !== 'all') {
+    list = list.filter(s => s.category === filters.category);
+  }
+
+  if (filters.status && filters.status !== 'all') {
+    list = list.filter(s => s.status === filters.status);
+  }
+
+  if (filters.environmentType && filters.environmentType !== 'all') {
+    list = list.filter(s => s.applicableEnvironmentTypes?.includes(filters.environmentType));
+  }
+
+  if (filters.policyId && filters.policyId !== 'all') {
+    list = list.filter(s => s.compatiblePolicyIds?.includes(filters.policyId));
+  }
+
+  return list;
+};
+
+export const getDeceptionStrategyById = async (id) => {
+  const list = getStoredStrategies();
+  return list.find(s => s.id === id) || null;
+};
+
+export const getPolicyChangeHistory = async (policyId = null) => {
+  const history = getStoredPolicyHistory();
+  if (policyId) {
+    return history.filter(h => h.policyId === policyId);
+  }
+  return [...history];
+};
+
+export const getStrategyEvaluationScenarios = async () => {
+  return getStoredScenarios();
+};
+
+export const evaluateStrategyScenario = async (strategyId, scenarioKey) => {
+  const strategy = await getDeceptionStrategyById(strategyId);
+  const scenarios = await getStrategyEvaluationScenarios();
+  const scenario = scenarios[scenarioKey];
+
+  if (!strategy || !scenario) {
+    return null;
+  }
+
+  // Deterministic evaluation logic with strict semantics:
+  // 1. Missing evidence scenario: Mandatory safety constraint enforces ineligibility.
+  // 2. Isolation triggered scenario: Strict containment interlock halts strategy.
+  // 3. Canary scenario: If strategy requires human review, status is "Requires Review".
+  // 4. Auth failures: Eligible for auth & canary strategies.
+  // 5. Reconnaissance: Eligible for reconnaissance strategies.
+
+  let resultStatus = "Eligible (Simulated)";
+  let resultReason = scenario.eligibilityResult.reason;
+  let proposedAction = scenario.eligibilityResult.proposedSyntheticAction;
+
+  if (scenarioKey === 'missing_incomplete_telemetry') {
+    resultStatus = "Ineligible";
+    resultReason = "Mandatory Safety Invariant: Missing or incomplete telemetry must NEVER be treated as safe or normal traffic. Strategy evaluation is prohibited when required behavioral evidence is unknown.";
+    proposedAction = "Fail closed: Reject packet with HTTP 400 and log pipeline telemetry failure.";
+  } else if (scenarioKey === 'isolation_constraint_triggered') {
+    resultStatus = "Ineligible";
+    resultReason = "Strict Containment Interlock: Outbound egress attempt violates platform zero-egress policy pol-sec-03. Deception strategy execution is halted; container must be quarantined immediately.";
+    proposedAction = "Enforce kernel packet drop, freeze container memory snapshot, and terminate socket.";
+  } else if (strategy.humanReviewRequired || scenarioKey === 'recorded_canary_interaction') {
+    resultStatus = "Requires Review";
+    resultReason = `${strategy.name} requires human analyst authorization before simulated synthetic mutation can proceed under policy rules.`;
+  }
+
+  return {
+    strategy,
+    scenario,
+    status: resultStatus,
+    reason: resultReason,
+    evidenceAvailable: scenario.evidenceAvailable,
+    satisfiedPreconditions: scenario.satisfiedPreconditions,
+    unknownConditions: scenario.unknownConditions,
+    relevantPolicyIds: scenario.relevantPolicyIds,
+    proposedAction,
+    isSimulated: true
+  };
 };
 
 // --- Public Service Methods for Applications (Owner Portal) ---
