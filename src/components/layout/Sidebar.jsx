@@ -196,18 +196,24 @@ export default function Sidebar({ isOpen, onClose }) {
                   </NavLink>
                 </li>
                 <li>
-                  <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
+                  <NavLink
+                    to="/admin/deception-environments"
+                    className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                    onClick={onClose}
+                  >
                     <Network size={18} />
                     <span>Deception Environments</span>
-                    <span className="nav-item-badge">Planned</span>
-                  </span>
+                  </NavLink>
                 </li>
                 <li>
-                  <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
+                  <NavLink
+                    to="/admin/deception-state-graph"
+                    className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                    onClick={onClose}
+                  >
                     <GitBranch size={18} />
                     <span>Deception State Graph</span>
-                    <span className="nav-item-badge">Planned</span>
-                  </span>
+                  </NavLink>
                 </li>
                 <li>
                   <span className="nav-item-link" style={{ opacity: 0.45, cursor: 'not-allowed' }}>

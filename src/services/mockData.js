@@ -12,6 +12,10 @@ const STORAGE_KEY_SETTINGS = 'cyber_deception_settings_v2';
 const STORAGE_KEY_TENANTS = 'cyber_deception_tenants_v1';
 const STORAGE_KEY_INVESTIGATIONS = 'cyber_deception_investigations_v1';
 const STORAGE_KEY_PROFILES = 'cyber_deception_profiles_v1';
+const STORAGE_KEY_ENVIRONMENTS = 'cyber_deception_environments_v1';
+const STORAGE_KEY_ASSETS = 'cyber_deception_assets_v1';
+const STORAGE_KEY_RELATIONSHIPS = 'cyber_deception_relationships_v1';
+const STORAGE_KEY_TRANSITIONS = 'cyber_deception_transitions_v1';
 
 // --- Default Tenants Seed Data ---
 export const DEFAULT_TENANTS = [
@@ -1753,6 +1757,1031 @@ export const DEFAULT_ATTACKER_PROFILES = [
   }
 ];
 
+// --- Deception Environments Seed Data (Stage 2B.3) ---
+export const DEFAULT_DECEPTION_ENVIRONMENTS = [
+  {
+    id: "env-apex-auth-01",
+    name: "Apex Retail Banking Auth Shadow",
+    tenantId: "tenant-apex-9941",
+    tenantName: "Apex FinTech Cloud",
+    applicationId: "app-03",
+    applicationName: "Enterprise Admin Portal",
+    type: "High-interaction honeynet",
+    status: "Active",
+    statusLabel: "Active (Simulated)",
+    description: "High-interaction synthetic authentication and administrative shadow sandbox. Emulates administrative token endpoints, simulated JWT signing authorities, and canary credential traps.",
+    isolationProfile: "Dedicated VPC Decoy Sink (Namespace: apex-auth-sandbox)",
+    clusterNode: "Decoy-Worker-Node-US-East-04",
+    simulatedStrategy: "Credential Exhaustion & Tarpit Latency (Policy SEC-AUTH-09)",
+    activeAssetCount: 8,
+    createdAt: "2026-08-15T10:00:00Z",
+    updatedAt: "2026-10-25T15:42:00Z",
+    lastUpdateHuman: "15 mins ago",
+    linkedInvestigationIds: ["inv-801"],
+    associatedEventIds: ["evt-901", "adm-evt-101"],
+    associatedProfileIds: ["prof-701"]
+  },
+  {
+    id: "env-med-fhir-02",
+    name: "MedSecure FHIR Synthetic Records Vault",
+    tenantId: "tenant-medsecure-1022",
+    tenantName: "MedSecure Health Net",
+    applicationId: "app-11",
+    applicationName: "Patient Records FHIR API",
+    type: "Synthetic API environment",
+    status: "Active",
+    statusLabel: "Active (Simulated)",
+    description: "High-fidelity synthetic HL7 FHIR v4 resource sandbox. Generates fabricated patient EHR records, diagnostic labs, and observation tripwires to catch horizontal privilege escalation (BOLA).",
+    isolationProfile: "HIPAA Zero-Trust Sandbox Sink",
+    clusterNode: "Decoy-Worker-Node-US-Central-02",
+    simulatedStrategy: "Synthetic Object Emulation & Trap Injection (Policy HIPAA-SEC-04)",
+    activeAssetCount: 7,
+    createdAt: "2026-08-20T11:30:00Z",
+    updatedAt: "2026-10-25T15:25:00Z",
+    lastUpdateHuman: "32 mins ago",
+    linkedInvestigationIds: ["inv-802"],
+    associatedEventIds: ["adm-evt-102"],
+    associatedProfileIds: ["prof-702"]
+  },
+  {
+    id: "env-omni-fleet-03",
+    name: "OmniLogistics Fleet Protocol Decoy Sink",
+    tenantId: "tenant-omni-4401",
+    tenantName: "OmniLogistics Global",
+    applicationId: "app-21",
+    applicationName: "Fleet Dispatch WebSocket",
+    type: "Low-interaction decoy",
+    status: "Active",
+    statusLabel: "Active (Simulated)",
+    description: "Protocol smuggling containment container serving mock WebSocket echo framing, fake telemetry channels, and isolated dispatch sockets.",
+    isolationProfile: "Container Namespace Isolation (Pod: decoy-ws-sink-04)",
+    clusterNode: "Decoy-Worker-Node-EU-West-01",
+    simulatedStrategy: "Protocol Delay & Command Sink Isolation (Policy OMNI-WS-02)",
+    activeAssetCount: 5,
+    createdAt: "2026-08-28T14:15:00Z",
+    updatedAt: "2026-10-25T14:59:00Z",
+    lastUpdateHuman: "1 hour ago",
+    linkedInvestigationIds: ["inv-803"],
+    associatedEventIds: ["adm-evt-103"],
+    associatedProfileIds: ["prof-703"]
+  },
+  {
+    id: "env-aero-apt-04",
+    name: "AeroDynamics Classified Sensor Honey-Mesh",
+    tenantId: "tenant-aerodyn-8823",
+    tenantName: "AeroDynamics Defence Lab",
+    applicationId: "app-31",
+    applicationName: "Telemetry Ingestion Relay",
+    type: "Synthetic enterprise network",
+    status: "Review Required",
+    statusLabel: "Review Required (Simulated)",
+    description: "High-assurance avionics telemetry and propulsion mesh. Designed for APT nation-state fingerprinting with synthetic test-rig sensor streams and air-gap trap indicators.",
+    isolationProfile: "Air-Gapped Sovereign Honeynet Mesh (Cluster: Edge-Cluster-Gov-Isolated)",
+    clusterNode: "Gov-Isolated-Decoy-Pod-Prime",
+    simulatedStrategy: "High-Interaction Sandbox Diversion with Fail-Closed Interlock (Policy DEF-APT-01)",
+    activeAssetCount: 6,
+    createdAt: "2026-06-12T09:00:00Z",
+    updatedAt: "2026-10-25T14:48:00Z",
+    lastUpdateHuman: "1.2 hours ago",
+    linkedInvestigationIds: ["inv-804"],
+    associatedEventIds: ["adm-evt-104"],
+    associatedProfileIds: ["prof-704"]
+  },
+  {
+    id: "env-nexus-api-05",
+    name: "NexusHub GraphQL Schema Poisoning Sandbox",
+    tenantId: "tenant-nexushub-3319",
+    tenantName: "NexusHub SaaS Ecosystem",
+    applicationId: "app-41",
+    applicationName: "Developer API Mesh",
+    type: "Synthetic API environment",
+    status: "Maintenance",
+    statusLabel: "Maintenance (Simulated)",
+    description: "Public-facing GraphQL schema poisoning sandbox. Serves fabricated __schema introspection graphs with canary developer tokens and rate-limiting tarpits.",
+    isolationProfile: "Standard Shared Worker Pool",
+    clusterNode: "Decoy-Worker-Node-US-West-03",
+    simulatedStrategy: "Introspection Tarpit & Schema Obfuscation",
+    activeAssetCount: 4,
+    createdAt: "2026-09-05T12:00:00Z",
+    updatedAt: "2026-10-25T13:16:00Z",
+    lastUpdateHuman: "2.8 hours ago",
+    linkedInvestigationIds: ["inv-806"],
+    associatedEventIds: [],
+    associatedProfileIds: ["prof-706"]
+  },
+  {
+    id: "env-quant-fix-06",
+    name: "QuantEdge Ultra-Low Latency FIX Trap",
+    tenantId: "tenant-quant-7712",
+    tenantName: "QuantEdge Capital",
+    applicationId: "app-51",
+    applicationName: "High-Frequency FIX Gateway",
+    type: "Low-interaction decoy",
+    status: "Provisioning",
+    statusLabel: "Provisioning (Simulated)",
+    description: "Ultra-low latency FIX protocol shadow sink designed to emulate financial exchange market data with canary order routing traps.",
+    isolationProfile: "Hardware Accelerated eBPF Bypass",
+    clusterNode: "Decoy-Worker-Node-Equinix-NY4",
+    simulatedStrategy: "Simulated Order Sink & Tarpit Delay",
+    activeAssetCount: 3,
+    createdAt: "2026-10-20T16:00:00Z",
+    updatedAt: "2026-10-25T12:44:00Z",
+    lastUpdateHuman: "3.5 hours ago",
+    linkedInvestigationIds: [],
+    associatedEventIds: [],
+    associatedProfileIds: []
+  }
+];
+
+// --- Synthetic Assets Seed Data (Stage 2B.3) ---
+export const DEFAULT_SYNTHETIC_ASSETS = [
+  // Assets for Apex Auth Sandbox (env-apex-auth-01)
+  {
+    id: "ast-apex-web-01",
+    environmentId: "env-apex-auth-01",
+    name: "Decoy Admin Portal UI",
+    type: "web_application",
+    simulatedState: "Active",
+    dsgLayer: "immutable_policy",
+    description: "Public landing portal for administrative authentication emulation with synthetic branding.",
+    fictionalDetails: { url: "https://decoy-admin.apexfintech.internal", port: 443, protocol: "HTTPS/2" },
+    x: 80,
+    y: 180,
+    relatedAssetIds: ["ast-apex-api-01"]
+  },
+  {
+    id: "ast-apex-api-01",
+    environmentId: "env-apex-auth-01",
+    name: "Fake Auth Token Endpoint",
+    type: "api_endpoint",
+    simulatedState: "Engaged",
+    dsgLayer: "controlled_dynamic",
+    description: "REST endpoint accepting dictionary authentication requests and issuing simulated session tokens.",
+    fictionalDetails: { path: "/manage/v1/auth/token", method: "POST", rateLimit: "Adaptive Tarpit" },
+    x: 280,
+    y: 120,
+    relatedAssetIds: ["ast-apex-user-01", "ast-apex-canary-01"]
+  },
+  {
+    id: "ast-apex-user-01",
+    environmentId: "env-apex-auth-01",
+    name: "Synthetic SuperAdmin Account",
+    type: "user_identity",
+    simulatedState: "Active",
+    dsgLayer: "controlled_dynamic",
+    description: "Fabricated high-privilege administrative persona with mock organizational metadata.",
+    fictionalDetails: { username: "superadmin-dev", role: "ClusterAdmin", email: "superadmin-canary@apexfintech.internal" },
+    x: 480,
+    y: 80,
+    relatedAssetIds: ["ast-apex-cred-01", "ast-apex-svc-01"]
+  },
+  {
+    id: "ast-apex-cred-01",
+    environmentId: "env-apex-auth-01",
+    name: "Simulated JWT Signing Key",
+    type: "synthetic_credential",
+    simulatedState: "Engaged",
+    dsgLayer: "controlled_dynamic",
+    description: "Cryptographic canary key embedded in mock token response to track token replay downstream.",
+    fictionalDetails: { algorithm: "RS256-Simulated", keyId: "canary-rsa-key-#8891", fingerprint: "SHA256:4a8f9c10b22" },
+    x: 680,
+    y: 80,
+    relatedAssetIds: []
+  },
+  {
+    id: "ast-apex-canary-01",
+    environmentId: "env-apex-auth-01",
+    name: "Canary Tripwire Token #88912",
+    type: "canary_token",
+    simulatedState: "Triggered",
+    dsgLayer: "immutable_policy",
+    description: "High-interaction canary credential planted in public documentation to detect reconnaissance.",
+    fictionalDetails: { tokenValue: "CANARY_TOKEN_HASH_#88912", tripwireAction: "Lock to Sandbox", alertSlack: true },
+    x: 280,
+    y: 320,
+    relatedAssetIds: ["ast-apex-cred-01"]
+  },
+  {
+    id: "ast-apex-svc-01",
+    environmentId: "env-apex-auth-01",
+    name: "Synthetic Tenant Directory API",
+    type: "internal_service",
+    simulatedState: "Standby",
+    dsgLayer: "controlled_dynamic",
+    description: "Internal microservice simulating multi-tenant customer lookups with delayed responses.",
+    fictionalDetails: { internalHost: "tenant-svc.decoy.internal", port: 8080, latencyDelay: "650ms" },
+    x: 480,
+    y: 260,
+    relatedAssetIds: ["ast-apex-db-01"]
+  },
+  {
+    id: "ast-apex-db-01",
+    environmentId: "env-apex-auth-01",
+    name: "Decoy Ledger PostgreSQL Trap",
+    type: "database",
+    simulatedState: "Active",
+    dsgLayer: "controlled_dynamic",
+    description: "Emulated relational database with synthetic financial transaction schemas and query tarpit.",
+    fictionalDetails: { engine: "PostgreSQL 14 Decoy", dbName: "apex_settlement_canary", tablesCount: 14 },
+    x: 680,
+    y: 260,
+    relatedAssetIds: ["ast-apex-doc-01"]
+  },
+  {
+    id: "ast-apex-doc-01",
+    environmentId: "env-apex-auth-01",
+    name: "Simulated Compliance Audit Report",
+    type: "file_document",
+    simulatedState: "Active",
+    dsgLayer: "observational_attacker",
+    description: "Fabricated PDF containing canary tracking beacon to log unauthorized document download.",
+    fictionalDetails: { filename: "pci_dss_audit_q3_confidential.pdf", size: "2.4 MB", beaconType: "DNS-Canary-Beacon" },
+    x: 680,
+    y: 400,
+    relatedAssetIds: []
+  },
+
+  // Assets for MedSecure FHIR Vault (env-med-fhir-02)
+  {
+    id: "ast-med-web-01",
+    environmentId: "env-med-fhir-02",
+    name: "FHIR Client Portal Decoy",
+    type: "web_application",
+    simulatedState: "Active",
+    dsgLayer: "immutable_policy",
+    description: "Emulated electronic health record (EHR) partner login portal for hospital federation access.",
+    fictionalDetails: { url: "https://fhir-portal.medsecure.internal", tlsCert: "Simulated-EHR-Authority" },
+    x: 80,
+    y: 180,
+    relatedAssetIds: ["ast-med-api-01"]
+  },
+  {
+    id: "ast-med-api-01",
+    environmentId: "env-med-fhir-02",
+    name: "Synthetic /Patient FHIR Resource",
+    type: "api_endpoint",
+    simulatedState: "Engaged",
+    dsgLayer: "controlled_dynamic",
+    description: "RESTful HL7 FHIR resource endpoint dynamically producing synthetic patient records.",
+    fictionalDetails: { path: "/api/v4/Patient", standard: "HL7 FHIR Release 4", supportedParams: ["_id", "name", "birthdate"] },
+    x: 280,
+    y: 140,
+    relatedAssetIds: ["ast-med-user-01", "ast-med-db-01", "ast-med-canary-01"]
+  },
+  {
+    id: "ast-med-user-01",
+    environmentId: "env-med-fhir-02",
+    name: "Simulated Attending Physician",
+    type: "user_identity",
+    simulatedState: "Active",
+    dsgLayer: "controlled_dynamic",
+    description: "Synthetic medical practitioner persona with clinical credentials and specialty tags.",
+    fictionalDetails: { username: "dr.evans.canary", specialty: "Cardiology", npiNumber: "1942088192" },
+    x: 480,
+    y: 80,
+    relatedAssetIds: ["ast-med-cred-01"]
+  },
+  {
+    id: "ast-med-cred-01",
+    environmentId: "env-med-fhir-02",
+    name: "Canary OAuth Clinical Bearer Token",
+    type: "synthetic_credential",
+    simulatedState: "Standby",
+    dsgLayer: "controlled_dynamic",
+    description: "Synthetic SMART-on-FHIR OAuth token containing cryptographic canary claims.",
+    fictionalDetails: { tokenType: "Bearer", scope: "patient/Patient.read", expiry: "2026-12-31" },
+    x: 680,
+    y: 80,
+    relatedAssetIds: []
+  },
+  {
+    id: "ast-med-canary-01",
+    environmentId: "env-med-fhir-02",
+    name: "Synthetic Patient #1042 Tripwire",
+    type: "canary_token",
+    simulatedState: "Triggered",
+    dsgLayer: "immutable_policy",
+    description: "Dedicated canary patient record designed to alert when sequential ID enumeration (BOLA) occurs.",
+    fictionalDetails: { patientId: "CANARY_PATIENT_1042", simulatedName: "Jane Doe (Canary)", triggerAlert: "Immediate SOC Alert" },
+    x: 280,
+    y: 340,
+    relatedAssetIds: []
+  },
+  {
+    id: "ast-med-db-01",
+    environmentId: "env-med-fhir-02",
+    name: "Mock MongoDB FHIR Document Store",
+    type: "database",
+    simulatedState: "Active",
+    dsgLayer: "controlled_dynamic",
+    description: "NoSQL document collection holding 500 generated JSON medical observation charts.",
+    fictionalDetails: { engine: "MongoDB Decoy", collection: "fhir_patients_mock", recordsCount: 500 },
+    x: 480,
+    y: 260,
+    relatedAssetIds: ["ast-med-doc-01"]
+  },
+  {
+    id: "ast-med-doc-01",
+    environmentId: "env-med-fhir-02",
+    name: "Fabricated Diagnostic Chart #1042",
+    type: "file_document",
+    simulatedState: "Engaged",
+    dsgLayer: "observational_attacker",
+    description: "Synthetic medical diagnostic report containing simulated lab panels and canary watermarks.",
+    fictionalDetails: { recordId: "ehr_diag_chart_canary_1042.json", format: "FHIR DiagnosticReport", size: "128 KB" },
+    x: 680,
+    y: 260,
+    relatedAssetIds: ["ast-med-canary-01"]
+  },
+
+  // Assets for OmniLogistics Fleet Decoy Sink (env-omni-fleet-03)
+  {
+    id: "ast-omni-api-01",
+    environmentId: "env-omni-fleet-03",
+    name: "Mock WebSocket Upgrade Route",
+    type: "api_endpoint",
+    simulatedState: "Engaged",
+    dsgLayer: "controlled_dynamic",
+    description: "Protocol upgrade handler validating WebSocket handshakes and trapping CRLF smuggling packets.",
+    fictionalDetails: { path: "/v1/telemetry/ws", subprotocol: "fleet-telemetry-v2", proxyTrap: "CRLF Sanitizer" },
+    x: 120,
+    y: 200,
+    relatedAssetIds: ["ast-omni-svc-01", "ast-omni-canary-01"]
+  },
+  {
+    id: "ast-omni-svc-01",
+    environmentId: "env-omni-fleet-03",
+    name: "Decoy Fleet Telemetry Relay",
+    type: "internal_service",
+    simulatedState: "Active",
+    dsgLayer: "controlled_dynamic",
+    description: "Mock event broker echoing synthetic GPS coordinates and simulated vehicle telemetry.",
+    fictionalDetails: { podName: "decoy-ws-sink-04", activeConnections: 1, commandsExecuted: 12 },
+    x: 360,
+    y: 140,
+    relatedAssetIds: ["ast-omni-user-01", "ast-omni-db-01"]
+  },
+  {
+    id: "ast-omni-user-01",
+    environmentId: "env-omni-fleet-03",
+    name: "Simulated Vehicle Unit GPS-882",
+    type: "user_identity",
+    simulatedState: "Active",
+    dsgLayer: "controlled_dynamic",
+    description: "Synthetic vehicle telemetry transponder persona with simulated fleet VIN.",
+    fictionalDetails: { unitId: "FLEET-TRUCK-882", routeId: "EU-FRA-MUC-901", speed: "84 km/h (Simulated)" },
+    x: 620,
+    y: 80,
+    relatedAssetIds: []
+  },
+  {
+    id: "ast-omni-db-01",
+    environmentId: "env-omni-fleet-03",
+    name: "Simulated Redis Geolocation Buffer",
+    type: "database",
+    simulatedState: "Active",
+    dsgLayer: "controlled_dynamic",
+    description: "In-memory cache emulating high-frequency fleet coordinate queues.",
+    fictionalDetails: { engine: "Redis 7 Decoy", memoryUsage: "18 MB", keysCount: 420 },
+    x: 620,
+    y: 240,
+    relatedAssetIds: []
+  },
+  {
+    id: "ast-omni-canary-01",
+    environmentId: "env-omni-fleet-03",
+    name: "Protocol Framing Fingerprint Trap",
+    type: "canary_token",
+    simulatedState: "Triggered",
+    dsgLayer: "immutable_policy",
+    description: "Inspection filter detecting malformed HTTP upgrade byte sequences.",
+    fictionalDetails: { ruleId: "SIG-OMNI-CRLF-02", action: "Container Isolation", dwellTimer: "4m 10s" },
+    x: 360,
+    y: 340,
+    relatedAssetIds: []
+  },
+
+  // Assets for AeroDynamics Classified Sensor Honey-Mesh (env-aero-apt-04)
+  {
+    id: "ast-aero-svc-01",
+    environmentId: "env-aero-apt-04",
+    name: "Classified Sensor Rig Ingress Relay",
+    type: "internal_service",
+    simulatedState: "Active",
+    dsgLayer: "immutable_policy",
+    description: "Military-grade avionics telemetry relay equipped with hardware eBPF inspection.",
+    fictionalDetails: { classification: "Sovereign Tier", port: 443, hardwareFilter: "eBPF-AirGap-Relay" },
+    x: 100,
+    y: 180,
+    relatedAssetIds: ["ast-aero-api-01"]
+  },
+  {
+    id: "ast-aero-api-01",
+    environmentId: "env-aero-apt-04",
+    name: "Synthetic /telemetry/v1/sync Endpoint",
+    type: "api_endpoint",
+    simulatedState: "Quarantined",
+    dsgLayer: "controlled_dynamic",
+    description: "Proprietary telemetry sync interface emulating avionics test bench sensor packets.",
+    fictionalDetails: { path: "/telemetry/v1/sync", format: "Binary Avionics Framing", disposition: "Blocked at Edge" },
+    x: 340,
+    y: 140,
+    relatedAssetIds: ["ast-aero-cred-01", "ast-aero-db-01", "ast-aero-canary-01"]
+  },
+  {
+    id: "ast-aero-cred-01",
+    environmentId: "env-aero-apt-04",
+    name: "Simulated Avionics Token CANARY_DEFENCE",
+    type: "synthetic_credential",
+    simulatedState: "Standby",
+    dsgLayer: "controlled_dynamic",
+    description: "Fabricated cryptographic beacon credentials planted in telemetry headers.",
+    fictionalDetails: { tokenName: "CANARY_DEFENCE_BEACON_ALPHA", cipher: "Proprietary Test Cipher" },
+    x: 580,
+    y: 80,
+    relatedAssetIds: ["ast-aero-canary-01"]
+  },
+  {
+    id: "ast-aero-db-01",
+    environmentId: "env-aero-apt-04",
+    name: "Synthetic Propulsion Telemetry Store",
+    type: "database",
+    simulatedState: "Active",
+    dsgLayer: "controlled_dynamic",
+    description: "Time-series database simulating turbine vibration and exhaust temperature logs.",
+    fictionalDetails: { engine: "InfluxDB Decoy", retention: "7 Days", streamsCount: 8 },
+    x: 580,
+    y: 220,
+    relatedAssetIds: ["ast-aero-doc-01"]
+  },
+  {
+    id: "ast-aero-doc-01",
+    environmentId: "env-aero-apt-04",
+    name: "Fake Aerodynamic Test Spec 2026.docx",
+    type: "file_document",
+    simulatedState: "Active",
+    dsgLayer: "observational_attacker",
+    description: "Synthetic propulsion specification document containing honey-token canary macros.",
+    fictionalDetails: { docId: "AERO-SPEC-2026-X9", classification: "Synthetic Classified", size: "1.8 MB" },
+    x: 580,
+    y: 360,
+    relatedAssetIds: []
+  },
+  {
+    id: "ast-aero-canary-01",
+    environmentId: "env-aero-apt-04",
+    name: "Air-Gap Beacon Tripwire Alpha",
+    type: "canary_token",
+    simulatedState: "Triggered",
+    dsgLayer: "immutable_policy",
+    description: "Tripwire beacon matching nation-state threat signature SIG-APT-DEF-88.",
+    fictionalDetails: { sigId: "SIG-APT-DEF-88", failSafe: "TCP Reset / Air-Gap Severance", alertLevel: "Critical" },
+    x: 340,
+    y: 340,
+    relatedAssetIds: []
+  },
+
+  // Assets for NexusHub GraphQL Sandbox (env-nexus-api-05)
+  {
+    id: "ast-nexus-api-01",
+    environmentId: "env-nexus-api-05",
+    name: "Synthetic /graphql Endpoint",
+    type: "api_endpoint",
+    simulatedState: "Active",
+    dsgLayer: "controlled_dynamic",
+    description: "Public GraphQL query interface responding with synthetic schema introspection structures.",
+    fictionalDetails: { path: "/graphql", introspection: "Simulated Schema Enabled", queryDepthMax: 6 },
+    x: 140,
+    y: 180,
+    relatedAssetIds: ["ast-nexus-user-01", "ast-nexus-canary-01"]
+  },
+  {
+    id: "ast-nexus-user-01",
+    environmentId: "env-nexus-api-05",
+    name: "Simulated Developer Account",
+    type: "user_identity",
+    simulatedState: "Active",
+    dsgLayer: "controlled_dynamic",
+    description: "Synthetic external developer identity registered with sandbox API access.",
+    fictionalDetails: { username: "dev-community-canary", plan: "Free Sandbox Tier", created: "2026-09-05" },
+    x: 420,
+    y: 120,
+    relatedAssetIds: ["ast-nexus-cred-01"]
+  },
+  {
+    id: "ast-nexus-cred-01",
+    environmentId: "env-nexus-api-05",
+    name: "Canary API Key 'canary_dev_key_#441'",
+    type: "synthetic_credential",
+    simulatedState: "Standby",
+    dsgLayer: "controlled_dynamic",
+    description: "Synthetic API key embedded in introspection queries to log downstream developer usage.",
+    fictionalDetails: { keyPrefix: "nex_canary_441", permissions: "schema:read:mock" },
+    x: 680,
+    y: 120,
+    relatedAssetIds: []
+  },
+  {
+    id: "ast-nexus-canary-01",
+    environmentId: "env-nexus-api-05",
+    name: "Schema Introspection Trap",
+    type: "canary_token",
+    simulatedState: "Standby",
+    dsgLayer: "immutable_policy",
+    description: "Monitors recursive schema inspection attempts and applies artificial response latency.",
+    fictionalDetails: { rule: "MaxDepth > 5 -> Delay 1200ms", hitCount: 310 },
+    x: 420,
+    y: 300,
+    relatedAssetIds: []
+  },
+
+  // Assets for QuantEdge FIX Trap (env-quant-fix-06)
+  {
+    id: "ast-quant-api-01",
+    environmentId: "env-quant-fix-06",
+    name: "FIX Protocol Ingress Socket",
+    type: "api_endpoint",
+    simulatedState: "Standby",
+    dsgLayer: "controlled_dynamic",
+    description: "Low-latency FIX protocol session socket emulating financial market data streams.",
+    fictionalDetails: { port: 9800, protocol: "FIX.4.4", crossConnect: "Equinix NY4" },
+    x: 160,
+    y: 200,
+    relatedAssetIds: ["ast-quant-db-01", "ast-quant-canary-01"]
+  },
+  {
+    id: "ast-quant-db-01",
+    environmentId: "env-quant-fix-06",
+    name: "Synthetic Order Book Sink",
+    type: "database",
+    simulatedState: "Standby",
+    dsgLayer: "controlled_dynamic",
+    description: "Simulated financial exchange book accepting and discarding canary market orders.",
+    fictionalDetails: { symbol: "CANY/USD", orderType: "Limit Order Decoy Sink" },
+    x: 520,
+    y: 140,
+    relatedAssetIds: []
+  },
+  {
+    id: "ast-quant-canary-01",
+    environmentId: "env-quant-fix-06",
+    name: "Canary Order ID Trap",
+    type: "canary_token",
+    simulatedState: "Standby",
+    dsgLayer: "immutable_policy",
+    description: "Unique synthetic order ID identifier notifying risk systems if traded externally.",
+    fictionalDetails: { orderId: "CANARY_ORD_99182A", alertBus: "Equinix-LowLatency-Relay" },
+    x: 520,
+    y: 300,
+    relatedAssetIds: []
+  }
+];
+
+// --- Deception Relationships Seed Data (Stage 2B.3) ---
+export const DEFAULT_DECEPTION_RELATIONSHIPS = [
+  // Apex Environment Relationships
+  {
+    id: "rel-apex-1",
+    environmentId: "env-apex-auth-01",
+    source: "ast-apex-web-01",
+    target: "ast-apex-api-01",
+    type: "EXPOSES",
+    label: "Exposes",
+    dsgLayer: "immutable_policy",
+    status: "Configured",
+    notes: "Web application serves public login form forwarding to fake auth API endpoint."
+  },
+  {
+    id: "rel-apex-2",
+    environmentId: "env-apex-auth-01",
+    source: "ast-apex-api-01",
+    target: "ast-apex-user-01",
+    type: "AUTHENTICATES_TO",
+    label: "Authenticates To",
+    dsgLayer: "controlled_dynamic",
+    status: "Active Ingress",
+    notes: "API endpoint matches dictionary payloads against synthetic superadmin persona."
+  },
+  {
+    id: "rel-apex-3",
+    environmentId: "env-apex-auth-01",
+    source: "ast-apex-user-01",
+    target: "ast-apex-cred-01",
+    type: "CAN_ACCESS",
+    label: "Can Access",
+    dsgLayer: "controlled_dynamic",
+    status: "Observed Traversal",
+    notes: "Synthetic superadmin persona is authorized to claim simulated JWT signing keys."
+  },
+  {
+    id: "rel-apex-4",
+    environmentId: "env-apex-auth-01",
+    source: "ast-apex-api-01",
+    target: "ast-apex-canary-01",
+    type: "MONITORS",
+    label: "Monitors",
+    dsgLayer: "immutable_policy",
+    status: "Observed Traversal",
+    notes: "API endpoint embeds canary token #88912 tripwire on all invalid password responses."
+  },
+  {
+    id: "rel-apex-5",
+    environmentId: "env-apex-auth-01",
+    source: "ast-apex-user-01",
+    target: "ast-apex-svc-01",
+    type: "CAN_ACCESS",
+    label: "Can Access",
+    dsgLayer: "controlled_dynamic",
+    status: "Configured",
+    notes: "Authenticated sessions permit horizontal traversal into fake tenant directory service."
+  },
+  {
+    id: "rel-apex-6",
+    environmentId: "env-apex-auth-01",
+    source: "ast-apex-svc-01",
+    target: "ast-apex-db-01",
+    type: "CONNECTS_TO",
+    label: "Connects To",
+    dsgLayer: "controlled_dynamic",
+    status: "Configured",
+    notes: "Tenant directory microservice maintains connection pool to synthetic PostgreSQL trap."
+  },
+  {
+    id: "rel-apex-7",
+    environmentId: "env-apex-auth-01",
+    source: "ast-apex-db-01",
+    target: "ast-apex-doc-01",
+    type: "CONTAINS",
+    label: "Contains",
+    dsgLayer: "observational_attacker",
+    status: "Configured",
+    notes: "Database mock table stores references to downloadable synthetic PCI audit document."
+  },
+  {
+    id: "rel-apex-8",
+    environmentId: "env-apex-auth-01",
+    source: "ast-apex-canary-01",
+    target: "ast-apex-cred-01",
+    type: "MONITORS",
+    label: "Monitors",
+    dsgLayer: "immutable_policy",
+    status: "Configured",
+    notes: "Canary tripwire detects any unauthorized attempt to sign payloads with synthetic JWT key."
+  },
+
+  // MedSecure Environment Relationships
+  {
+    id: "rel-med-1",
+    environmentId: "env-med-fhir-02",
+    source: "ast-med-web-01",
+    target: "ast-med-api-01",
+    type: "EXPOSES",
+    label: "Exposes",
+    dsgLayer: "immutable_policy",
+    status: "Configured",
+    notes: "Portal UI routes clinical FHIR queries to synthetic /Patient endpoint."
+  },
+  {
+    id: "rel-med-2",
+    environmentId: "env-med-fhir-02",
+    source: "ast-med-api-01",
+    target: "ast-med-user-01",
+    type: "AUTHENTICATES_TO",
+    label: "Authenticates To",
+    dsgLayer: "controlled_dynamic",
+    status: "Configured",
+    notes: "FHIR endpoint accepts requests authenticated as simulated attending physician."
+  },
+  {
+    id: "rel-med-3",
+    environmentId: "env-med-fhir-02",
+    source: "ast-med-user-01",
+    target: "ast-med-cred-01",
+    type: "CAN_ACCESS",
+    label: "Can Access",
+    dsgLayer: "controlled_dynamic",
+    status: "Configured",
+    notes: "Physician persona holds mock OAuth token credentials for healthcare API access."
+  },
+  {
+    id: "rel-med-4",
+    environmentId: "env-med-fhir-02",
+    source: "ast-med-api-01",
+    target: "ast-med-db-01",
+    type: "CONNECTS_TO",
+    label: "Connects To",
+    dsgLayer: "controlled_dynamic",
+    status: "Active Ingress",
+    notes: "API endpoint reads patient resources from synthetic MongoDB document repository."
+  },
+  {
+    id: "rel-med-5",
+    environmentId: "env-med-fhir-02",
+    source: "ast-med-db-01",
+    target: "ast-med-doc-01",
+    type: "CONTAINS",
+    label: "Contains",
+    dsgLayer: "observational_attacker",
+    status: "Active Ingress",
+    notes: "Database collection houses synthetic diagnostic report JSON record #1042."
+  },
+  {
+    id: "rel-med-6",
+    environmentId: "env-med-fhir-02",
+    source: "ast-med-doc-01",
+    target: "ast-med-canary-01",
+    type: "MONITORS",
+    label: "Monitors",
+    dsgLayer: "immutable_policy",
+    status: "Observed Traversal",
+    notes: "Diagnostic report record embeds canary tripwire #1042 triggered during BOLA scrape."
+  },
+  {
+    id: "rel-med-7",
+    environmentId: "env-med-fhir-02",
+    source: "ast-med-api-01",
+    target: "ast-med-canary-01",
+    type: "MONITORS",
+    label: "Monitors",
+    dsgLayer: "immutable_policy",
+    status: "Observed Traversal",
+    notes: "Endpoint tripwire rule monitors sequential integer query parameters."
+  },
+
+  // OmniLogistics Environment Relationships
+  {
+    id: "rel-omni-1",
+    environmentId: "env-omni-fleet-03",
+    source: "ast-omni-api-01",
+    target: "ast-omni-svc-01",
+    type: "CONNECTS_TO",
+    label: "Connects To",
+    dsgLayer: "controlled_dynamic",
+    status: "Active Ingress",
+    notes: "WebSocket handshake forwards client frames to sandboxed echo telemetry relay."
+  },
+  {
+    id: "rel-omni-2",
+    environmentId: "env-omni-fleet-03",
+    source: "ast-omni-svc-01",
+    target: "ast-omni-user-01",
+    type: "AUTHENTICATES_TO",
+    label: "Authenticates To",
+    dsgLayer: "controlled_dynamic",
+    status: "Configured",
+    notes: "Telemetry relay validates packets against synthetic truck unit GPS-882 persona."
+  },
+  {
+    id: "rel-omni-3",
+    environmentId: "env-omni-fleet-03",
+    source: "ast-omni-svc-01",
+    target: "ast-omni-db-01",
+    type: "CONNECTS_TO",
+    label: "Connects To",
+    dsgLayer: "controlled_dynamic",
+    status: "Configured",
+    notes: "Relay buffers inbound mock telemetry points in synthetic Redis store."
+  },
+  {
+    id: "rel-omni-4",
+    environmentId: "env-omni-fleet-03",
+    source: "ast-omni-api-01",
+    target: "ast-omni-canary-01",
+    type: "MONITORS",
+    label: "Monitors",
+    dsgLayer: "immutable_policy",
+    status: "Observed Traversal",
+    notes: "Inspection tripwire flags CRLF injection attempts on HTTP Upgrade packets."
+  },
+
+  // AeroDynamics Environment Relationships
+  {
+    id: "rel-aero-1",
+    environmentId: "env-aero-apt-04",
+    source: "ast-aero-svc-01",
+    target: "ast-aero-api-01",
+    type: "EXPOSES",
+    label: "Exposes",
+    dsgLayer: "immutable_policy",
+    status: "Configured",
+    notes: "Sensor rig ingress service exposes binary sync endpoint."
+  },
+  {
+    id: "rel-aero-2",
+    environmentId: "env-aero-apt-04",
+    source: "ast-aero-api-01",
+    target: "ast-aero-cred-01",
+    type: "CAN_ACCESS",
+    label: "Can Access",
+    dsgLayer: "controlled_dynamic",
+    status: "Configured",
+    notes: "Sync endpoint permits authenticated access to mock avionics cryptographic tokens."
+  },
+  {
+    id: "rel-aero-3",
+    environmentId: "env-aero-apt-04",
+    source: "ast-aero-api-01",
+    target: "ast-aero-db-01",
+    type: "CONNECTS_TO",
+    label: "Connects To",
+    dsgLayer: "controlled_dynamic",
+    status: "Configured",
+    notes: "Sync service streams sensor readings to synthetic propulsion time-series DB."
+  },
+  {
+    id: "rel-aero-4",
+    environmentId: "env-aero-apt-04",
+    source: "ast-aero-db-01",
+    target: "ast-aero-doc-01",
+    type: "CONTAINS",
+    label: "Contains",
+    dsgLayer: "observational_attacker",
+    status: "Configured",
+    notes: "Database mock schema links to classified aerodynamic test specification document."
+  },
+  {
+    id: "rel-aero-5",
+    environmentId: "env-aero-apt-04",
+    source: "ast-aero-api-01",
+    target: "ast-aero-canary-01",
+    type: "MONITORS",
+    label: "Monitors",
+    dsgLayer: "immutable_policy",
+    status: "Observed Traversal",
+    notes: "Tripwire flags binary byte sequences matching classified signature SIG-APT-DEF-88."
+  },
+  {
+    id: "rel-aero-6",
+    environmentId: "env-aero-apt-04",
+    source: "ast-aero-cred-01",
+    target: "ast-aero-canary-01",
+    type: "MONITORS",
+    label: "Monitors",
+    dsgLayer: "immutable_policy",
+    status: "Configured",
+    notes: "Beacon tripwire alerts if synthetic avionics token is broadcast on external networks."
+  },
+
+  // NexusHub Environment Relationships
+  {
+    id: "rel-nexus-1",
+    environmentId: "env-nexus-api-05",
+    source: "ast-nexus-api-01",
+    target: "ast-nexus-user-01",
+    type: "AUTHENTICATES_TO",
+    label: "Authenticates To",
+    dsgLayer: "controlled_dynamic",
+    status: "Configured",
+    notes: "GraphQL endpoint authenticates sandbox developer identity."
+  },
+  {
+    id: "rel-nexus-2",
+    environmentId: "env-nexus-api-05",
+    source: "ast-nexus-user-01",
+    target: "ast-nexus-cred-01",
+    type: "CAN_ACCESS",
+    label: "Can Access",
+    dsgLayer: "controlled_dynamic",
+    status: "Configured",
+    notes: "Developer account grants access to canary API key for sandbox queries."
+  },
+  {
+    id: "rel-nexus-3",
+    environmentId: "env-nexus-api-05",
+    source: "ast-nexus-api-01",
+    target: "ast-nexus-canary-01",
+    type: "MONITORS",
+    label: "Monitors",
+    dsgLayer: "immutable_policy",
+    status: "Observed Traversal",
+    notes: "Introspection trap rate-limits high-depth recursive AST queries."
+  },
+
+  // QuantEdge Environment Relationships
+  {
+    id: "rel-quant-1",
+    environmentId: "env-quant-fix-06",
+    source: "ast-quant-api-01",
+    target: "ast-quant-db-01",
+    type: "CONNECTS_TO",
+    label: "Connects To",
+    dsgLayer: "controlled_dynamic",
+    status: "Configured",
+    notes: "FIX socket feeds test order frames to synthetic order book sink."
+  },
+  {
+    id: "rel-quant-2",
+    environmentId: "env-quant-fix-06",
+    source: "ast-quant-api-01",
+    target: "ast-quant-canary-01",
+    type: "MONITORS",
+    label: "Monitors",
+    dsgLayer: "immutable_policy",
+    status: "Configured",
+    notes: "Canary order tripwire alerts if simulated limit orders are re-routed outside sandbox."
+  }
+];
+
+// --- Simulated DSG Transitions History Seed Data (Stage 2B.3) ---
+export const DEFAULT_DSG_TRANSITIONS = [
+  {
+    id: "trans-apex-01",
+    environmentId: "env-apex-auth-01",
+    timestamp: "2026-10-25 15:40:02 UTC",
+    previousState: "Standby Decoy Pool (Warm)",
+    newState: "High-Interaction Container Allocated",
+    trigger: "Attacker burst of 140 dictionary password variants scored 0.985 anomaly confidence.",
+    evidenceReference: "evt-901 / inv-801",
+    adaptationAction: "Dynamic deployment of decoy container decoy-worker-pod-89b to absorb authentication traffic.",
+    dsgLayerAffected: "controlled_dynamic",
+    status: "Simulated Demonstration Transition"
+  },
+  {
+    id: "trans-apex-02",
+    environmentId: "env-apex-auth-01",
+    timestamp: "2026-10-25 15:41:15 UTC",
+    previousState: "Generic Decoy Credentials Active",
+    newState: "Canary Token Tripwire Activated",
+    trigger: "POST request presented canary token CANARY_TOKEN_HASH_#88912 harvested from fake documentation.",
+    evidenceReference: "evt-901 / inv-801",
+    adaptationAction: "Canary tripwire locked session sess-88f1c-d7 strictly into sandbox namespace; dispatched simulated JWT keys.",
+    dsgLayerAffected: "immutable_policy",
+    status: "Simulated Demonstration Transition"
+  },
+  {
+    id: "trans-apex-03",
+    environmentId: "env-apex-auth-01",
+    timestamp: "2026-10-25 15:42:00 UTC",
+    previousState: "Standard Latency (2ms)",
+    newState: "Tarpit Latency Injected (1200ms)",
+    trigger: "Attacker initiated automated API enumeration using python-requests tooling.",
+    evidenceReference: "inv-801",
+    adaptationAction: "Applied 1200ms synthetic delay on /manage/v1/tenants/list endpoint to slow scanner velocity by 84%.",
+    dsgLayerAffected: "controlled_dynamic",
+    status: "Simulated Demonstration Transition"
+  },
+  {
+    id: "trans-med-01",
+    environmentId: "env-med-fhir-02",
+    timestamp: "2026-10-25 15:22:10 UTC",
+    previousState: "Production Passthrough",
+    newState: "Rerouted to Synthetic Patient Vault",
+    trigger: "Sequential iteration across consecutive patient integer IDs flagged horizontal BOLA traversal.",
+    evidenceReference: "adm-evt-102 / inv-802",
+    adaptationAction: "Policy HIPAA-SEC-04 diverted session sess-med-419b-01 to synthetic FHIR resource provider.",
+    dsgLayerAffected: "controlled_dynamic",
+    status: "Simulated Demonstration Transition"
+  },
+  {
+    id: "trans-med-02",
+    environmentId: "env-med-fhir-02",
+    timestamp: "2026-10-25 15:25:00 UTC",
+    previousState: "Dynamic Patient Generation",
+    newState: "Canary Patient #1042 Accessed",
+    trigger: "Query parameter requested targeted synthetic canary record CANARY_PATIENT_1042.",
+    evidenceReference: "adm-evt-102 / inv-802",
+    adaptationAction: "Dispatched fabricated diagnostic oncology chart containing canary watermarks.",
+    dsgLayerAffected: "observational_attacker",
+    status: "Simulated Demonstration Transition"
+  },
+  {
+    id: "trans-omni-01",
+    environmentId: "env-omni-fleet-03",
+    timestamp: "2026-10-25 14:55:00 UTC",
+    previousState: "Normal WebSocket Gateway",
+    newState: "CRLF Smuggling Isolated",
+    trigger: "HTTP Upgrade packet contained embedded carriage-return and newline bytes attempting socket pipe takeover.",
+    evidenceReference: "adm-evt-103 / inv-803",
+    adaptationAction: "Rerouted session sess-ws-omni-77a into mock echo container decoy-ws-sink-04.",
+    dsgLayerAffected: "controlled_dynamic",
+    status: "Simulated Demonstration Transition"
+  },
+  {
+    id: "trans-aero-01",
+    environmentId: "env-aero-apt-04",
+    timestamp: "2026-10-25 14:44:10 UTC",
+    previousState: "Air-Gap Ingress Active",
+    newState: "Emergency Fail-Closed TCP Reset",
+    trigger: "Binary payload matched classified nation-state threat signature SIG-APT-DEF-88.",
+    evidenceReference: "adm-evt-104 / inv-804",
+    adaptationAction: "Discrepancy: Policy designated Honeynet diversion, but hardware eBPF enforced immediate TCP Reset (Air-Gap Interlock).",
+    dsgLayerAffected: "immutable_policy",
+    status: "Simulated Demonstration Transition"
+  },
+  {
+    id: "trans-nexus-01",
+    environmentId: "env-nexus-api-05",
+    timestamp: "2026-10-25 13:05:00 UTC",
+    previousState: "Standard Introspection",
+    newState: "Schema Poisoning Active",
+    trigger: "Unauthenticated crawler requested __schema AST with query depth > 5.",
+    evidenceReference: "inv-806",
+    adaptationAction: "Returned synthetic schema graph obfuscating internal mutations and advertising canary API key.",
+    dsgLayerAffected: "controlled_dynamic",
+    status: "Simulated Demonstration Transition"
+  }
+];
+
 // --- Storage Accessors & Local Persistence Layer ---
 
 function getStoredApps() {
@@ -1828,6 +2857,90 @@ function setStoredProfiles(profiles) {
     localStorage.setItem(STORAGE_KEY_PROFILES, JSON.stringify(profiles));
   } catch (e) {
     console.warn("Could not persist attacker profiles", e);
+  }
+}
+
+function getStoredEnvironments() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_ENVIRONMENTS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn("Could not read stored environments, using defaults", e);
+  }
+  return DEFAULT_DECEPTION_ENVIRONMENTS;
+}
+
+function setStoredEnvironments(environments) {
+  try {
+    localStorage.setItem(STORAGE_KEY_ENVIRONMENTS, JSON.stringify(environments));
+  } catch (e) {
+    console.warn("Could not persist environments", e);
+  }
+}
+
+function getStoredAssets() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_ASSETS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn("Could not read stored assets, using defaults", e);
+  }
+  return DEFAULT_SYNTHETIC_ASSETS;
+}
+
+function setStoredAssets(assets) {
+  try {
+    localStorage.setItem(STORAGE_KEY_ASSETS, JSON.stringify(assets));
+  } catch (e) {
+    console.warn("Could not persist assets", e);
+  }
+}
+
+function getStoredRelationships() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_RELATIONSHIPS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn("Could not read stored relationships, using defaults", e);
+  }
+  return DEFAULT_DECEPTION_RELATIONSHIPS;
+}
+
+function setStoredRelationships(relationships) {
+  try {
+    localStorage.setItem(STORAGE_KEY_RELATIONSHIPS, JSON.stringify(relationships));
+  } catch (e) {
+    console.warn("Could not persist relationships", e);
+  }
+}
+
+function getStoredTransitions() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_TRANSITIONS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn("Could not read stored transitions, using defaults", e);
+  }
+  return DEFAULT_DSG_TRANSITIONS;
+}
+
+function setStoredTransitions(transitions) {
+  try {
+    localStorage.setItem(STORAGE_KEY_TRANSITIONS, JSON.stringify(transitions));
+  } catch (e) {
+    console.warn("Could not persist transitions", e);
   }
 }
 
@@ -2042,6 +3155,116 @@ export const getAttackerProfiles = async (filters = {}) => {
 export const getAttackerProfileById = async (id) => {
   const list = getStoredProfiles();
   return list.find(p => p.id === id) || null;
+};
+
+// --- Public Service Methods for Deception Environments & DSG (Stage 2B.3) ---
+
+export const getDeceptionEnvironments = async (filters = {}) => {
+  let list = [...getStoredEnvironments()];
+
+  if (filters.search) {
+    const q = filters.search.toLowerCase().trim();
+    list = list.filter(env =>
+      env.id.toLowerCase().includes(q) ||
+      env.name.toLowerCase().includes(q) ||
+      env.tenantName.toLowerCase().includes(q) ||
+      (env.applicationName && env.applicationName.toLowerCase().includes(q)) ||
+      env.type.toLowerCase().includes(q) ||
+      env.description.toLowerCase().includes(q)
+    );
+  }
+
+  if (filters.tenantId && filters.tenantId !== 'all') {
+    list = list.filter(env => env.tenantId === filters.tenantId);
+  }
+
+  if (filters.type && filters.type !== 'all') {
+    list = list.filter(env => env.type === filters.type);
+  }
+
+  if (filters.status && filters.status !== 'all') {
+    list = list.filter(env => env.status === filters.status);
+  }
+
+  const sortBy = filters.sortBy || 'name-asc';
+  list.sort((a, b) => {
+    if (sortBy === 'name-asc') return a.name.localeCompare(b.name);
+    if (sortBy === 'name-desc') return b.name.localeCompare(a.name);
+    if (sortBy === 'assets-desc') return (b.activeAssetCount || 0) - (a.activeAssetCount || 0);
+    if (sortBy === 'updated-desc') return new Date(b.updatedAt) - new Date(a.updatedAt);
+    return 0;
+  });
+
+  return list;
+};
+
+export const getDeceptionEnvironmentById = async (id) => {
+  const list = getStoredEnvironments();
+  return list.find(env => env.id === id) || null;
+};
+
+export const getSyntheticAssets = async (environmentId = null) => {
+  const assets = getStoredAssets();
+  if (environmentId) {
+    return assets.filter(a => a.environmentId === environmentId);
+  }
+  return [...assets];
+};
+
+export const getSyntheticAssetById = async (id) => {
+  const assets = getStoredAssets();
+  return assets.find(a => a.id === id) || null;
+};
+
+export const getDeceptionRelationships = async (environmentId = null) => {
+  const relationships = getStoredRelationships();
+  if (environmentId) {
+    return relationships.filter(r => r.environmentId === environmentId);
+  }
+  return [...relationships];
+};
+
+export const getDeceptionGraph = async (environmentId) => {
+  const env = await getDeceptionEnvironmentById(environmentId);
+  if (!env) return null;
+
+  const nodes = await getSyntheticAssets(environmentId);
+  const edges = await getDeceptionRelationships(environmentId);
+
+  // Group by conceptual DSG layers
+  const layers = {
+    immutable_policy: nodes.filter(n => n.dsgLayer === 'immutable_policy'),
+    controlled_dynamic: nodes.filter(n => n.dsgLayer === 'controlled_dynamic'),
+    observational_attacker: nodes.filter(n => n.dsgLayer === 'observational_attacker')
+  };
+
+  // Calculate degrees for nodes
+  const enrichedNodes = nodes.map(node => {
+    const incoming = edges.filter(e => e.target === node.id);
+    const outgoing = edges.filter(e => e.source === node.id);
+    return {
+      ...node,
+      inDegree: incoming.length,
+      outDegree: outgoing.length,
+      incomingEdges: incoming,
+      outgoingEdges: outgoing
+    };
+  });
+
+  return {
+    environment: env,
+    nodes: enrichedNodes,
+    edges,
+    layers
+  };
+};
+
+export const getDsgTransitions = async (environmentId = null) => {
+  const transitions = getStoredTransitions();
+  if (environmentId) {
+    return transitions.filter(t => t.environmentId === environmentId);
+  }
+  return [...transitions];
 };
 
 // --- Public Service Methods for Applications (Owner Portal) ---

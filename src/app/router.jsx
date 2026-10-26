@@ -21,7 +21,7 @@ import SecurityEventDetailsPage from '../pages/owner/SecurityEventDetailsPage';
 import IntegrationsPage from '../pages/owner/IntegrationsPage';
 import OwnerSettingsPage from '../pages/owner/OwnerSettingsPage';
 
-// Gateway Administrator Pages (Stage 2B.1 & 2B.2)
+// Gateway Administrator Pages (Stage 2B.1, 2B.2, 2B.3)
 import AdminOverviewPage from '../pages/admin/AdminOverviewPage';
 import TenantsListPage from '../pages/admin/TenantsListPage';
 import TenantDetailsPage from '../pages/admin/TenantDetailsPage';
@@ -31,6 +31,9 @@ import InvestigationsListPage from '../pages/admin/InvestigationsListPage';
 import InvestigationDetailsPage from '../pages/admin/InvestigationDetailsPage';
 import AttackerProfilesListPage from '../pages/admin/AttackerProfilesListPage';
 import AttackerProfileDetailsPage from '../pages/admin/AttackerProfileDetailsPage';
+import DeceptionEnvironmentsPage from '../pages/admin/DeceptionEnvironmentsPage';
+import DeceptionEnvironmentDetailsPage from '../pages/admin/DeceptionEnvironmentDetailsPage';
+import DeceptionStateGraphPage from '../pages/admin/DeceptionStateGraphPage';
 
 export default function AppRouter() {
   const { isAuthenticated, role, ROLES } = useAuth();
@@ -234,6 +237,51 @@ export default function AppRouter() {
           <RoleGuard requiredRole={ROLES.ADMIN}>
             <AppShell>
               <AttackerProfileDetailsPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      {/* Deception Environments & Deception State Graph Explorer (Stage 2B.3) */}
+      <Route
+        path="/admin/deception-environments"
+        element={
+          <RoleGuard requiredRole={ROLES.ADMIN}>
+            <AppShell>
+              <DeceptionEnvironmentsPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/admin/deception-environments/:environmentId"
+        element={
+          <RoleGuard requiredRole={ROLES.ADMIN}>
+            <AppShell>
+              <DeceptionEnvironmentDetailsPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/admin/deception-state-graph"
+        element={
+          <RoleGuard requiredRole={ROLES.ADMIN}>
+            <AppShell>
+              <DeceptionStateGraphPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/admin/deception-state-graph/:environmentId"
+        element={
+          <RoleGuard requiredRole={ROLES.ADMIN}>
+            <AppShell>
+              <DeceptionStateGraphPage />
             </AppShell>
           </RoleGuard>
         }
