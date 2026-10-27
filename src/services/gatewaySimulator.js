@@ -280,11 +280,11 @@ export const DEFAULT_SIMULATOR_SCENARIOS = [
     applicationName: 'Patient Records FHIR API',
     httpMethod: 'POST',
     syntheticPath: '/fhir/v4/DiagnosticReport',
-    sessionIdentifier: 'Unknown',
-    requestRate: 'Unknown',
-    authFailureCount: 'Unknown',
+    sessionIdentifier: 'Unknown / Not Recorded',
+    requestRate: 'Unknown / Not Recorded',
+    authFailureCount: 'Unknown / Not Recorded',
     telemetryCompleteness: 'Incomplete (Missing critical headers & behavioral vector)',
-    canaryEvidence: 'Unknown',
+    canaryEvidence: 'Unknown / Not Recorded',
     directlyObservedFacts: [
       {
         indicator: 'Inbound Socket Connection',
@@ -313,13 +313,15 @@ export const DEFAULT_SIMULATOR_SCENARIOS = [
     ],
     behavioralAssessment: {
       classification: 'Incomplete evidence',
-      rationale: 'Critical behavioral telemetry could not be gathered due to upstream pipeline timeout. Traffic cannot be verified with available signals.',
-      confidenceNote: 'Fail-safe invariant: Missing evidence is strictly treated as unknown, never safe.'
+      rationale: 'Critical behavioral telemetry could not be gathered due to upstream pipeline timeout. Traffic cannot be verified with available signals. Missing evidence is strictly preserved as Unknown / Not Recorded and never assumed safe. Missing telemetry yields zero confidence in benign classification.',
+      confidenceNote: 'Fail-safe invariant: Missing evidence is strictly treated as unknown, never safe. Deception routing is prohibited when required preconditions cannot be established.'
     },
     candidatePolicyIds: ['pol-sec-03', 'pol-sec-02'],
     candidateStrategyIds: ['strat-bola-02'],
     expectedIntendedRoute: 'Block at gateway',
     expectedRecordedOutcome: 'Recorded: Blocked',
+    protocolResponse: 'HTTP 400 Bad Request',
+    protocolResponseExplanation: 'Conceptual response choice for this simulated scenario representing a client-side protocol error due to stripped proxy headers; not a universal fail-closed standard across all gateway endpoints.',
     discrepancyDetails: null,
     targetEnvironmentId: 'env-med-fhir-02',
     linkedInvestigationId: 'inv-806'
@@ -329,7 +331,7 @@ export const DEFAULT_SIMULATOR_SCENARIOS = [
     title: 'Scenario 6: Isolation Constraint Triggered',
     shortName: 'Isolation Constraint Triggered',
     category: 'isolation_boundary',
-    description: 'Synthetic decoy container attempts outbound raw socket connection toward external C2 address, violating zero-egress platform boundaries.',
+    description: 'Prohibited isolation-conflicting action: Synthetic decoy container attempts outbound raw socket connection toward external C2 address, violating zero-egress platform boundary pol-sec-03 and environment isolation boundaries of pol-sec-06.',
     tenantId: 'tenant-omni-4401',
     tenantName: 'OmniLogistics Global',
     applicationId: 'app-21',
@@ -349,7 +351,7 @@ export const DEFAULT_SIMULATOR_SCENARIOS = [
       },
       {
         indicator: 'Zero-Egress Security Policy Violation',
-        fact: 'Packet destination is outside the synthetic cluster network, triggering default-deny firewall rule.',
+        fact: 'Packet destination is outside the synthetic cluster network, violating platform-wide zero-egress boundary (pol-sec-03).',
         source: 'eBPF Network Monitor'
       },
       {
@@ -369,11 +371,11 @@ export const DEFAULT_SIMULATOR_SCENARIOS = [
     missingEvidence: [],
     behavioralAssessment: {
       classification: 'Isolation constraint triggered',
-      rationale: 'Outbound connection attempt from synthetic decoy violates platform-wide zero-egress policy pol-sec-03. Immediate containment interlock invoked.',
-      confidenceNote: 'Critical boundary containment interlock.'
+      rationale: 'Outbound raw socket connection attempt from synthetic decoy violates platform zero-egress policy pol-sec-03 and environment isolation constraints of pol-sec-06. Strict containment interlock invoked: isolation violations must never be treated as authorization to divert or route traffic.',
+      confidenceNote: 'Critical boundary containment interlock: Strategy execution prohibited.'
     },
-    candidatePolicyIds: ['pol-sec-03'],
-    candidateStrategyIds: ['strat-egress-03'],
+    candidatePolicyIds: ['pol-sec-03', 'pol-sec-06'],
+    candidateStrategyIds: ['strat-contain-06', 'strat-egress-03'],
     expectedIntendedRoute: 'Block at gateway',
     expectedRecordedOutcome: 'Recorded: Blocked',
     discrepancyDetails: null,
@@ -438,7 +440,7 @@ export const DEFAULT_SIMULATOR_SCENARIOS = [
     candidateStrategyIds: ['strat-airgap-04'],
     expectedIntendedRoute: 'Route to an approved synthetic deception environment',
     expectedRecordedOutcome: 'Recorded: Blocked',
-    discrepancyDetails: 'Discrepancy Warning: Policy Engine selected diversion to High-Interaction Honeynet container (env-aero-apt-04), but Edge Ingress Relay enforced immediate hardware TCP Reset (Block) due to classified air-gap isolation trigger before honeynet pod handoff. (Reference: Investigation inv-804)',
+    discrepancyDetails: 'Discrepancy Warning (Simulated): Policy Engine designated diversion to High-Interaction Honeynet container (env-aero-apt-04), but independent recorded outcome fixture indicates connection was blocked due to classified air-gap isolation trigger. Claimed Cause: Scenario-provided simulated evidence (not an independently observed live fact) indicates edge relay enforced hardware TCP Reset under sovereign containment rules before honeynet pod handoff. The simulator did not execute a real TCP reset or contact a real gateway. (Reference: Investigation inv-804)',
     targetEnvironmentId: 'env-aero-apt-04',
     linkedInvestigationId: 'inv-804'
   }
@@ -545,19 +547,26 @@ export async function runGatewaySimulation(scenarioId, options = {}) {
     // Enforce strict safety invariants:
     if (scenario.id === 'sim-scen-missing-05') {
       stratStatus = 'Ineligible (Fail-Closed)';
-      stratReason = 'Mandatory Safety Invariant: Missing or incomplete telemetry must NEVER be treated as safe or normal traffic. Strategy evaluation is prohibited when required behavioral evidence is unknown.';
+      stratReason = 'Mandatory Safety Invariant: Missing or incomplete telemetry must NEVER be treated as safe or normal traffic. Strategy evaluation is prohibited when required behavioral evidence is unknown or unverified. Deception routing cannot be authorized.';
       satisfiedConds = [];
       unmetConds = ['Required behavioral telemetry vector missing'];
       unknownConds = [...scenario.missingEvidence];
     } else if (scenario.id === 'sim-scen-isolation-06') {
       stratStatus = 'Ineligible (Fail-Closed)';
-      stratReason = 'Strict Containment Interlock: Outbound egress attempt violates platform zero-egress policy pol-sec-03. Deception strategy execution is halted; container must be quarantined immediately.';
+      stratReason = 'Strict Containment Interlock: Outbound raw socket egress attempt violates platform zero-egress policy pol-sec-03 and environment isolation boundaries of pol-sec-06. Strategy execution is prohibited; container must be quarantined immediately. Isolation violations must never be treated as authorization to divert or route traffic.';
       satisfiedConds = ['Container PID verified in sandbox'];
       unmetConds = ['Zero-egress boundary violated by outbound socket connect()'];
     } else if (scenario.id === 'sim-scen-canary-04') {
       stratStatus = 'Requires Review';
       stratReason = `${strat.name} requires human analyst authorization before secondary decoy mutation under policy pol-sec-07.`;
     }
+
+    const rawAction = strat.intendedSyntheticStateChanges ? strat.intendedSyntheticStateChanges[0] : 'None registered';
+    const formattedProposedAction = scenario.id === 'sim-scen-missing-05'
+      ? 'Proposed Action — Not Executed: Fail closed (Reject with conceptual HTTP 400 Bad Request; unverified traffic dropped before origin)'
+      : scenario.id === 'sim-scen-isolation-06'
+      ? 'Proposed Action — Not Executed: Fail-closed container quarantine and socket termination'
+      : rawAction.startsWith('Proposed Action') ? rawAction : `Proposed Action — Not Executed: ${rawAction}`;
 
     evaluatedStrategyResult = {
       strategy: strat,
@@ -566,8 +575,14 @@ export async function runGatewaySimulation(scenarioId, options = {}) {
       satisfiedConditions: satisfiedConds,
       unmetConditions: unmetConds,
       unknownConditions: unknownConds,
-      proposedSyntheticAction: strat.intendedSyntheticStateChanges ? strat.intendedSyntheticStateChanges[0] : 'None registered',
-      compatiblePolicyIds: strat.compatiblePolicyIds || []
+      proposedSyntheticAction: formattedProposedAction,
+      compatiblePolicyIds: strat.compatiblePolicyIds || [],
+      isolationAnalysis: {
+        isIsolationPermitted: scenario.id !== 'sim-scen-isolation-06',
+        scopeNote: scenario.id === 'sim-scen-isolation-06'
+          ? 'Prohibited: Outbound egress violates platform boundary pol-sec-03 and tenant pool isolation of pol-sec-06.'
+          : 'Isolation constraints verified: Destination sandbox strictly isolated to tenant scope.'
+      }
     };
   } else if (scenario.id === 'sim-scen-normal-01') {
     evaluatedStrategyResult = {
@@ -577,39 +592,61 @@ export async function runGatewaySimulation(scenarioId, options = {}) {
       satisfiedConditions: [],
       unmetConditions: [],
       unknownConditions: [],
-      proposedSyntheticAction: 'None (Forward to production service)',
-      compatiblePolicyIds: []
+      proposedSyntheticAction: 'Proposed Action — Not Executed: None (Forward to production service)',
+      compatiblePolicyIds: [],
+      isolationAnalysis: {
+        isIsolationPermitted: true,
+        scopeNote: 'Not Applicable (Benign customer traffic directed to production origin).'
+      }
     };
   }
 
   // --- 3. Intended Routing Decision Stage ---
   let intendedDecision = scenario.expectedIntendedRoute;
   let intendedRationale = '';
+  let protocolResponse = null;
+  let protocolResponseExplanation = null;
 
   switch (scenario.id) {
     case 'sim-scen-normal-01':
       intendedRationale = 'Zero threat indicators observed; telemetry is complete and session token is valid. Traffic continues to protected production application.';
+      protocolResponse = 'HTTP 200 OK (Proxied to Origin)';
+      protocolResponseExplanation = 'Standard HTTP reverse proxy passthrough to protected production upstream service.';
       break;
     case 'sim-scen-recon-02':
       intendedRationale = `Automated GraphQL schema enumeration matches policy ${selectedPolicy?.id || 'pol-sec-05'}. Inbound request diverted to synthetic API sandbox ${targetEnvironment?.name || 'env-nexus-api-05'}.`;
+      protocolResponse = 'HTTP 200 OK (Synthetic Decoy Schema Response)';
+      protocolResponseExplanation = 'Gateway proxies request to synthetic API mock containing restricted decoy introspection schema.';
       break;
     case 'sim-scen-auth-03':
       intendedRationale = `Dictionary attack burst (40/min) exceeds policy threshold. Session diverted to progressive tarpit honeynet ${targetEnvironment?.name || 'env-apex-auth-01'}.`;
+      protocolResponse = 'HTTP 401 Unauthorized (Synthetic Decoy with Tarpit Delay)';
+      protocolResponseExplanation = 'Gateway injects artificial progressive latency and serves synthetic auth failure prompts.';
       break;
     case 'sim-scen-canary-04':
       intendedRationale = 'Cryptographic canary token tripwire activated. Session quarantined in isolated sandbox namespace pending mandatory Tier-2 SecOps analyst sign-off.';
+      protocolResponse = 'HTTP 200 OK (Isolated Sandbox Namespace)';
+      protocolResponseExplanation = 'Decoy response served from isolated ephemeral container namespace while incident investigation is opened.';
       break;
     case 'sim-scen-missing-05':
-      intendedRationale = 'Critical client origin and behavioral telemetry vector is missing. Mandatory fail-safe invariant enforces edge connection drop (HTTP 400). Unverified traffic is never forwarded to protected origin.';
+      intendedRationale = 'Critical client origin and behavioral telemetry vector is missing. Mandatory fail-safe invariant enforces connection drop (conceptual HTTP 400). Unverified traffic is never forwarded to protected origin or deception environments.';
+      protocolResponse = 'HTTP 400 Bad Request (Conceptual Simulated Response Choice)';
+      protocolResponseExplanation = 'Conceptual response choice for this simulated scenario representing a client-side protocol error due to stripped proxy headers; not a universal fail-closed standard across all gateway endpoints.';
       break;
     case 'sim-scen-isolation-06':
-      intendedRationale = 'Synthetic container initiated unsolicited outbound connection to external IP. Kernel eBPF interlock enforces immediate socket drop and container quarantine.';
+      intendedRationale = 'Synthetic container initiated unsolicited outbound connection to external IP. Kernel eBPF interlock enforces immediate socket drop and container quarantine. Isolation breaches never authorize traffic diversion.';
+      protocolResponse = 'TCP RST / Kernel Packet Drop (DROP_DISPATCH)';
+      protocolResponseExplanation = 'Network layer hardware/eBPF boundary drop; connection closed without application layer HTTP response dispatch.';
       break;
     case 'sim-scen-discrepancy-07':
       intendedRationale = 'Policy Engine selected High-Interaction Honeynet container diversion under policy pol-sec-04 for behavioral observation.';
+      protocolResponse = 'HTTP Diversion (Intended Policy) vs. TCP RST (Recorded Edge Outcome)';
+      protocolResponseExplanation = 'Discrepancy scenario: Intended policy proposed container handoff, while recorded outcome fixture logged hardware socket termination.';
       break;
     default:
       intendedRationale = 'Evaluated under default simulated gateway decision heuristics.';
+      protocolResponse = 'HTTP 200 OK';
+      protocolResponseExplanation = 'Default simulated response.';
   }
 
   // --- 4. Recorded Routing Outcome Stage (Independent from Intended Decision!) ---
@@ -629,12 +666,12 @@ export async function runGatewaySimulation(scenarioId, options = {}) {
     },
     {
       stepNumber: 2,
-      stageName: 'Evidence Assessed',
+      stageName: 'Simulated Evidence Assessed',
       result: `${scenario.directlyObservedFacts.length} Facts, ${scenario.detectorDerivedInterpretations.length} Classifier Outputs`,
       explanation: scenario.missingEvidence.length > 0
         ? `Incomplete evidence: ${scenario.missingEvidence.length} missing telemetry signal(s) labeled Unknown / Not Recorded.`
         : 'Telemetry complete. Directly observed facts separated from detector-derived classifier scores.',
-      simulatedStatus: 'Telemetry Verified',
+      simulatedStatus: 'Simulated Evidence',
       evidenceReference: scenario.telemetryCompleteness
     },
     {
@@ -642,7 +679,7 @@ export async function runGatewaySimulation(scenarioId, options = {}) {
       stageName: 'Behavioral Assessment Produced',
       result: scenario.behavioralAssessment.classification,
       explanation: scenario.behavioralAssessment.rationale,
-      simulatedStatus: 'Classification Generated',
+      simulatedStatus: 'Detector Interpretation (Simulated)',
       evidenceReference: scenario.behavioralAssessment.confidenceNote
     },
     {
@@ -652,7 +689,7 @@ export async function runGatewaySimulation(scenarioId, options = {}) {
       explanation: selectedPolicy
         ? `Policy ${selectedPolicy.id} selected based on priority precedence (${selectedPolicy.priority}) and tenant scope.`
         : 'No policy trigger conditions matched scenario evidence.',
-      simulatedStatus: 'Policy Evaluated',
+      simulatedStatus: 'Policy Decision (Simulated)',
       evidenceReference: `Candidate Policies: ${candidatePolicies.length}`
     },
     {
@@ -660,7 +697,7 @@ export async function runGatewaySimulation(scenarioId, options = {}) {
       stageName: 'Strategy Eligibility Determined',
       result: evaluatedStrategyResult?.status || 'Not Evaluated',
       explanation: evaluatedStrategyResult?.reason || 'No candidate strategies evaluated.',
-      simulatedStatus: 'Eligibility Assessed',
+      simulatedStatus: 'Strategy Eligibility (Simulated)',
       evidenceReference: evaluatedStrategyResult?.strategy ? evaluatedStrategyResult.strategy.name : 'N/A'
     },
     {
@@ -668,7 +705,7 @@ export async function runGatewaySimulation(scenarioId, options = {}) {
       stageName: 'Intended Route Selected',
       result: intendedDecision,
       explanation: intendedRationale,
-      simulatedStatus: 'Decision Formatted',
+      simulatedStatus: 'Intended Route',
       evidenceReference: targetEnvironment ? `Destination: ${targetEnvironment.name}` : 'N/A'
     },
     {
@@ -676,17 +713,17 @@ export async function runGatewaySimulation(scenarioId, options = {}) {
       stageName: 'Outcome Recorded',
       result: recordedOutcome,
       explanation: hasDiscrepancy
-        ? `DISCREPANCY DETECTED: Intended action was "${intendedDecision}", but recorded outcome is "${recordedOutcome}".`
+        ? `DISCREPANCY DETECTED (Simulated): Policy engine designated diversion to synthetic honeynet (${scenario.targetEnvironmentId || 'env-aero-apt-04'}), but independent recorded outcome fixture indicates connection was blocked. Claimed Cause: Scenario-provided simulated evidence (not an independently observed live fact) indicates edge relay enforced hardware TCP Reset under sovereign containment rules before container handoff. The simulator did not execute a real TCP reset or contact a real gateway.`
         : `Simulated edge outcome confirmed as "${recordedOutcome}". Intended decision and recorded outcome match.`,
-      simulatedStatus: hasDiscrepancy ? 'Discrepancy Flagged' : 'Outcome Confirmed',
+      simulatedStatus: 'Recorded Outcome (Scenario Fixture)',
       evidenceReference: scenario.linkedInvestigationId ? `Investigation ${scenario.linkedInvestigationId}` : 'N/A'
     },
     {
       stepNumber: 8,
       stageName: 'Simulation Completed',
       result: 'Deterministic Run Finalized',
-      explanation: 'End-to-end gateway decision trace completed without live network mutation or honeynet deployment.',
-      simulatedStatus: 'Simulation Complete',
+      explanation: 'End-to-end gateway decision trace completed without live network mutation or honeynet deployment. No live socket manipulation performed.',
+      simulatedStatus: 'Execution Evidence: Not Available',
       evidenceReference: `Local Simulation Run: ${scenario.id}`
     }
   ];
@@ -704,35 +741,56 @@ export async function runGatewaySimulation(scenarioId, options = {}) {
     observedEvidence: {
       directlyObservedFacts: scenario.directlyObservedFacts,
       detectorDerivedInterpretations: scenario.detectorDerivedInterpretations,
-      missingEvidence: scenario.missingEvidence
+      missingEvidence: scenario.missingEvidence,
+      stageLabel: 'Simulated Evidence'
     },
-    behavioralAssessment: scenario.behavioralAssessment,
+    behavioralAssessment: {
+      ...scenario.behavioralAssessment,
+      stageLabel: 'Behavioral Assessment (Simulated)'
+    },
     policyEvaluation: {
       candidatePolicies,
       evaluatedPolicies,
       selectedPolicy,
       decision: selectedPolicy
         ? `Policy ${selectedPolicy.id} authorizes ${selectedPolicy.category}`
-        : 'Default Gateway Route'
+        : 'Default Gateway Route',
+      stageLabel: 'Policy Decision (Simulated)'
     },
-    strategyEligibility: evaluatedStrategyResult,
+    strategyEligibility: evaluatedStrategyResult ? {
+      ...evaluatedStrategyResult,
+      stageLabel: 'Strategy Eligibility (Simulated)'
+    } : null,
     intendedRoutingDecision: {
       decision: intendedDecision,
       rationale: intendedRationale,
-      targetEnvironment
+      targetEnvironment,
+      protocolResponse,
+      protocolResponseExplanation,
+      executionStatus: 'Simulated Decision — No Network Execution Performed',
+      stageLabel: 'Intended Route'
     },
     routingOutcome: {
       status: recordedOutcome,
       isSimulated: true,
+      stageLabel: 'Recorded Outcome (Scenario Fixture)',
+      executionStatus: 'Simulated Fixture — No Live Transmission',
+      executionEvidence: 'Not Available',
       details: hasDiscrepancy
         ? scenario.discrepancyDetails
         : `Simulated execution outcome matches intended decision "${intendedDecision}".`
+    },
+    executionEvidence: {
+      status: 'Not Available',
+      stageLabel: 'Execution Evidence: Not Available',
+      details: 'No live packet inspection, socket execution, reverse proxy routing, or honeynet container manipulation was performed. All outcomes are simulated fixtures.'
     },
     discrepancy: {
       hasDiscrepancy,
       intendedRoute: intendedDecision,
       recordedOutcome: recordedOutcome,
-      details: scenario.discrepancyDetails
+      details: scenario.discrepancyDetails,
+      causeType: hasDiscrepancy ? 'Scenario-provided simulated evidence' : 'N/A'
     },
     decisionTrace,
     warnings: [
@@ -746,6 +804,87 @@ export async function runGatewaySimulation(scenarioId, options = {}) {
   };
 
   return simulationResult;
+}
+
+/**
+ * Semantic evaluator explicitly modeling both permitted and prohibited isolation cases.
+ * Used for semantic audit verification and testing.
+ * 
+ * @param {object} [options]
+ * @returns {Promise<{ permittedCase: object, prohibitedCase: object }>}
+ */
+export async function evaluateIsolationSemantics(options = {}) {
+  const [tenants, applications, policies, strategies, environments] = await Promise.all([
+    getTenants(),
+    getApplications(),
+    getDeceptionPolicies(),
+    getDeceptionStrategies(),
+    getDeceptionEnvironments()
+  ]);
+
+  const omniTenant = tenants.find(t => t.id === 'tenant-omni-4401');
+  const omniApp = applications.find(a => a.id === 'app-21');
+  const omniPolicy = policies.find(p => p.id === 'pol-sec-06');
+  const globalEgressPolicy = policies.find(p => p.id === 'pol-sec-03');
+  const containStrategy = strategies.find(s => s.id === 'strat-contain-06');
+  const egressStrategy = strategies.find(s => s.id === 'strat-egress-03');
+  const omniEnv = environments.find(e => e.id === 'env-omni-fleet-03');
+
+  // Case 1: Prohibited isolation-conflicting action (Scenario 6)
+  // An outbound socket connect() attempt breaches zero-egress boundary (pol-sec-03).
+  // Strategy is ineligible (fail-closed) and traffic diversion is PROHIBITED.
+  const prohibitedCase = {
+    caseType: 'Prohibited Isolation-Conflicting Action',
+    scenarioId: 'sim-scen-isolation-06',
+    tenant: omniTenant,
+    application: omniApp,
+    governingPolicy: globalEgressPolicy,
+    candidateStrategy: containStrategy || egressStrategy,
+    targetEnvironment: omniEnv,
+    isIsolationBreached: true,
+    strategyEligibilityStatus: 'Ineligible (Fail-Closed)',
+    intendedDecision: 'Block at gateway',
+    recordedOutcome: 'Recorded: Blocked',
+    hasDiscrepancy: false,
+    auditFinding: 'Outbound raw socket connection attempt violates platform zero-egress policy pol-sec-03 and isolation constraints of pol-sec-06. The conflicting strategy is marked Ineligible (Fail-Closed). An isolation breach is never treated as permission to divert traffic.',
+    scopeVerification: {
+      tenantScope: 'tenant-omni-4401',
+      environmentScope: 'env-omni-fleet-03',
+      isolationEnforced: true,
+      allowedDestination: false
+    }
+  };
+
+  // Case 2: Permitted isolated-deception destination
+  // Inbound WebSocket protocol anomalies arriving at app-21 under pol-sec-06.
+  // Diverting to env-omni-fleet-03 IS permitted because env-omni-fleet-03 is explicitly
+  // isolated to tenant-omni-4401 container pool with zero internal traversal.
+  const permittedCase = {
+    caseType: 'Permitted Isolated-Deception Destination',
+    scenarioId: 'sim-scen-permitted-isolation',
+    tenant: omniTenant,
+    application: omniApp,
+    governingPolicy: omniPolicy,
+    candidateStrategy: containStrategy,
+    targetEnvironment: omniEnv,
+    isIsolationBreached: false,
+    strategyEligibilityStatus: 'Eligible (Simulated)',
+    intendedDecision: 'Route to an approved synthetic deception environment',
+    recordedOutcome: 'Recorded: Synthetic Deception Diversion',
+    hasDiscrepancy: false,
+    auditFinding: 'Inbound WebSocket framing anomaly satisfies pol-sec-06 trigger conditions. Destination env-omni-fleet-03 is explicitly permitted by policy safety constraints because it is a dedicated container sink isolated strictly to tenant-omni-4401 with zero traversal into production dispatch microservices.',
+    scopeVerification: {
+      tenantScope: 'tenant-omni-4401',
+      environmentScope: 'env-omni-fleet-03',
+      isolationEnforced: true,
+      allowedDestination: true
+    }
+  };
+
+  return {
+    prohibitedCase,
+    permittedCase
+  };
 }
 
 // --- Local Simulation History Management ---

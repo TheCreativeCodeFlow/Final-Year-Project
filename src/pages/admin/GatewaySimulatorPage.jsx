@@ -198,13 +198,13 @@ export default function GatewaySimulatorPage() {
               <AlertTriangle size={24} style={{ color: '#ef4444', flexShrink: 0, marginTop: '2px' }} />
               <div className="sim-discrepancy-content">
                 <div className="sim-discrepancy-title">
-                  Discrepancy Detected Between Intended Policy Decision and Recorded Gateway Outcome
+                  Discrepancy Detected Between Intended Policy Decision and Recorded Gateway Outcome (Simulated)
                 </div>
                 <div className="sim-discrepancy-text">
                   {activeRunResult.discrepancy.details}
                 </div>
                 <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Intended Policy Route: <strong style={{ color: '#60a5fa' }}>{activeRunResult.discrepancy.intendedRoute}</strong> | Recorded Edge Outcome: <strong style={{ color: '#f87171' }}>{activeRunResult.discrepancy.recordedOutcome}</strong>
+                  Intended Route: <strong style={{ color: '#60a5fa' }}>{activeRunResult.discrepancy.intendedRoute}</strong> | Recorded Outcome (Scenario Fixture): <strong style={{ color: '#f87171' }}>{activeRunResult.discrepancy.recordedOutcome}</strong> | Claimed Cause: <span style={{ color: '#fbbf24' }}>Scenario-provided simulated evidence (not an independently observed fact)</span>
                 </div>
               </div>
             </div>
@@ -230,7 +230,7 @@ export default function GatewaySimulatorPage() {
               {/* Directly Observed Facts */}
               <div className="sim-evidence-col">
                 <div className="sim-evidence-col-title" style={{ color: '#38bdf8' }}>
-                  <CheckCircle2 size={14} /> Directly Observed Facts ({activeRunResult.observedEvidence.directlyObservedFacts.length})
+                  <CheckCircle2 size={14} /> Simulated Evidence: Directly Observed Facts ({activeRunResult.observedEvidence.directlyObservedFacts.length})
                 </div>
                 {activeRunResult.observedEvidence.directlyObservedFacts.map((fact, idx) => (
                   <div key={idx} className="sim-fact-item">
@@ -246,7 +246,7 @@ export default function GatewaySimulatorPage() {
               {/* Detector-Derived Interpretations */}
               <div className="sim-evidence-col">
                 <div className="sim-evidence-col-title" style={{ color: '#a855f7' }}>
-                  <Activity size={14} /> Detector Interpretations ({activeRunResult.observedEvidence.detectorDerivedInterpretations.length})
+                  <Activity size={14} /> Detector Interpretation (Simulated) ({activeRunResult.observedEvidence.detectorDerivedInterpretations.length})
                 </div>
                 {activeRunResult.observedEvidence.detectorDerivedInterpretations.map((interp, idx) => (
                   <div key={idx} className="sim-fact-item">
@@ -275,7 +275,7 @@ export default function GatewaySimulatorPage() {
                   activeRunResult.observedEvidence.missingEvidence.map((missing, idx) => (
                     <div key={idx} className="sim-fact-item" style={{ borderLeft: '3px solid #fbbf24' }}>
                       <span style={{ color: '#fbbf24', fontWeight: 600 }}>{missing}</span>
-                      <span className="sim-fact-source">Status: Not Recorded (Unavailable to Inspection Engine)</span>
+                      <span className="sim-fact-source">Status: Unknown / Not Recorded (Unavailable to Inspection Engine)</span>
                     </div>
                   ))
                 ) : (
@@ -407,7 +407,7 @@ export default function GatewaySimulatorPage() {
                               fontWeight: 600
                             }}
                           >
-                            Selected Governing Policy
+                            Selected Policy Decision (Simulated)
                           </span>
                         )}
                       </div>
@@ -628,7 +628,7 @@ export default function GatewaySimulatorPage() {
                 </div>
 
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-                  Proposed Synthetic Action:{' '}
+                  <strong>Proposed Action — Not Executed:</strong>{' '}
                   <span style={{ color: 'var(--accent-primary-light)', fontWeight: 500 }}>
                     {activeRunResult.strategyEligibility.proposedSyntheticAction}
                   </span>
@@ -646,10 +646,10 @@ export default function GatewaySimulatorPage() {
             <div className="sim-section-header">
               <div className="sim-section-title-wrap">
                 <Network size={18} style={{ color: 'var(--accent-primary)' }} />
-                <h3 className="sim-section-title">Sections F & G: Intended Decision vs. Recorded Outcome</h3>
+                <h3 className="sim-section-title">Sections F & G: Intended Decision vs. Recorded Outcome (Scenario Fixture)</h3>
               </div>
               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                Decoupled Decision & Outcome Verification
+                Decoupled Decision & Outcome Verification — Execution Evidence: Not Available
               </span>
             </div>
 
@@ -661,7 +661,7 @@ export default function GatewaySimulatorPage() {
               {/* Intended Routing Decision */}
               <div className="sim-comparison-box">
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
-                  Section F: Intended Routing Decision (Simulated)
+                  Section F: Intended Route (Simulated)
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span
@@ -684,6 +684,22 @@ export default function GatewaySimulatorPage() {
                 <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
                   {activeRunResult.intendedRoutingDecision.rationale}
                 </p>
+
+                {activeRunResult.intendedRoutingDecision.protocolResponse && (
+                  <div style={{ marginTop: '8px', padding: '8px', background: 'var(--bg-card)', borderRadius: '4px', border: '1px solid var(--border-subtle)', fontSize: '11px' }}>
+                    <div style={{ color: 'var(--text-muted)', marginBottom: '2px' }}>Protocol Response (Simulated Choice):</div>
+                    <div style={{ color: 'var(--accent-primary-light)', fontWeight: 600 }}>{activeRunResult.intendedRoutingDecision.protocolResponse}</div>
+                    {activeRunResult.intendedRoutingDecision.protocolResponseExplanation && (
+                      <div style={{ color: 'var(--text-secondary)', marginTop: '4px', fontSize: '10px', lineHeight: 1.4 }}>
+                        {activeRunResult.intendedRoutingDecision.protocolResponseExplanation}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ marginTop: '6px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                  Execution Status: <span style={{ color: 'var(--text-secondary)' }}>Simulated Decision — No Network Execution Performed</span>
+                </div>
 
                 {activeRunResult.targetEnvironment && (
                   <div style={{ marginTop: '8px', padding: '8px', background: 'var(--bg-card)', borderRadius: '4px', fontSize: '11px' }}>
@@ -710,7 +726,7 @@ export default function GatewaySimulatorPage() {
               {/* Recorded Outcome */}
               <div className="sim-comparison-box">
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
-                  Section G: Recorded Routing Outcome (Independent)
+                  Section G: Recorded Outcome (Scenario Fixture)
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span
@@ -738,12 +754,20 @@ export default function GatewaySimulatorPage() {
                       color: 'var(--text-muted)'
                     }}
                   >
-                    Simulated Output
+                    Scenario Fixture
                   </span>
                 </div>
                 <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
                   {activeRunResult.routingOutcome.details}
                 </p>
+
+                <div style={{ marginTop: '8px', padding: '8px', background: 'var(--bg-card)', borderRadius: '4px', border: '1px solid var(--border-subtle)', fontSize: '11px' }}>
+                  <div style={{ color: 'var(--text-muted)', marginBottom: '2px' }}>Execution Evidence:</div>
+                  <div style={{ color: '#fbbf24', fontWeight: 600 }}>Execution Evidence: Not Available</div>
+                  <div style={{ color: 'var(--text-secondary)', marginTop: '2px', fontSize: '10px' }}>
+                    No live telemetry transmission or honeynet execution was performed. Outcome reflects simulated scenario fixture.
+                  </div>
+                </div>
 
                 {activeRunResult.discrepancy.hasDiscrepancy ? (
                   <div
@@ -786,7 +810,7 @@ export default function GatewaySimulatorPage() {
                 <h3 className="sim-section-title">Section H: Chronological Gateway Decision Trace</h3>
               </div>
               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                8-Step Lifecycle Execution Trace (Run: {activeRunResult.runId})
+                8-Step Lifecycle Execution Trace — Execution Evidence: Not Available (Run: {activeRunResult.runId})
               </span>
             </div>
 
@@ -866,8 +890,9 @@ export default function GatewaySimulatorPage() {
                   <th>Run ID & Scenario</th>
                   <th>Tenant & Application</th>
                   <th>Behavioral Assessment</th>
-                  <th>Intended Decision</th>
-                  <th>Recorded Outcome</th>
+                  <th>Intended Route</th>
+                  <th>Recorded Outcome (Scenario Fixture)</th>
+                  <th>Execution Evidence</th>
                   <th>Discrepancy</th>
                   <th>Timestamp</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
@@ -899,6 +924,11 @@ export default function GatewaySimulatorPage() {
                     <td>
                       <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                         {run.routingOutcome?.status}
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-muted)' }}>
+                        Not Available
                       </span>
                     </td>
                     <td>
