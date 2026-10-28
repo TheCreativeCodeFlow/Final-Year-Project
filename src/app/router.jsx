@@ -7,6 +7,7 @@ import AppShell from '../components/layout/AppShell';
 import RoleGuard from '../components/common/RoleGuard';
 
 // Auth & Shared Pages
+import LandingPage from '../pages/public/LandingPage';
 import LoginPage from '../pages/auth/LoginPage';
 import RoleSelectionPage from '../pages/auth/RoleSelectionPage';
 import NotFoundPage from '../pages/NotFoundPage';
@@ -51,8 +52,8 @@ export default function AppRouter() {
 
   return (
     <Routes>
-      {/* Root redirect */}
-      <Route path="/" element={<Navigate to={defaultHome} replace />} />
+      {/* Public Landing Page Route */}
+      <Route path="/" element={<LandingPage />} />
 
       {/* Auth & Role Selection Routes */}
       <Route path="/login" element={<LoginPage />} />
