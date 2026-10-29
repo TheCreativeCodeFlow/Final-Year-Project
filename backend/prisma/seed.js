@@ -12,7 +12,17 @@
  *    - Proposed graph transitions remain PROPOSED (not executed).
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PrismaClient } from '@prisma/client';
+import { hashPassword } from '../src/utils/passwords.js';
+
+// Auto-load .env if available
+const envPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../.env');
+if (!process.env.DATABASE_URL && fs.existsSync(envPath) && typeof process.loadEnvFile === 'function') {
+  process.loadEnvFile(envPath);
+}
 
 const prisma = new PrismaClient();
 
@@ -666,7 +676,144 @@ async function main() {
     });
   }
 
-  // 12. Audit Event (append-only)
+  // 12. Synthetic Development User Accounts & Memberships
+  console.log('Seeding development user accounts with Argon2id hashes...');
+  const adminPasswordHash = await hashPassword('DevAdmin12345!');
+  const ownerPasswordHash = await hashPassword('DevOwner12345!');
+  const analystPasswordHash = await hashPassword('DevAnalyst12345!');
+  const disabledPasswordHash = await hashPassword('DevDisabled12345!');
+  const suspendedPasswordHash = await hashPassword('DevSuspended12345!');
+
+  // Platform Administrator (Sarah Chen)
+  const userAdmin = await prisma.user.upsert({
+    where: { email: 'admin@gateway.internal' },
+    update: {
+      name: 'Sarah Chen',
+      passwordHash: adminPasswordHash,
+      status: 'ACTIVE',
+      isPlatformAdmin: true
+    },
+    create: {
+      email: 'admin@gateway.internal',
+      name: 'Sarah Chen',
+      passwordHash: adminPasswordHash,
+      status: 'ACTIVE',
+      isPlatformAdmin: true
+    }
+  });
+
+  // Application Owner (Alex Vance)
+  const userOwner = await prisma.user.upsert({
+    where: { email: 'owner@apexfintech.io' },
+    update: {
+      name: 'Alex Vance',
+      passwordHash: ownerPasswordHash,
+      status: 'ACTIVE',
+      isPlatformAdmin: false
+    },
+    create: {
+      email: 'owner@apexfintech.io',
+      name: 'Alex Vance',
+      passwordHash: ownerPasswordHash,
+      status: 'ACTIVE',
+      isPlatformAdmin: false
+    }
+  });
+
+  // Security Analyst (Elena Rostova)
+  const userAnalyst = await prisma.user.upsert({
+    where: { email: 'analyst@medsecure.io' },
+    update: {
+      name: 'Elena Rostova',
+      passwordHash: analystPasswordHash,
+      status: 'ACTIVE',
+      isPlatformAdmin: false
+    },
+    create: {
+      email: 'analyst@medsecure.io',
+      name: 'Elena Rostova',
+      passwordHash: analystPasswordHash,
+      status: 'ACTIVE',
+      isPlatformAdmin: false
+    }
+  });
+
+  // Disabled Account (for policy rejection testing)
+  await prisma.user.upsert({
+    where: { email: 'disabled@example.com' },
+    update: {
+      name: 'Disabled Test Account',
+      passwordHash: disabledPasswordHash,
+      status: 'DISABLED',
+      isPlatformAdmin: false
+    },
+    create: {
+      email: 'disabled@example.com',
+      name: 'Disabled Test Account',
+      passwordHash: disabledPasswordHash,
+      status: 'DISABLED',
+      isPlatformAdmin: false
+    }
+  });
+
+  // Suspended Account (for policy rejection testing)
+  await prisma.user.upsert({
+    where: { email: 'suspended@example.com' },
+    update: {
+      name: 'Suspended Test Account',
+      passwordHash: suspendedPasswordHash,
+      status: 'SUSPENDED',
+      isPlatformAdmin: false
+    },
+    create: {
+      email: 'suspended@example.com',
+      name: 'Suspended Test Account',
+      passwordHash: suspendedPasswordHash,
+      status: 'SUSPENDED',
+      isPlatformAdmin: false
+    }
+  });
+
+  // Memberships
+  await prisma.tenantMembership.upsert({
+    where: {
+      userId_tenantId: {
+        userId: userOwner.id,
+        tenantId: tenantApex.id
+      }
+    },
+    update: {
+      role: 'APPLICATION_OWNER',
+      permissions: ['manage_applications', 'view_security_events', 'configure_policies']
+    },
+    create: {
+      userId: userOwner.id,
+      tenantId: tenantApex.id,
+      role: 'APPLICATION_OWNER',
+      permissions: ['manage_applications', 'view_security_events', 'configure_policies']
+    }
+  });
+
+  await prisma.tenantMembership.upsert({
+    where: {
+      userId_tenantId: {
+        userId: userAnalyst.id,
+        tenantId: tenantMed.id
+      }
+    },
+    update: {
+      role: 'SECURITY_ANALYST',
+      permissions: ['view_security_events', 'investigate_threats', 'view_state_graph']
+    },
+    create: {
+      userId: userAnalyst.id,
+      tenantId: tenantMed.id,
+      role: 'SECURITY_ANALYST',
+      permissions: ['view_security_events', 'investigate_threats', 'view_state_graph']
+    }
+  });
+
+  // 13. Audit Event (append-only)
   const existingAudit = await prisma.auditEvent.findFirst({
     where: { correlationId: 'corr-seed-init-001' }
   });

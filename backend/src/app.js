@@ -7,6 +7,7 @@ import { requestIdMiddleware } from './middleware/request-id.js';
 import { notFoundMiddleware } from './middleware/not-found.js';
 import { errorHandlerMiddleware } from './middleware/error-handler.js';
 import { healthRouter } from './routes/health.routes.js';
+import { authRouter } from './routes/auth.routes.js';
 import { getApiInfo } from './controllers/health.controller.js';
 
 /**
@@ -46,8 +47,16 @@ export function createApp(options = {}) {
       return callback(new Error(`CORS policy rejection: Origin '${origin}' is not permitted.`));
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'X-Request-ID', 'X-Correlation-ID', 'Accept'],
-    exposedHeaders: ['X-Request-ID'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-CSRF-Token',
+      'X-Tenant-ID',
+      'X-Request-ID',
+      'X-Correlation-ID',
+      'Accept'
+    ],
+    exposedHeaders: ['X-Request-ID', 'Retry-After'],
     credentials: true,
     maxAge: 86400
   };
@@ -80,9 +89,18 @@ export function createApp(options = {}) {
   // 6. Request Body Parsing with conservative limit
   app.use(express.json({ limit: config.BODY_LIMIT }));
 
+  // Prisma client injection hook (e.g. for test harnesses)
+  if (options.prisma) {
+    app.use((req, res, next) => {
+      req.prisma = options.prisma;
+      next();
+    });
+  }
+
   // 7. API Routes (Versioned: /api/v1)
   app.get('/api/v1', getApiInfo);
   app.use('/api/v1/health', healthRouter);
+  app.use('/api/v1/auth', authRouter);
 
   // Optional route extension hook (e.g. for testing specific failure states)
   if (typeof options.setupRoutes === 'function') {

@@ -40,6 +40,7 @@ model Tenant {
   graphs                 DeceptionGraph[]
   graphTransitions       DeceptionGraphTransition[]
   auditEvents            AuditEvent[]
+  memberships            TenantMembership[]
 
   @@map("tenants")
 }
@@ -444,8 +445,8 @@ model AuditEvent {
   id                 String   @id @default(uuid())
   tenantId           String?  // Null indicates platform-wide administrative event
   actorIdentifier    String?  // Identity/role label without fabricating auth session
-  action             String   // e.g. "POLICY_CREATED", "TRANSITION_PROPOSED", "ISOLATION_VERIFIED"
-  targetEntityType   String   // e.g. "DeceptionPolicy", "DeceptionEnvironment"
+  action             String   // e.g. "POLICY_CREATED", "TRANSITION_PROPOSED", "AUTH_LOGIN_SUCCESS"
+  targetEntityType   String   // e.g. "DeceptionPolicy", "User", "Session"
   targetEntityId     String
   timestamp          DateTime @default(now())
   correlationId      String?
@@ -457,4 +458,66 @@ model AuditEvent {
   @@index([timestamp])
   @@index([correlationId])
   @@map("audit_events")
+}
+
+// ------------------------------------------------------------------------------
+// J. Identity, Tenancy Membership & Sessions (Stage 3C)
+// ------------------------------------------------------------------------------
+
+model User {
+  id                  String             @id @default(uuid())
+  email               String             @unique
+  name                String
+  passwordHash        String             // Argon2id cryptographic hash
+  status              String             @default("ACTIVE") // ACTIVE, SUSPENDED, DISABLED
+  isPlatformAdmin     Boolean            @default(false)    // Explicit platform admin privilege flag
+  lastLoginAt         DateTime?
+  failedLoginAttempts Int                @default(0)
+  lockoutUntil        DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  memberships TenantMembership[]
+  sessions    Session[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model TenantMembership {
+  id          String   @id @default(uuid())
+  userId      String
+  tenantId    String
+  role        String   @default("APPLICATION_OWNER") // APPLICATION_OWNER, SECURITY_ANALYST
+  permissions Json     // Explicit permissions e.g. ["view:applications", "manage:policies"]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId]) // Enforces exactly one membership role record per user-tenant pair
+  @@index([tenantId])
+  @@index([userId])
+  @@map("tenant_memberships")
+}
+
+model Session {
+  id           String    @id @default(uuid())
+  sessionToken String    @unique // 256-bit cryptographically secure hex token
+  csrfToken    String    // Associated anti-CSRF token
+  userId       String
+  expiresAt    DateTime
+  lastActiveAt DateTime  @default(now())
+  revokedAt    DateTime?
+  userAgent    String?
+  ipAddress    String?
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionToken])
+  @@index([expiresAt])
+  @@map("sessions")
 }

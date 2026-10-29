@@ -97,10 +97,20 @@ export function loadEnv(sourceEnv = process.env) {
     LOG_LEVEL,
     CORS_ORIGIN,
     BODY_LIMIT,
+    SESSION_TTL_HOURS: Number(sourceEnv.SESSION_TTL_HOURS) || 24,
+    COOKIE_NAME: sourceEnv.COOKIE_NAME ? sourceEnv.COOKIE_NAME.trim() : 'adg_session',
     isProduction: NODE_ENV === 'production',
     isDevelopment: NODE_ENV === 'development',
     isTest: NODE_ENV === 'test'
   };
+
+  // Attach SESSION_SECRET only if explicitly provided
+  if (typeof sourceEnv.SESSION_SECRET === 'string' && sourceEnv.SESSION_SECRET.trim()) {
+    if (NODE_ENV === 'production' && sourceEnv.SESSION_SECRET.trim().length < 32) {
+      throw new Error('In production, SESSION_SECRET must be at least 32 characters long.');
+    }
+    config.SESSION_SECRET = sourceEnv.SESSION_SECRET.trim();
+  }
 
   // Only attach DATABASE_URL property if explicitly present in source environment
   if (typeof sourceEnv.DATABASE_URL === 'string' && sourceEnv.DATABASE_URL.trim()) {

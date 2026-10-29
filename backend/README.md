@@ -1,9 +1,10 @@
 # Adaptive Deception Gateway — Backend Service
 
-This service forms the security-conscious backend foundation and persistent domain data layer for the **Adaptive Deception Gateway**, developed as part of the research initiative: *Development of an AI-Enabled Adaptive Cyber Deception Gateway for Real-Time Attacker Detection*.
+This service forms the security-conscious backend foundation, persistent domain data layer, and secure authentication/tenant authorization engine for the **Adaptive Deception Gateway**, developed as part of the research initiative: *Development of an AI-Enabled Adaptive Cyber Deception Gateway for Real-Time Attacker Detection*.
 
 - **Stage 3A**: Established the secure HTTP server, environment validation, logging, request correlation, error handling, health checks, and test infrastructure.
-- **Stage 3B**: Establishes PostgreSQL persistence, Prisma ORM schema, versioned migrations, relational tenant isolation, synthetic development seed data, and domain integrity test suites.
+- **Stage 3B**: Established PostgreSQL persistence, Prisma ORM schema, versioned migrations, relational tenant isolation, synthetic development seed data, and domain integrity test suites.
+- **Stage 3C**: Establishes secure user identity, Argon2id credential hashing, stateful server-side sessions, anti-CSRF protections, login rate limiting, and strict tenant membership authorization.
 
 ---
 
@@ -21,11 +22,13 @@ This service forms the security-conscious backend foundation and persistent doma
 ```
 backend/
 ├── prisma/
-│   ├── schema.prisma                   # Complete relational domain schema with composite tenant keys
+│   ├── schema.prisma                   # Relational domain schema with Users, Memberships & Sessions
 │   ├── seed.js                         # Idempotent development seed script (refuses in production)
 │   └── migrations/
-│       └── 20261029144928_init_domain_models/
-│           └── migration.sql           # Versioned initial PostgreSQL migration
+│       ├── 20261029144928_init_domain_models/
+│       │   └── migration.sql           # Versioned initial PostgreSQL domain models
+│       └── 20261029154841_add_auth_and_membership/
+│           └── migration.sql           # Users, TenantMemberships, and Sessions migration
 ├── src/
 │   ├── app.js                          # Express application assembly & middleware pipeline
 │   ├── server.js                       # Server entrypoint & graceful shutdown handlers
@@ -34,17 +37,26 @@ backend/
 │   ├── db/
 │   │   └── client.js                   # Controlled Prisma client, lazy connect & transactions
 │   ├── controllers/
+│   │   ├── auth.controller.js          # Authentication, logout, identity & tenant introspection
 │   │   └── health.controller.js        # Liveness, readiness, and API descriptor controllers
 │   ├── routes/
+│   │   ├── auth.routes.js              # /api/v1/auth route declarations
 │   │   └── health.routes.js            # /api/v1/health probe route definitions
 │   ├── middleware/
+│   │   ├── auth.js                     # Session authentication, CSRF, role & tenant authorization
+│   │   ├── rate-limiter.js             # Sliding-window login attempt throttling
 │   │   ├── request-id.js               # Bounded request correlation ID assignment
 │   │   ├── security-headers.js         # OWASP defensive headers & fingerprint removal
 │   │   ├── not-found.js                # Centralized 404 JSON error response handler
 │   │   └── error-handler.js            # Predictable error masking & exception handler
+│   ├── services/
+│   │   └── session.service.js          # Cryptographic session token generation & revocation
 │   └── utils/
-│       └── logger.js                   # Structured JSON logger with credential redaction
+│       ├── auth-audit.js               # Sanitized authentication audit event persistence
+│       ├── logger.js                   # Structured JSON logger with credential redaction
+│       └── passwords.js                # Argon2id hashing & length validation [10, 128]
 ├── tests/
+│   ├── auth.test.js                    # Comprehensive Stage 3C authentication & tenant test suite
 │   ├── config.test.js                  # Environment schema & port validation tests
 │   ├── cors.test.js                    # CORS origin allowlist & preflight tests
 │   ├── database-integrity.test.js      # Relational integrity, FK constraints, and tenant isolation
@@ -61,12 +73,47 @@ backend/
 
 ---
 
-## 3. Database Architecture & Domain Models
+## 3. Authentication & Authorization Architecture
 
-The relational schema implements 11 core domain entity groups designed with defense-in-depth isolation:
+### 3.1 Security Principles & Cryptographic Standards
+
+1. **Argon2id Password Hashing**:
+   - Credentials are validated to require between 10 and 128 characters.
+   - Hashed using **Argon2id** (`argon2.argon2id`) with memory cost = 64 MiB (`65536` KiB), iterations = `3`, parallelism = `4`.
+   - Native verification uses timing-safe constant execution to defeat cache-timing attacks.
+   - Passwords and hashes are strictly excluded from API outputs, database audit payloads, and structured application logs.
+
+2. **Server-Side Session Management**:
+   - High-entropy cryptographic tokens (256 bits / 32 bytes raw entropy formatted as 64 hex characters) generated via `node:crypto`.
+   - Persisted in the PostgreSQL `sessions` table linked by foreign key to `users.id`.
+   - Stateful server-side tracking supports immediate revocation, expiration, and sliding activity tracking (`lastActiveAt`).
+   - Delivered via **HttpOnly**, **SameSite=Lax**, **Path=/** cookies, or standard `Authorization: Bearer <token>` headers for programmatic API consumers.
+
+3. **Anti-CSRF Protection**:
+   - A unique 128-bit anti-CSRF token is generated and paired with each session.
+   - For state-changing HTTP mutation requests (`POST`, `PUT`, `PATCH`, `DELETE`) authenticated via ambient browser cookies, the `csrfProtection` middleware requires a matching `X-CSRF-Token` header.
+   - API requests authenticated via `Authorization: Bearer` headers are naturally exempt from CSRF checks.
+
+4. **Brute-Force & Credential Stuffing Throttling**:
+   - In-memory sliding window rate limiter (`LoginRateLimiter`) tracks failed attempts per IP address and per target email account.
+   - Threshold: Maximum 5 failed attempts within a 15-minute sliding window.
+   - Upon exceeding limits, the gateway returns HTTP `429 Too Many Requests` with a compliant `Retry-After` header.
+
+5. **Tenant Scoping & Membership Enforcement**:
+   - Platform Administrators (`isPlatformAdmin === true`) have platform-wide oversight.
+   - Tenant-scoped users (Application Owners, Security Analysts) are restricted to tenants where they possess an explicit `TenantMembership`.
+   - The `requireTenantAccess` middleware intercepts target tenant identifiers (from route params, `X-Tenant-ID` headers, or query parameters) and validates them against the user's active memberships. Unauthorized cross-tenant access attempts return HTTP `403 TENANT_ACCESS_DENIED`.
+
+---
+
+## 4. Database Domain Models & Relational ERD
 
 ```mermaid
 erDiagram
+    User ||--o{ Session : maintains
+    User ||--o{ TenantMembership : belongs_to
+    Tenant ||--o{ TenantMembership : includes
+
     Tenant ||--o{ ProtectedApplication : owns
     Tenant ||--o{ DeceptionPolicy : configures
     Tenant ||--o{ DeceptionStrategy : deploys
@@ -95,69 +142,51 @@ erDiagram
     DeceptionGraph ||--o{ DeceptionGraphTransition : mutates
 ```
 
-### Core Domain Entities
+### Identity Models
 
-1. **`Tenant`**: Root boundary for all tenant-scoped data. Contains `id`, `identifier` (e.g. `tenant-apex-9941`), `displayName`, `status`, and timestamps.
-2. **`ProtectedApplication`**: Target applications protected by the gateway. Keyed by `(id, tenantId)` and `(tenantId, applicationIdentifier)`.
-3. **`DeceptionPolicy`**: Rules defining triggers, permitted actions, prohibited actions (e.g. arbitrary command execution), and isolation constraints.
-4. **`DeceptionStrategy`**: Active mitigation templates (containment, tarpit, honeypot diversion) with structured prerequisites.
-5. **`DeceptionEnvironment`**: Isolated sandbox namespaces with strict CPU/memory quotas and egress restrictions.
-6. **`Investigation` & `AttackerProfile`**: Differentiates observed security incidents from behavioral attacker profiles. Linked via `InvestigationAttackerProfile` which guarantees both records belong to the same tenant.
-7. **Gateway Decision Lifecycle (Strict Semantic Separation)**:
-   - **`SecurityObservation`**: Raw sanitized facts observed at ingress/proxy.
-   - **`BehavioralAssessment`**: AI/heuristic risk and confidence scores (explicitly documented: not proof of malice).
-   - **`PolicyDecision`**: Policy evaluation outcome (`PERMIT_DIVERSION`, `BLOCK`, `ALLOW_NORMAL`).
-   - **`RoutingDecision`**: Intended gateway action (`PROPOSED_DECEPTION_DIVERSION`).
-   - **`RoutingOutcome`**: Independently recorded outcome (`DIVERTED_TO_SANDBOX` or `BLOCKED_AT_INGRESS` if overridden).
-   - **`ExecutionEvidence`**: Confirmed execution telemetry from honeypots/taps, or explicitly `MISSING`.
-8. **Deception State Graph (DSG)**:
-   - **`DeceptionGraph`**: Tenant-scoped topology associated with a deception environment.
-   - **`DeceptionGraphNode`**: Synthetic nodes categorized into 3 conceptual layers:
-     - `PROTECTED_DECEPTION_POLICY` (immutable baseline rules)
-     - `CONTROLLED_DYNAMIC_STATE` (mutable synthetic assets)
-     - `OBSERVATIONAL_ATTACKER_STATE` (external probe tracking)
-   - **`DeceptionGraphEdge`**: Directed relationships between nodes. Foreign keys enforce `(id, graphId)` so edges can never link across graph boundaries.
-   - **`DeceptionGraphTransition`**: State change proposal. Distinguished as `PROPOSED`, `APPROVED`, or `EXECUTED`. Never automatically executed upon proposal.
-9. **`AuditEvent`**: Append-only log recording actor, action, target entity, tenant scope, and correlation ID.
+- **`User`**: Core user record containing `id`, unique `email`, display `name`, Argon2id `passwordHash`, account `status` (`ACTIVE`, `SUSPENDED`, `DISABLED`), `isPlatformAdmin` boolean flag, `failedLoginAttempts`, `lockoutUntil`, `lastLoginAt`, and timestamps.
+- **`TenantMembership`**: Join record between `User` and `Tenant` establishing tenant-scoped access. Contains `id`, `userId`, `tenantId`, `role` (`APPLICATION_OWNER`, `SECURITY_ANALYST`), `permissions` JSON array, and a unique composite constraint `@@unique([userId, tenantId])`.
+- **`Session`**: Persistent server-side session tracking containing `id`, unique `sessionToken`, `csrfToken`, `userId`, `expiresAt`, `lastActiveAt`, optional `revokedAt`, `userAgent`, and `ipAddress`.
 
 ---
 
-## 4. Tenant Isolation Design
+## 5. API Endpoints Reference
 
-Tenant isolation is enforced **relational-first** at the PostgreSQL constraint level:
+All endpoints are versioned under `/api/v1`.
 
-- **Composite Primary/Unique Keys**: Every tenant-owned model enforces `@@unique([id, tenantId])`.
-- **Composite Foreign Keys**: Relationships between tenant-owned entities (such as an investigation referencing an application) use composite foreign keys:
-  ```prisma
-  application ProtectedApplication? @relation(fields: [applicationId, tenantId], references: [id, tenantId])
-  ```
-- **PostgreSQL Enforcement**: If Tenant A attempts to link an application belonging to Tenant B, PostgreSQL rejects the insert with constraint error `P2003` (`foreign key violation`), because `(app_id_B, tenant_id_A)` does not exist in `protected_applications`.
-- **Cross-Graph Protection**: DSG edges reference `(sourceNodeId, graphId)` and `(targetNodeId, graphId)`, preventing nodes from different graphs being connected.
+### Public Health & Diagnostic Probes
+| Method | Path | Description | Authentication |
+|---|---|---|---|
+| `GET` | `/api/v1` | Public API metadata, version, and status | None |
+| `GET` | `/api/v1/health/live` | Liveness probe for orchestrators | None |
+| `GET` | `/api/v1/health/ready` | Truthful readiness probe reporting actual components | None |
 
-> **Note on Row-Level Security (RLS)**: PostgreSQL RLS policies can be layered on top of this composite relational foundation in future stages when database-level session contexts (e.g. `SET LOCAL app.current_tenant_id`) are introduced.
-
----
-
-## 5. Unknown & Missing Evidence Semantics
-
-To prevent false claims in security forensics:
-- An intended routing decision does not guarantee execution.
-- If a routing outcome is not yet received, `RoutingDecision.outcome` remains `null`.
-- If execution evidence cannot be verified by decoy telemetry, `ExecutionEvidence` is created with:
-  - `evidenceStatus = "MISSING"`
-  - `evidenceSource = null`
-  - `evidenceData = null`
-  - `recordedAt = null`
-- Missing evidence is **never** defaulted to benign behavior, success, or safety.
+### Authentication & Tenant Authorization (`/api/v1/auth`)
+| Method | Path | Description | Access Control |
+|---|---|---|---|
+| `POST` | `/api/v1/auth/login` | Authenticate with email/password; returns user profile, session, and anti-CSRF token; sets HttpOnly cookie | Public (Throttled: 5 attempts/15m) |
+| `POST` | `/api/v1/auth/logout` | Revokes server-side session, clears cookie, emits audit log | Authenticated + Anti-CSRF |
+| `GET` | `/api/v1/auth/me` | Returns current identity, safe profile, and tenant memberships | Authenticated (Cookie or Bearer) |
+| `GET` | `/api/v1/auth/tenants` | Lists authorized tenants and tenant-scoped permissions | Authenticated (Cookie or Bearer) |
+| `GET` | `/api/v1/auth/protected-test`| Demonstration route verifying tenant isolation and role checks | Authenticated + `requireTenantAccess` |
+| `GET` | `/api/v1/auth/admin-test`| Demonstration route verifying platform administrator enforcement | Authenticated + `requirePlatformAdmin` |
 
 ---
 
-## 6. Audit Event Semantics & Limitations
+## 6. Development Synthetic Accounts
 
-- **Append-Only**: Audit records are write-once records tracking operational actions (`SEED_INITIALIZATION`, `POLICY_CREATED`, etc.).
-- **Correlation**: Captures the request correlation identifier (`correlationId`) for end-to-end tracing.
-- **Actor Provenance**: Records actor labels (`analyst-simulated-01`, `dev-seed-runner`) without inventing unauthorized sessions.
-- **Known Limitation**: In Stage 3B, audit events are stored in standard PostgreSQL tables and do not constitute a cryptographically tamper-proof or blockchain-verified ledger. Hardware security module (HSM) signing and write-once-read-many (WORM) storage remain deferred.
+In development environments (`NODE_ENV === 'development'`), the seed script populates deterministic test accounts:
+
+| Role | Email | Synthetic Dev Password | Tenant Boundary |
+|---|---|---|---|
+| **Platform Administrator** | `admin@gateway.internal` | `DevAdmin12345!` | Platform-wide oversight (`isPlatformAdmin: true`) |
+| **Application Owner** | `owner@apexfintech.io` | `DevOwner12345!` | `tenant-apex-9941` (`role: APPLICATION_OWNER`) |
+| **Security Analyst** | `analyst@medsecure.io` | `DevAnalyst12345!` | `tenant-medsecure-7712` (`role: SECURITY_ANALYST`) |
+| **Disabled Account** | `disabled@example.com` | `DevDisabled12345!` | Blocked (`status: DISABLED`) |
+| **Suspended Account** | `suspended@example.com` | `DevSuspended12345!` | Blocked (`status: SUSPENDED`) |
+
+> [!WARNING]
+> These credentials are exclusively synthetic development fixtures. The seed script strictly refuses to run if `NODE_ENV === 'production'`.
 
 ---
 
@@ -191,16 +220,12 @@ npm run prisma:deploy
 ```bash
 npm run prisma:seed
 ```
-The seed script:
-- Seeds fictional tenants (`tenant-apex-9941`, `tenant-medsecure-7712`), protected applications, deception policies, strategies, environments, investigations, profiles, and DSG graphs.
-- Is **strictly development-only** (aborts if `NODE_ENV === 'production'`).
-- Is **idempotent**: safe to run repeatedly without creating duplicate rows.
 
 ---
 
 ## 8. Running Automated Tests
 
-The test suite runs on Node's native test runner (`node:test`) and executes tests sequentially (`--test-concurrency=1`) to prevent database test collisions:
+The test suite runs on Node's native test runner (`node:test`) and executes sequentially (`--test-concurrency=1`):
 
 ```bash
 # Run all backend tests (from repository root):
@@ -210,39 +235,55 @@ npm run backend:test
 npm test
 ```
 
-### Test Suite Summary (49 Tests across 9 Suites)
-- `tests/config.test.js`: Environment defaults, port limits, invalid modes, log levels, wildcard CORS rejection.
-- `tests/cors.test.js`: Origin allowlists, comma-separated lists, preflight OPTIONS, 403 denial.
-- `tests/database-integrity.test.js`:
-  1. Validates PostgreSQL connection URL format and configuration helper.
-  2. Confirms migration applied all 19 relational tables to PostgreSQL.
-  3. Enforces unique constraints on tenant identifier and composite application identifier.
-  4. Enforces foreign-key integrity (rejects orphaned records).
-  5. Enforces tenant isolation (Tenant A cannot link Tenant B application).
-  6. Enforces tenant isolation in investigation/profile many-to-many join.
-  7. Enforces DSG graph boundary integrity (edges cannot connect cross-graph nodes).
-  8. Enforces proposed vs executed DSG transition semantic separation.
-  9. Enforces missing routing outcomes remain absent/null (never defaulted to success).
-  10. Enforces execution evidence cannot be inferred from policy decisions.
-  11. Confirms audit events capture actor, action, tenant scope, and correlation ID.
-  12. Confirms database transactions roll back atomically on write failure.
-  13. Confirms the 3 DSG layers remain strictly distinguishable.
-- `tests/seed.test.js`:
-  - Confirms repeated seed runs produce identical counts without record duplication.
-  - Confirms seed script refuses execution in production environments.
-- `tests/health.test.js`: Liveness and readiness endpoints (verifying truthful reporting).
-- `tests/logger.test.js`: Sensitive field redaction, safe path extraction, CRLF neutralization.
-- `tests/request-id.test.js`: Request correlation ID boundaries, regex validation, UUID fallback.
-- `tests/error-handler.test.js`: 404, 400 (bad JSON), 413, and 500 error masking.
-- `tests/shutdown.test.js`: Server lifecycle, socket draining, and clean database disconnection.
+### Test Suite Summary (65 Tests across 10 Suites)
+- **`tests/auth.test.js`** (16 Tests):
+  1. Successful authentication (200, HttpOnly cookie, safe user, anti-CSRF token).
+  2. Incorrect password returns generic 401 `INVALID_CREDENTIALS`.
+  3. Unknown account returns generic 401 `INVALID_CREDENTIALS` (timing-safe, no user enumeration).
+  4. Disabled / suspended accounts return 403 `ACCOUNT_INACTIVE`.
+  5. Current identity and memberships inspection via `/me`.
+  6. Tenant listing strictly scoped by membership via `/tenants`.
+  7. Logout revokes session, clears cookie, emits audit event, subsequent requests fail.
+  8. Missing or invalid session on protected endpoints returns 401.
+  9. Expired session rejected with 401 `INVALID_SESSION`.
+  10. Application owner denied administrator-only endpoints (403 `FORBIDDEN`).
+  11. Tenant A denied access to Tenant B resources (403 `TENANT_ACCESS_DENIED`).
+  12. Client-supplied tenant IDs cannot bypass membership checks.
+  13. Anti-CSRF token verification on cookie-authenticated mutations.
+  14. Bearer-authenticated API requests bypass ambient cookie CSRF checks.
+  15. Login throttling triggers HTTP 429 `TOO_MANY_REQUESTS` with `Retry-After`.
+  16. Authentication audit records exclude passwords, hashes, and secrets.
+- **`tests/database-integrity.test.js`** (13 Tests): Relational integrity, foreign keys, tenant cross-reference prevention, DSG layer boundaries, and transactions.
+- **`tests/seed.test.js`** (2 Tests): Seed idempotency and production lockout guard.
+- **`tests/config.test.js`** (9 Tests): Environment variable schema and validation.
+- **`tests/cors.test.js`** (4 Tests): Origin allowlisting, preflight handling, and rejection.
+- **`tests/health.test.js`** (3 Tests): Liveness, readiness, and API descriptor probes.
+- **`tests/logger.test.js`** (5 Tests): Redaction, query string stripping, and CRLF protection.
+- **`tests/request-id.test.js`** (7 Tests): Correlation ID sanitization and propagation.
+- **`tests/error-handler.test.js`** (4 Tests): Exception masking and standard JSON error envelopes.
+- **`tests/shutdown.test.js`** (2 Tests): Server lifecycle and graceful database disconnection.
 
 ---
 
-## 9. Current Non-Goals (Stage 3B Scope Boundaries)
+## 9. Frontend Migration Roadmap
 
-To maintain architectural focus, Stage 3B explicitly omits:
-- **User Authentication & Accounts**: No JWTs, session cookies, passwords, or login endpoints are created.
-- **Full REST CRUD APIs**: The database access layer and domain models are established and tested before exposing public API routes.
-- **ML Threat Detection**: Model training, live scoring, and inference engines remain deferred to future stages.
+The React/Vite frontend currently utilizes simulated role switching and mock data services (`src/data/mockData.js`). The transition to live backend authentication will follow:
+
+1. **Authentication Provider Transition**:
+   - Update `useAuth` hook to call `POST /api/v1/auth/login` and populate identity from `GET /api/v1/auth/me`.
+   - Store the anti-CSRF token in memory/state and attach `X-CSRF-Token` to mutating API requests.
+2. **Tenant Scoping Context**:
+   - Replace local tenant selection state with tenants fetched from `GET /api/v1/auth/tenants`.
+   - Forward `X-Tenant-ID` header with verified tenant identifier for tenant-specific pages.
+3. **Session Heartbeat**:
+   - Call `GET /api/v1/auth/me` periodically to refresh `lastActiveAt` and detect expired sessions.
+
+---
+
+## 10. Current Non-Goals (Stage 3C Scope Boundaries)
+
+To preserve system stability and modularity, Stage 3C explicitly omits:
+- **Full Protected Application / Tenant CRUD APIs**: Public resource management routes will be introduced in subsequent stages.
+- **ML Threat Detection**: ML model inference engines, feature extractors, and live scoring remain deferred.
 - **Reverse Proxy & Traffic Redirection**: Live packet routing, Envoy filters, and honeynet container supervisor daemons are non-goals for this stage.
-- **Live Honeypot Deployment**: No actual containers or decoy services are provisioned at runtime.
+- **Live Honeypot Deployment**: No runtime decoy containers or honeynet networks are spawned.
