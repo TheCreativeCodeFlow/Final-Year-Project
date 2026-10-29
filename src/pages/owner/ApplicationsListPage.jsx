@@ -19,12 +19,16 @@ import PageHeader from '../../components/layout/PageHeader';
 import StatusBadge from '../../components/common/StatusBadge';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingState from '../../components/common/LoadingState';
+import { useAuth } from '../../hooks/useAuth';
+import { apiClient } from '../../services/apiClient';
 import { getApplications, DEMO_DATA_DISCLAIMER } from '../../services/mockData';
 
 export default function ApplicationsListPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isLiveSource, setIsLiveSource] = useState(false);
 
   // Filters & Search
   const [searchTerm, setSearchTerm] = useState('');
@@ -32,10 +36,24 @@ export default function ApplicationsListPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('name-asc');
 
-  const fetchApps = () => {
+  const fetchApps = async () => {
     setLoading(true);
+    try {
+      const tenantId = (user && user.tenantId) || 'tenant-apex-9941';
+      const res = await apiClient.getApplications(tenantId);
+      if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
+        setApplications(res.data);
+        setIsLiveSource(true);
+        setLoading(false);
+        return;
+      }
+    } catch {
+      // Backend unavailable or unauthenticated; fall back gracefully to prototype fixtures
+    }
+
     getApplications().then((res) => {
       setApplications(res);
+      setIsLiveSource(false);
       setLoading(false);
     });
   };
@@ -119,11 +137,19 @@ export default function ApplicationsListPage() {
       />
 
       <div className="page-container">
-        {/* Demo Telemetry Banner */}
-        <div className="demo-banner">
-          <Sparkles size={16} style={{ flexShrink: 0 }} />
+        {/* Telemetry / Data Source Banner */}
+        <div className="demo-banner" style={isLiveSource ? { borderColor: 'rgba(56, 189, 248, 0.4)', background: 'rgba(56, 189, 248, 0.08)' } : {}}>
+          <Sparkles size={16} style={{ flexShrink: 0, color: isLiveSource ? 'var(--color-primary, #38bdf8)' : undefined }} />
           <div>
-            <strong>Simulated Application Registry:</strong> {DEMO_DATA_DISCLAIMER} Registered services are simulated prototypes.
+            {isLiveSource ? (
+              <>
+                <strong style={{ color: 'var(--color-primary, #38bdf8)' }}>Live Database-Backed Registry:</strong> Connected to PostgreSQL persistent backend under authorized tenant context.
+              </>
+            ) : (
+              <>
+                <strong>Simulated Application Registry:</strong> {DEMO_DATA_DISCLAIMER} Registered services are simulated prototypes.
+              </>
+            )}
           </div>
         </div>
 

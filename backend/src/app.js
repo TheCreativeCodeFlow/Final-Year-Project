@@ -8,6 +8,7 @@ import { notFoundMiddleware } from './middleware/not-found.js';
 import { errorHandlerMiddleware } from './middleware/error-handler.js';
 import { healthRouter } from './routes/health.routes.js';
 import { authRouter } from './routes/auth.routes.js';
+import { tenantRouter } from './routes/tenant.routes.js';
 import { getApiInfo } from './controllers/health.controller.js';
 
 /**
@@ -101,6 +102,7 @@ export function createApp(options = {}) {
   app.get('/api/v1', getApiInfo);
   app.use('/api/v1/health', healthRouter);
   app.use('/api/v1/auth', authRouter);
+  app.use('/api/v1/tenants/:tenantId', tenantRouter);
 
   // Optional route extension hook (e.g. for testing specific failure states)
   if (typeof options.setupRoutes === 'function') {

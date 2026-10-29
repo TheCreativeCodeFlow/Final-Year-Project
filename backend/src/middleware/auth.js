@@ -187,6 +187,48 @@ export function requireRole(allowedRoles = []) {
 }
 
 /**
+ * Authorization middleware: restricts route to users with a specific tenant permission.
+ * Platform administrators bypass permission checks.
+ *
+ * @param {string} permission - e.g. "manage_applications", "configure_policies"
+ */
+export function requirePermission(permission) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHENTICATED',
+          message: 'Authentication required.',
+          requestId: req.id || null,
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+
+    if (req.user.isPlatformAdmin) {
+      return next();
+    }
+
+    const perms = Array.isArray(req.tenantPermissions) ? req.tenantPermissions : [];
+    if (perms.includes(permission) || perms.includes('*')) {
+      return next();
+    }
+
+    return res.status(403).json({
+      success: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: `Access denied: User does not possess the required "${permission}" permission.`,
+        requiredPermission: permission,
+        requestId: req.id || null,
+        timestamp: new Date().toISOString()
+      }
+    });
+  };
+}
+
+/**
  * Tenant Scoping Middleware:
  * Resolves the target tenant identifier from URL params, headers, or query string.
  * Strictly verifies that the authenticated user has an active membership in that tenant.
@@ -198,7 +240,7 @@ export function requireRole(allowedRoles = []) {
 export function requireTenantAccess(options = {}) {
   const { optional = false } = options;
 
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
         success: false,
@@ -237,11 +279,37 @@ export function requireTenantAccess(options = {}) {
 
     // 1. Platform administrator access via explicit platform policy
     if (req.user.isPlatformAdmin) {
-      req.authorizedTenant = {
-        identifier: cleanTargetId,
-        accessScope: 'PLATFORM_ADMIN_POLICY'
-      };
-      return next();
+      try {
+        const prisma = req.prisma || getPrismaClient();
+        const tenantRecord = await prisma.tenant.findFirst({
+          where: {
+            OR: [
+              { id: cleanTargetId },
+              { identifier: cleanTargetId }
+            ]
+          }
+        });
+
+        if (!tenantRecord) {
+          return res.status(404).json({
+            success: false,
+            error: {
+              code: 'TENANT_NOT_FOUND',
+              message: `Tenant "${cleanTargetId}" does not exist.`,
+              targetTenant: cleanTargetId,
+              requestId: req.id || null,
+              timestamp: new Date().toISOString()
+            }
+          });
+        }
+
+        req.authorizedTenant = tenantRecord;
+        req.tenantRole = 'PLATFORM_ADMIN';
+        req.tenantPermissions = ['*'];
+        return next();
+      } catch (err) {
+        return next(err);
+      }
     }
 
     // 2. Tenant membership verification for application owners & analysts
