@@ -5,7 +5,8 @@ This service forms the security-conscious backend foundation, persistent domain 
 - **Stage 3A**: Established the secure HTTP server, environment validation, logging, request correlation, error handling, health checks, and test infrastructure.
 - **Stage 3B**: Established PostgreSQL persistence, Prisma ORM schema, versioned migrations, relational tenant isolation, synthetic development seed data, and domain integrity test suites.
 - **Stage 3C**: Established secure user identity, Argon2id credential hashing, stateful server-side sessions, anti-CSRF protections, login rate limiting, and strict tenant membership authorization.
-- **Stage 3D**: Establishes database-backed, tenant-scoped REST APIs connecting persistent PostgreSQL domain models to client workflows for protected applications, deception policies, strategies, security observations, and investigations.
+- **Stage 3D**: Established database-backed, tenant-scoped REST APIs connecting persistent PostgreSQL domain models to client workflows for protected applications, deception policies, strategies, security observations, and investigations.
+- **Stage 3E**: Integrates the React/Vite frontend with Stage 3C authentication and Stage 3D tenant-scoped APIs, establishing server-authoritative sessions, anti-CSRF token handling, role-guarded routing, tenant switching, and database-backed application management.
 
 ---
 
@@ -192,7 +193,26 @@ npm run backend:test
 npm test
 ```
 
-### Full Backend Test Suite Summary (82 Tests across 11 Suites — 100% Pass)
+### Full Backend Test Suite Summary (100 Tests across 12 Suites — 100% Pass)
+- **`tests/frontend-auth-integration.test.js`** (18 Tests — Stage 3E):
+  1. `deriveRole`: strictly derives role from backend identity and memberships (no email inference).
+  2. `authService.login`: valid credentials authenticate, set cookie, and return role and csrfToken.
+  3. `authService.login`: invalid password returns generic 401 INVALID_CREDENTIALS.
+  4. `authService.login`: non-existent account returns generic 401 without user enumeration.
+  5. `authService.login`: disabled and suspended accounts return 403 ACCOUNT_INACTIVE.
+  6. `authService.restoreSession`: recovers active identity and csrfToken on page reload.
+  7. `authService.restoreSession`: deduplicates concurrent requests (in-flight singleton).
+  8. `authService.restoreSession`: returns null when session is expired or missing.
+  9. `authService.logout`: revokes session in DB, clears cookie and in-memory CSRF token.
+  10. `authService.getAuthorizedTenants`: scopes tenant list strictly by membership.
+  11. `apiClient.getApplications`: loads live database applications under authorized tenant.
+  12. `apiClient.getApplicationById`: retrieves single application by ID or slug.
+  13. Cross-tenant isolation: Tenant A cannot access Tenant B applications (403 FORBIDDEN).
+  14. `apiClient.createApplication`: persists new application with anti-CSRF token.
+  15. `apiClient.createApplication`: rejects disallowed fields with 400 INVALID_INPUT.
+  16. `apiClient.createApplication`: duplicate applicationIdentifier returns 409 conflict.
+  17. Security Analyst without manage_applications is rejected with 403 on create.
+  18. `apiClient.updateApplication`: updates existing application in database.
 - **`tests/tenant-api.test.js`** (17 Tests — Stage 3D):
   1. Unauthenticated request to tenant endpoints returns 401 UNAUTHENTICATED.
   2. Expired session token is rejected with 401 INVALID_SESSION.

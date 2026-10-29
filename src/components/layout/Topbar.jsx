@@ -1,10 +1,10 @@
 import React from 'react';
-import { Menu, ShieldAlert, Sparkles, UserCheck } from 'lucide-react';
+import { Menu, ShieldAlert, Sparkles, Building2, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { Link } from 'react-router-dom';
 
 export default function Topbar({ onToggleSidebar }) {
-  const { user, role, ROLES } = useAuth();
+  const { user, activeTenant } = useAuth();
 
   return (
     <header className="app-topbar">
@@ -22,27 +22,41 @@ export default function Topbar({ onToggleSidebar }) {
           <span>Gateway: Shield Active</span>
         </div>
 
-        <span className="demo-tag" title="Simulated environment for frontend demonstration">
-          <Sparkles size={11} />
-          <span>DEMO TELEMETRY</span>
-        </span>
+        {activeTenant && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '12px',
+              color: 'var(--text-secondary)',
+              padding: '0.25rem 0.65rem',
+              backgroundColor: 'rgba(255, 255, 255, 0.04)',
+              borderRadius: '20px',
+              border: '1px solid var(--border-subtle)'
+            }}
+          >
+            <Building2 size={13} style={{ color: 'var(--accent-primary-light)' }} />
+            <span>{activeTenant.displayName}</span>
+          </div>
+        )}
       </div>
 
       <div className="topbar-right">
-        {/* Switch Persona Quick Link */}
+        {/* Clearance Scope Link */}
         <Link
           to="/select-role"
           className="btn btn-secondary btn-sm"
           style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
         >
-          <UserCheck size={14} />
-          <span>Switch Persona</span>
+          <ShieldCheck size={14} style={{ color: '#10b981' }} />
+          <span>Security Clearance</span>
         </Link>
 
         {/* Current user badge */}
         {user && (
           <div className="user-profile-badge">
-            <div className="user-avatar">{user.avatarInitials}</div>
+            <div className="user-avatar">{user.initials}</div>
             <div className="user-details">
               <span className="user-name">{user.name}</span>
               <span className="user-role-label">{user.roleTitle}</span>

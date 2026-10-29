@@ -9,13 +9,14 @@
  * - Provides tenant-scoped API methods connecting to the Stage 3D REST API.
  */
 
-const API_BASE_URL =
+let configuredApiBaseUrl =
   (typeof import.meta !== 'undefined' &&
     import.meta.env &&
     import.meta.env.VITE_API_URL) ||
   'http://localhost:4000/api/v1';
 
 let currentCsrfToken = null;
+let nodeSessionCookie = null;
 
 export class ApiError extends Error {
   constructor(message, status, code, details = null) {
@@ -28,8 +29,24 @@ export class ApiError extends Error {
 }
 
 /**
+ * Updates base URL for API client (useful for test harnesses or dynamic config).
+ * @param {string} url
+ */
+export function setApiBaseUrl(url) {
+  configuredApiBaseUrl = url;
+}
+
+/**
+ * Returns current API base URL.
+ * @returns {string}
+ */
+export function getApiBaseUrl() {
+  return configuredApiBaseUrl;
+}
+
+/**
  * Updates stored anti-CSRF token in memory.
- * @param {string} token
+ * @param {string|null} token
  */
 export function setCsrfToken(token) {
   currentCsrfToken = token;
@@ -44,13 +61,30 @@ export function getCsrfToken() {
 }
 
 /**
+ * Stores or clears Node.js emulation session cookie.
+ * @param {string|null} cookie
+ */
+export function setNodeSessionCookie(cookie) {
+  nodeSessionCookie = cookie;
+}
+
+/**
+ * Returns currently stored Node session cookie.
+ * @returns {string|null}
+ */
+export function getNodeSessionCookie() {
+  return nodeSessionCookie;
+}
+
+/**
  * Low-level HTTP fetch wrapper with security baseline headers.
  * @param {string} endpoint - Relative path (e.g. /auth/me or /tenants/tenant-apex-9941/applications)
  * @param {RequestInit} [options]
  * @returns {Promise<any>}
  */
 async function request(endpoint, options = {}) {
-  const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const baseUrl = getApiBaseUrl();
+  const url = `${baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
   const headers = {
     Accept: 'application/json',
@@ -67,10 +101,15 @@ async function request(endpoint, options = {}) {
     headers['X-CSRF-Token'] = currentCsrfToken;
   }
 
+  // In non-browser environments (e.g. Node test runners), emulate HttpOnly cookie jar
+  if (typeof window === 'undefined' && nodeSessionCookie && !headers.Cookie && !headers.cookie) {
+    headers.Cookie = nodeSessionCookie;
+  }
+
   const fetchOptions = {
     ...options,
     headers,
-    credentials: options.credentials || 'include' // Ensures HttpOnly cookie transmission
+    credentials: options.credentials || 'include' // Ensures HttpOnly cookie transmission in browser
   };
 
   let res;
@@ -82,6 +121,17 @@ async function request(endpoint, options = {}) {
       0,
       'NETWORK_ERROR'
     );
+  }
+
+  // In non-browser environments, track Set-Cookie from response
+  if (typeof window === 'undefined') {
+    const rawSetCookie = res.headers.get('set-cookie');
+    if (rawSetCookie) {
+      const match = rawSetCookie.match(/([^;]+)/);
+      if (match) {
+        nodeSessionCookie = match[1].trim();
+      }
+    }
   }
 
   let body;
@@ -99,7 +149,7 @@ async function request(endpoint, options = {}) {
     throw new ApiError(message, res.status, code, details);
   }
 
-  // If login returns csrfToken, remember it
+  // If response returns csrfToken, remember it
   if (body && body.data && body.data.csrfToken) {
     setCsrfToken(body.data.csrfToken);
   }
@@ -145,7 +195,14 @@ export const apiClient = {
   },
 
   logout: async () => {
-    return apiClient.post('/auth/logout', {});
+    try {
+      return await apiClient.post('/auth/logout', {});
+    } finally {
+      setCsrfToken(null);
+      if (typeof window === 'undefined') {
+        nodeSessionCookie = null;
+      }
+    }
   },
 
   getCurrentUser: async () => {

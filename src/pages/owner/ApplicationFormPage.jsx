@@ -6,20 +6,19 @@ import {
   Check,
   AlertCircle,
   ShieldCheck,
-  Sparkles,
   Save,
-  X
+  RefreshCw,
+  Server,
+  Lock,
+  Sparkles
 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
-import {
-  getApplicationById,
-  createApplication,
-  updateApplication,
-  DEMO_DATA_DISCLAIMER
-} from '../../services/mockData';
+import { useAuth } from '../../hooks/useAuth';
+import { apiClient } from '../../services/apiClient';
 
-// Basic domain/hostname regex (e.g. api.domain.io or domain.com, without http://)
+// Basic domain/hostname regex (e.g. api.apexfintech.io, without http://)
 const HOSTNAME_REGEX = /^(?!:\/\/)([a-zA-Z0-9-_]+\.)+[a-zA-Z]{2,}$/;
+const IDENTIFIER_REGEX = /^[a-zA-Z0-9-_]{3,50}$/;
 
 export default function ApplicationFormPage() {
   const navigate = useNavigate();
@@ -27,14 +26,14 @@ export default function ApplicationFormPage() {
   const editId = searchParams.get('edit');
   const isEditMode = Boolean(editId);
 
+  const { activeTenant, user } = useAuth();
+  const tenantIdentifier = activeTenant?.identifier || activeTenant?.id || 'tenant-apex-9941';
+
   // Form fields
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
-  const [routePath, setRoutePath] = useState('/');
-  const [environment, setEnvironment] = useState('production');
-  const [protectionMode, setProtectionMode] = useState('Synthetic SQL & API Decoys');
-  const [description, setDescription] = useState('');
-  const [tagsInput, setTagsInput] = useState('');
+  const [applicationIdentifier, setApplicationIdentifier] = useState('');
+  const [status, setStatus] = useState('PROTECTED');
 
   // Form State
   const [errors, setErrors] = useState({});
@@ -45,23 +44,32 @@ export default function ApplicationFormPage() {
   // Load existing application if edit mode
   useEffect(() => {
     if (isEditMode) {
-      getApplicationById(editId).then((app) => {
-        if (app) {
-          setName(app.name || '');
-          setDomain(app.domain || '');
-          const pathOnly = app.route ? app.route.replace(app.domain || '', '') : '/';
-          setRoutePath(pathOnly || '/');
-          setEnvironment(app.environment || 'production');
-          setProtectionMode(app.protectionMode || 'Synthetic SQL & API Decoys');
-          setDescription(app.description || '');
-          setTagsInput(app.tags ? app.tags.join(', ') : '');
-        } else {
-          setErrors({ global: `Application with ID "${editId}" could not be found.` });
-        }
-        setInitialLoading(false);
-      });
+      setInitialLoading(true);
+      setErrors({});
+
+      apiClient
+        .getApplicationById(tenantIdentifier, editId)
+        .then((res) => {
+          if (res && res.success && res.data) {
+            const app = res.data;
+            setName(app.name || '');
+            setDomain(app.domain || '');
+            setApplicationIdentifier(app.applicationIdentifier || '');
+            setStatus(app.status || 'PROTECTED');
+          } else {
+            setErrors({ global: `Application "${editId}" could not be retrieved from the database.` });
+          }
+        })
+        .catch((err) => {
+          setErrors({
+            global: err.message || `Failed to load application "${editId}" from backend.`
+          });
+        })
+        .finally(() => {
+          setInitialLoading(false);
+        });
     }
-  }, [editId, isEditMode]);
+  }, [editId, isEditMode, tenantIdentifier]);
 
   // Validation function
   const validate = () => {
@@ -71,25 +79,28 @@ export default function ApplicationFormPage() {
       newErrors.name = 'Application name is required.';
     } else if (name.trim().length < 3) {
       newErrors.name = 'Name must be at least 3 characters.';
+    } else if (name.trim().length > 100) {
+      newErrors.name = 'Name cannot exceed 100 characters.';
     }
 
     if (!domain.trim()) {
-      newErrors.domain = 'Hostname or domain is required.';
+      newErrors.domain = 'Domain or hostname is required.';
     } else {
       const cleanDomain = domain.trim().toLowerCase();
       if (cleanDomain.startsWith('http://') || cleanDomain.startsWith('https://')) {
-        newErrors.domain = 'Do not include http:// or https://. Provide only the hostname (e.g. api.example.com).';
-      } else if (!HOSTNAME_REGEX.test(cleanDomain)) {
-        newErrors.domain = 'Please enter a valid domain format (e.g., api.apexfintech.io or service.internal.net).';
+        newErrors.domain = 'Do not include http:// or https://. Provide only the hostname (e.g. api.apexfintech.io).';
+      } else if (cleanDomain.includes('/') || cleanDomain.includes(':')) {
+        newErrors.domain = 'Domain must not contain URL paths or port numbers.';
+      } else if (!HOSTNAME_REGEX.test(cleanDomain) && cleanDomain !== 'localhost') {
+        newErrors.domain = 'Please enter a valid hostname format (e.g. api.apexfintech.io or accounts.internal.net).';
       }
     }
 
-    if (!description.trim()) {
-      newErrors.description = 'A short service description is required.';
-    }
-
-    if (!routePath.trim() || !routePath.startsWith('/')) {
-      newErrors.routePath = 'Route path must start with a leading slash (e.g. / or /v1/api).';
+    if (applicationIdentifier.trim()) {
+      if (!IDENTIFIER_REGEX.test(applicationIdentifier.trim())) {
+        newErrors.applicationIdentifier =
+          'Identifier must be 3-50 alphanumeric characters or hyphens (e.g. app-01, accounts-api).';
+      }
     }
 
     setErrors(newErrors);
@@ -103,38 +114,66 @@ export default function ApplicationFormPage() {
     setIsSubmitting(true);
     setErrors({});
 
-    const formattedTags = tagsInput
-      .split(',')
-      .map(t => t.trim())
-      .filter(Boolean);
-
-    const payload = {
-      name: name.trim(),
-      domain: domain.trim().toLowerCase(),
-      route: `${domain.trim().toLowerCase()}${routePath.trim() === '/' ? '' : routePath.trim()}`,
-      environment,
-      protectionMode,
-      description: description.trim(),
-      tags: formattedTags
-    };
-
     try {
-      let savedApp;
       if (isEditMode) {
-        savedApp = await updateApplication(editId, payload);
-        setSuccessMessage(`Application "${savedApp.name}" updated successfully in mock registry!`);
-      } else {
-        savedApp = await createApplication(payload);
-        setSuccessMessage(`Application "${savedApp.name}" registered with simulated gateway!`);
-      }
+        // Backend update only accepts name, domain, status
+        const updatePayload = {
+          name: name.trim(),
+          domain: domain.trim().toLowerCase(),
+          status
+        };
 
-      // Short delay then navigate to application detail
-      setTimeout(() => {
-        navigate(`/owner/applications/${savedApp.id}`);
-      }, 700);
+        const res = await apiClient.updateApplication(tenantIdentifier, editId, updatePayload);
+        if (res && res.success) {
+          setSuccessMessage(`Application "${name.trim()}" successfully updated in PostgreSQL!`);
+          setTimeout(() => {
+            navigate('/owner/applications');
+          }, 800);
+        }
+      } else {
+        // Backend create accepts name, domain, status, and optional applicationIdentifier
+        const createPayload = {
+          name: name.trim(),
+          domain: domain.trim().toLowerCase(),
+          status
+        };
+
+        if (applicationIdentifier.trim()) {
+          createPayload.applicationIdentifier = applicationIdentifier.trim();
+        }
+
+        const res = await apiClient.createApplication(tenantIdentifier, createPayload);
+        if (res && res.success) {
+          const createdApp = res.data;
+          setSuccessMessage(`Application "${name.trim()}" registered in database!`);
+          setTimeout(() => {
+            const targetId = createdApp.applicationIdentifier || createdApp.id;
+            navigate(`/owner/applications/${targetId}`);
+          }, 800);
+        }
+      }
     } catch (err) {
-      setErrors({ global: err.message || 'Failed to save application.' });
       setIsSubmitting(false);
+
+      if (err.status === 403) {
+        setErrors({
+          global:
+            'Permission Denied: Your account does not possess the "manage_applications" permission in this tenant.'
+        });
+      } else if (err.status === 409) {
+        setErrors({
+          global:
+            err.message ||
+            `An application with identifier "${applicationIdentifier.trim()}" already exists in tenant "${tenantIdentifier}".`
+        });
+      } else if (err.status === 400) {
+        const details = Array.isArray(err.details) ? err.details.join(' ') : err.message;
+        setErrors({ global: `Validation Error: ${details}` });
+      } else {
+        setErrors({
+          global: err.message || 'Failed to submit application to backend.'
+        });
+      }
     }
   };
 
@@ -142,8 +181,8 @@ export default function ApplicationFormPage() {
     return (
       <div className="page-container">
         <div className="cyber-card" style={{ padding: '2rem', textAlign: 'center' }}>
-          <div className="spinner" style={{ margin: '0 auto 1rem' }} />
-          <p>Loading application configuration...</p>
+          <RefreshCw size={24} className="spinner" style={{ margin: '0 auto 1rem', color: 'var(--accent-primary)' }} />
+          <p>Loading application record from database...</p>
         </div>
       </div>
     );
@@ -153,7 +192,7 @@ export default function ApplicationFormPage() {
     <>
       <PageHeader
         title={isEditMode ? `Edit Application: ${name || editId}` : 'Register New Application'}
-        badge="Gateway Ingress Route"
+        badge={activeTenant?.displayName || 'Gateway Ingress Route'}
         description="Configure an upstream service to receive adaptive cyber deception and canary injection."
         actions={
           <Link to="/owner/applications" className="btn btn-secondary btn-sm">
@@ -163,18 +202,22 @@ export default function ApplicationFormPage() {
         }
       />
 
-      <div className="page-container" style={{ maxWidth: '860px', margin: '0 auto', width: '100%' }}>
-        {/* Prototype Scope Banner */}
-        <div className="demo-banner">
-          <Sparkles size={16} style={{ flexShrink: 0 }} />
+      <div className="page-container" style={{ maxWidth: '820px', margin: '0 auto', width: '100%' }}>
+        {/* Persistence Notice */}
+        <div className="demo-banner" style={{ borderColor: 'rgba(16, 185, 129, 0.4)', background: 'rgba(16, 185, 129, 0.08)' }}>
+          <Server size={16} style={{ flexShrink: 0, color: '#10b981' }} />
           <div>
-            <strong>Configuration Simulation:</strong> {DEMO_DATA_DISCLAIMER} No real gateway routing or DNS record changes occur.
+            <strong style={{ color: '#10b981' }}>Database-Backed Persistence:</strong> Mutations are executed
+            against PostgreSQL under tenant boundary <code>{tenantIdentifier}</code> with anti-CSRF token verification and audit logging.
           </div>
         </div>
 
         {/* Global Error Banner */}
         {errors.global && (
-          <div className="demo-banner demo-banner-warning" style={{ color: 'var(--severity-critical)', borderColor: 'rgba(239, 68, 68, 0.4)' }}>
+          <div
+            className="demo-banner demo-banner-warning"
+            style={{ color: 'var(--severity-critical)', borderColor: 'rgba(239, 68, 68, 0.4)' }}
+          >
             <AlertCircle size={16} style={{ flexShrink: 0 }} />
             <div>{errors.global}</div>
           </div>
@@ -182,26 +225,45 @@ export default function ApplicationFormPage() {
 
         {/* Success Feedback Banner */}
         {successMessage && (
-          <div className="demo-banner" style={{ background: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.4)', color: '#6ee7b7' }}>
+          <div
+            className="demo-banner"
+            style={{
+              background: 'rgba(16, 185, 129, 0.1)',
+              borderColor: 'rgba(16, 185, 129, 0.4)',
+              color: '#6ee7b7'
+            }}
+          >
             <Check size={16} style={{ flexShrink: 0 }} />
             <div>{successMessage} Redirecting...</div>
           </div>
         )}
 
         {/* Form Container */}
-        <form onSubmit={handleSubmit} className="cyber-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '2rem' }}>
+        <form
+          onSubmit={handleSubmit}
+          className="cyber-card"
+          style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '2rem' }}
+        >
           <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: '1rem' }}>
             <h2 style={{ fontSize: '1.125rem', marginBottom: '0.25rem' }}>
-              Service Identity & Routing
+              Service Identity & Ingress Route
             </h2>
             <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              Specify the public domain name and endpoint path that client traffic will route through.
+              Specify the registered upstream domain and protection status for this service.
             </p>
           </div>
 
           {/* Application Name */}
           <div>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: 'var(--text-primary)' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: 600,
+                marginBottom: '6px',
+                color: 'var(--text-primary)'
+              }}
+            >
               Application Name <span style={{ color: 'var(--severity-critical)' }}>*</span>
             </label>
             <input
@@ -211,164 +273,161 @@ export default function ApplicationFormPage() {
               placeholder="e.g., Customer Accounts API"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              disabled={isSubmitting}
             />
             {errors.name && (
-              <span style={{ display: 'block', fontSize: '12px', color: 'var(--severity-critical)', marginTop: '4px' }}>
+              <span
+                style={{
+                  display: 'block',
+                  fontSize: '12px',
+                  color: 'var(--severity-critical)',
+                  marginTop: '4px'
+                }}
+              >
                 {errors.name}
               </span>
             )}
             <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-              Human-readable title used across telemetry dashboards and investigation logs.
+              Human-readable title used across tenant dashboards and security investigation logs.
             </span>
           </div>
 
-          {/* Domain & Route Path */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: '1rem' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: 'var(--text-primary)' }}>
-                Domain / Hostname <span style={{ color: 'var(--severity-critical)' }}>*</span>
-              </label>
-              <input
-                type="text"
-                className="cyber-input"
-                style={{ width: '100%', borderColor: errors.domain ? 'var(--severity-critical)' : undefined }}
-                placeholder="api.apexfintech.io"
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-              />
-              {errors.domain && (
-                <span style={{ display: 'block', fontSize: '12px', color: 'var(--severity-critical)', marginTop: '4px' }}>
-                  {errors.domain}
-                </span>
-              )}
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: 'var(--text-primary)' }}>
-                Ingress Path Prefix
-              </label>
-              <input
-                type="text"
-                className="cyber-input"
-                style={{ width: '100%', borderColor: errors.routePath ? 'var(--severity-critical)' : undefined }}
-                placeholder="/v2/accounts"
-                value={routePath}
-                onChange={(e) => setRoutePath(e.target.value)}
-              />
-              {errors.routePath && (
-                <span style={{ display: 'block', fontSize: '12px', color: 'var(--severity-critical)', marginTop: '4px' }}>
-                  {errors.routePath}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Environment & Protection Mode */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: 'var(--text-primary)' }}>
-                Deployment Environment
-              </label>
-              <select
-                className="cyber-select"
-                style={{ width: '100%' }}
-                value={environment}
-                onChange={(e) => setEnvironment(e.target.value)}
-              >
-                <option value="production">Production</option>
-                <option value="staging">Staging</option>
-                <option value="development">Development</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: 'var(--text-primary)' }}>
-                Deception Protection Profile
-              </label>
-              <select
-                className="cyber-select"
-                style={{ width: '100%' }}
-                value={protectionMode}
-                onChange={(e) => setProtectionMode(e.target.value)}
-              >
-                <option value="Synthetic SQL & API Decoys">Synthetic SQL & API Decoys</option>
-                <option value="Canary Credentials & Honey-routes">Canary Credentials & Honey-routes</option>
-                <option value="Adaptive Emulation Sandbox">Adaptive Emulation Sandbox</option>
-                <option value="Schema Poisoning Decoys">Schema Poisoning Decoys</option>
-                <option value="Monitoring Only">Monitoring Only (Passive)</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Description */}
+          {/* Domain Hostname */}
           <div>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: 'var(--text-primary)' }}>
-              Service Description <span style={{ color: 'var(--severity-critical)' }}>*</span>
-            </label>
-            <textarea
-              className="cyber-input"
-              rows={3}
-              style={{ width: '100%', resize: 'vertical', borderColor: errors.description ? 'var(--severity-critical)' : undefined }}
-              placeholder="Describe the service role, sensitivity of data handled, and expected traffic patterns..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-            {errors.description && (
-              <span style={{ display: 'block', fontSize: '12px', color: 'var(--severity-critical)', marginTop: '4px' }}>
-                {errors.description}
-              </span>
-            )}
-          </div>
-
-          {/* Tags */}
-          <div>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: 'var(--text-primary)' }}>
-              Tags (Optional)
+            <label
+              style={{
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: 600,
+                marginBottom: '6px',
+                color: 'var(--text-primary)'
+              }}
+            >
+              Domain / Ingress Hostname <span style={{ color: 'var(--severity-critical)' }}>*</span>
             </label>
             <input
               type="text"
               className="cyber-input"
-              style={{ width: '100%' }}
-              placeholder="e.g., Banking, PCI-DSS, GraphQL, External (comma separated)"
-              value={tagsInput}
-              onChange={(e) => setTagsInput(e.target.value)}
+              style={{ width: '100%', borderColor: errors.domain ? 'var(--severity-critical)' : undefined }}
+              placeholder="e.g., accounts.apexfintech.internal"
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+              disabled={isSubmitting}
             />
+            {errors.domain && (
+              <span
+                style={{
+                  display: 'block',
+                  fontSize: '12px',
+                  color: 'var(--severity-critical)',
+                  marginTop: '4px'
+                }}
+              >
+                {errors.domain}
+              </span>
+            )}
             <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-              Separate multiple tags with commas for categorization and search.
+              Hostname routed through the gateway (omit protocol scheme and port numbers).
             </span>
           </div>
 
-          {/* Form Actions */}
-          <div style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: '1rem',
-            paddingTop: '1rem',
-            borderTop: '1px solid var(--border-subtle)',
-            marginTop: '0.5rem'
-          }}>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => navigate('/owner/applications')}
+          {/* Application Identifier */}
+          <div>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: 600,
+                marginBottom: '6px',
+                color: 'var(--text-primary)'
+              }}
+            >
+              Application Identifier {isEditMode && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>(Immutable)</span>}
+            </label>
+            <input
+              type="text"
+              className="cyber-input"
+              style={{
+                width: '100%',
+                borderColor: errors.applicationIdentifier ? 'var(--severity-critical)' : undefined,
+                backgroundColor: isEditMode ? 'rgba(255, 255, 255, 0.03)' : undefined
+              }}
+              placeholder="e.g., app-01 or accounts-api (optional, auto-generated if omitted)"
+              value={applicationIdentifier}
+              onChange={(e) => setApplicationIdentifier(e.target.value)}
+              disabled={isEditMode || isSubmitting}
+            />
+            {errors.applicationIdentifier && (
+              <span
+                style={{
+                  display: 'block',
+                  fontSize: '12px',
+                  color: 'var(--severity-critical)',
+                  marginTop: '4px'
+                }}
+              >
+                {errors.applicationIdentifier}
+              </span>
+            )}
+            <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+              Unique alphanumeric slug within this tenant scope used in REST routes.
+            </span>
+          </div>
+
+          {/* Status Selection */}
+          <div>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: 600,
+                marginBottom: '6px',
+                color: 'var(--text-primary)'
+              }}
+            >
+              Protection Supervision Mode
+            </label>
+            <select
+              className="cyber-select"
+              style={{ width: '100%' }}
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
               disabled={isSubmitting}
             >
-              <X size={15} />
-              <span>Cancel</span>
-            </button>
+              <option value="PROTECTED">PROTECTED (Active Deception & Canary Tokens)</option>
+              <option value="DEGRADED">DEGRADED (Reduced Decoy Mesh Capacity)</option>
+              <option value="BYPASS">BYPASS (Direct Pass-Through Routing)</option>
+            </select>
+          </div>
 
+          {/* Action Buttons */}
+          <div
+            style={{
+              display: 'flex',
+              gap: '1rem',
+              justifyContent: 'flex-end',
+              paddingTop: '1.25rem',
+              borderTop: '1px solid var(--border-subtle)'
+            }}
+          >
+            <Link to="/owner/applications" className="btn btn-secondary">
+              <span>Cancel</span>
+            </Link>
             <button
               type="submit"
               className="btn btn-primary"
               disabled={isSubmitting}
-              style={{ minWidth: '150px' }}
+              style={{ minWidth: '160px', justifyContent: 'center' }}
             >
               {isSubmitting ? (
-                <span>Saving...</span>
+                <>
+                  <RefreshCw size={15} className="spinner" />
+                  <span>Persisting to DB...</span>
+                </>
               ) : (
                 <>
                   <Save size={15} />
-                  <span>{isEditMode ? 'Save Changes' : 'Register Service'}</span>
+                  <span>{isEditMode ? 'Update Application' : 'Register Service'}</span>
                 </>
               )}
             </button>

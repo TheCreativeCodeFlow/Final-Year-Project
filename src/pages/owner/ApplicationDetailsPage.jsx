@@ -14,15 +14,18 @@ import {
   ExternalLink,
   Tag,
   CheckCircle2,
-  Server
+  Server,
+  Database
 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import MetricCard from '../../components/common/MetricCard';
 import StatusBadge from '../../components/common/StatusBadge';
 import LoadingState from '../../components/common/LoadingState';
 import EmptyState from '../../components/common/EmptyState';
+import { useAuth } from '../../hooks/useAuth';
+import { apiClient } from '../../services/apiClient';
 import {
-  getApplicationById,
+  getApplicationById as getMockAppById,
   getApplicationTraffic,
   getSecurityEvents,
   DEMO_DATA_DISCLAIMER
@@ -40,8 +43,11 @@ import {
 export default function ApplicationDetailsPage() {
   const { applicationId } = useParams();
   const navigate = useNavigate();
+  const { activeTenant } = useAuth();
+  const tenantIdentifier = activeTenant?.identifier || activeTenant?.id || 'tenant-apex-9941';
 
   const [app, setApp] = useState(null);
+  const [isLiveRecord, setIsLiveRecord] = useState(false);
   const [trafficData, setTrafficData] = useState([]);
   const [appEvents, setAppEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,26 +56,59 @@ export default function ApplicationDetailsPage() {
     let isMounted = true;
     setLoading(true);
 
-    Promise.all([
-      getApplicationById(applicationId),
-      getApplicationTraffic(applicationId),
-      getSecurityEvents({ applicationId })
-    ]).then(([foundApp, traffic, events]) => {
-      if (isMounted) {
-        setApp(foundApp);
-        setTrafficData(traffic);
-        setAppEvents(events);
-        setLoading(false);
-      }
-    });
+    async function loadData() {
+      // 1. Attempt to fetch from real backend database
+      try {
+        const liveRes = await apiClient.getApplicationById(tenantIdentifier, applicationId);
+        if (isMounted && liveRes && liveRes.success && liveRes.data) {
+          setApp(liveRes.data);
+          setIsLiveRecord(true);
 
-    return () => { isMounted = false; };
-  }, [applicationId]);
+          // Simulated traffic/events for visualization
+          const traffic = await getApplicationTraffic(applicationId);
+          const events = await getSecurityEvents({ applicationId });
+          if (isMounted) {
+            setTrafficData(traffic || []);
+            setAppEvents(events || []);
+            setLoading(false);
+          }
+          return;
+        }
+      } catch {
+        // Fallback to mock data if backend not found
+      }
+
+      // 2. Fallback to mock fixtures
+      try {
+        const foundMock = await getMockAppById(applicationId);
+        const traffic = await getApplicationTraffic(applicationId);
+        const events = await getSecurityEvents({ applicationId });
+        if (isMounted) {
+          setApp(foundMock);
+          setIsLiveRecord(false);
+          setTrafficData(traffic || []);
+          setAppEvents(events || []);
+          setLoading(false);
+        }
+      } catch {
+        if (isMounted) {
+          setApp(null);
+          setLoading(false);
+        }
+      }
+    }
+
+    loadData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [applicationId, tenantIdentifier]);
 
   if (loading) {
     return (
       <div className="page-container">
-        <LoadingState message={`Loading telemetry for application ${applicationId}...`} />
+        <LoadingState message={`Retrieving configuration for application "${applicationId}"...`} />
       </div>
     );
   }
@@ -80,7 +119,7 @@ export default function ApplicationDetailsPage() {
       <div className="page-container">
         <EmptyState
           title="Application Not Found"
-          description={`No registered application exists with identifier "${applicationId}". It may have been unlinked or the identifier is invalid.`}
+          description={`No registered application exists with identifier "${applicationId}" in tenant "${tenantIdentifier}".`}
           actionText="Return to Applications"
           onAction={() => navigate('/owner/applications')}
         />
@@ -88,19 +127,28 @@ export default function ApplicationDetailsPage() {
     );
   }
 
+  const appIdentifier = app.applicationIdentifier || app.id;
+  const statusStr = (app.status || 'PROTECTED').toUpperCase();
+  const statusType =
+    statusStr === 'PROTECTED' || statusStr === 'SHIELDED'
+      ? 'operational'
+      : statusStr === 'DEGRADED'
+      ? 'medium'
+      : 'low';
+
   return (
     <>
       <PageHeader
         title={app.name}
-        badge={app.id}
-        description={app.description}
+        badge={appIdentifier}
+        description={app.description || `Protected ingress route: ${app.domain}`}
         actions={
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
             <Link to="/owner/applications" className="btn btn-secondary btn-sm">
               <ArrowLeft size={15} />
               <span>All Applications</span>
             </Link>
-            <Link to={`/owner/applications/new?edit=${app.id}`} className="btn btn-primary btn-sm">
+            <Link to={`/owner/applications/new?edit=${appIdentifier}`} className="btn btn-primary btn-sm">
               <Edit2 size={14} />
               <span>Edit Configuration</span>
             </Link>
@@ -109,277 +157,149 @@ export default function ApplicationDetailsPage() {
       />
 
       <div className="page-container">
-        {/* Simulation Banner */}
-        <div className="demo-banner">
-          <Sparkles size={16} style={{ flexShrink: 0 }} />
-          <div>
-            <strong>Simulated Telemetry View:</strong> {DEMO_DATA_DISCLAIMER} Ingress and threat metrics are synthetic indicators.
-          </div>
+        {/* Source Banner */}
+        <div
+          className="demo-banner"
+          style={
+            isLiveRecord
+              ? { borderColor: 'rgba(16, 185, 129, 0.4)', background: 'rgba(16, 185, 129, 0.08)' }
+              : {}
+          }
+        >
+          {isLiveRecord ? (
+            <>
+              <Database size={16} style={{ flexShrink: 0, color: '#10b981' }} />
+              <div>
+                <strong style={{ color: '#10b981' }}>DATA SOURCE: LIVE POSTGRESQL RECORD</strong>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Persistent domain model loaded from <code>/api/v1/tenants/{tenantIdentifier}/applications/{applicationId}</code>.
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <Sparkles size={16} style={{ flexShrink: 0 }} />
+              <div>
+                <strong>Prototype Application:</strong> {DEMO_DATA_DISCLAIMER} Ingress and threat metrics are synthetic indicators.
+              </div>
+            </>
+          )}
         </div>
 
         {/* Application Metrics Summary */}
         <div className="metrics-grid">
           <MetricCard
-            title="Ingress Throughput"
-            value={`${app.requestsPerSec} req/s`}
-            icon={Activity}
-            trend="+5.2%"
-            trendDirection="up"
-            subtext={app.requestVolume}
+            title="Ingress Hostname"
+            value={app.domain}
+            icon={Layers}
+            subtext="Gateway Ingress Route"
             accentColor="#38bdf8"
           />
-
           <MetricCard
-            title="Threat Incidents"
-            value={app.threatCount}
-            icon={AlertTriangle}
-            trend={app.threatIndex}
-            trendDirection={app.threatIndex === 'Elevated' ? 'down' : 'neutral'}
-            subtext="Classified in last 24h"
-            accentColor="var(--severity-high)"
-          />
-
-          <MetricCard
-            title="Active Decoys"
-            value={`${app.activeDecoys} Decoys`}
-            icon={Shuffle}
-            subtext={app.protectionMode}
-            accentColor="var(--accent-diverted)"
-          />
-
-          <MetricCard
-            title="Gateway Status"
-            value={app.status.toUpperCase()}
+            title="Protection Supervision"
+            value={statusStr}
             icon={ShieldCheck}
-            subtext={`Environment: ${app.environment}`}
-            accentColor="var(--status-success)"
+            subtext="Deception Mesh & Decoys"
+            accentColor="#10b981"
+          />
+          <MetricCard
+            title="Tenant Boundary"
+            value={activeTenant?.displayName || tenantIdentifier}
+            icon={Server}
+            subtext="Isolated PostgreSQL Scope"
+            accentColor="#8b5cf6"
+          />
+          <MetricCard
+            title="Audit Status"
+            value="Synchronized"
+            icon={CheckCircle2}
+            subtext={app.updatedAt ? `Updated ${new Date(app.updatedAt).toLocaleDateString()}` : 'Active Record'}
+            accentColor="#f59e0b"
           />
         </div>
 
-        {/* Identity & Technical Routing Specification */}
-        <div className="grid-equal-2col">
-          {/* Identity & Config Card */}
-          <div className="cyber-card">
-            <div className="cyber-card-header">
-              <div className="cyber-card-title">
-                <Layers size={18} style={{ color: 'var(--accent-primary-light)' }} />
-                <span>Service Specification</span>
-              </div>
-              <StatusBadge status={app.status === 'shielded' ? 'operational' : 'low'} label={app.status} />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '13px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Public Hostname / Domain</span>
-                <span className="mono-tag" style={{ color: '#93c5fd' }}>{app.domain}</span>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Ingress Path Route</span>
-                <span className="mono-tag">{app.route}</span>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Upstream Destination</span>
-                <span className="mono-tag">{app.upstreamUrl}</span>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Environment Tier</span>
-                <span style={{ textTransform: 'capitalize', fontWeight: 600 }}>{app.environment}</span>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Deception Mode</span>
-                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{app.protectionMode}</span>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Associated Tags</span>
-                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                  {app.tags && app.tags.map(t => (
-                    <span key={t} className="demo-tag" style={{ fontSize: '10px' }}>{t}</span>
-                  ))}
-                </div>
-              </div>
-            </div>
+        {/* Ingress Configuration Card */}
+        <div className="cyber-card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.75rem' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Upstream Service Identity</h3>
+            <span className="mono-tag" style={{ fontSize: '12px' }}>
+              UUID: {app.id}
+            </span>
           </div>
 
-          {/* Simulated Gateway Mesh Health */}
-          <div className="cyber-card">
-            <div className="cyber-card-header">
-              <div className="cyber-card-title">
-                <Server size={18} style={{ color: 'var(--accent-diverted)' }} />
-                <span>Simulated Ingress Integration</span>
-              </div>
-              <span className="demo-tag">MOCK CONNECTOR</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+            <div>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>
+                Service Name
+              </span>
+              <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{app.name}</strong>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '13px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
-                <div>
-                  <div style={{ fontWeight: 600 }}>DNS CNAME Delegation</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{app.cnameTarget}</div>
-                </div>
-                <StatusBadge status="operational" label="Verified" />
-              </div>
+            <div>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>
+                Ingress Hostname
+              </span>
+              <span className="mono-tag" style={{ color: '#93c5fd' }}>{app.domain}</span>
+            </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
-                <div>
-                  <div style={{ fontWeight: 600 }}>Decoy Mesh Injection Filter</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{app.activeDecoys} containerized honeypots attached</div>
-                </div>
-                <StatusBadge status="operational" label="Active" />
+            <div>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>
+                Protection Status
+              </span>
+              <div style={{ marginTop: '2px' }}>
+                <StatusBadge status={statusType} label={statusStr} />
               </div>
+            </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
-                <div>
-                  <div style={{ fontWeight: 600 }}>TLS Termination Certificate</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Wildcard RSA 4096 (Simulated Gateway Edge)</div>
-                </div>
-                <StatusBadge status="operational" label="Valid" />
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ fontWeight: 600 }}>Canary Header Detection</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>X-Canary-Session cookie interceptor</div>
-                </div>
-                <StatusBadge status="operational" label="Armed" />
-              </div>
+            <div>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>
+                Application Identifier
+              </span>
+              <span className="mono-tag" style={{ color: 'var(--accent-primary-light)' }}>
+                {appIdentifier}
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Traffic Ingress vs Diverted Chart */}
-        <div className="cyber-card">
-          <div className="cyber-card-header">
+        {/* Synthetic Traffic Visualization Section */}
+        <div className="cyber-card" style={{ padding: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
             <div>
-              <div className="cyber-card-title">
-                <Activity size={18} style={{ color: 'var(--accent-primary-light)' }} />
-                <span>Traffic Profile & Deceptive Interception</span>
-              </div>
-              <div className="cyber-card-subtitle">
-                Hourly throughput and attacker diversions for {app.name}
-              </div>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 600 }}>Simulated Ingress Telemetry</h3>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                Prototype traffic telemetry preview (real-time stream available upon Stage 4 proxy integration).
+              </p>
             </div>
-            <span className="demo-tag">LAST 24 HOURS</span>
+            <span className="demo-tag" style={{ fontSize: '10px' }}>
+              PROTOTYPE PREVIEW
+            </span>
           </div>
 
-          <div style={{ width: '100%', height: 260, marginTop: '0.5rem' }}>
+          <div style={{ width: '100%', height: 240 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={trafficData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+              <AreaChart data={trafficData}>
                 <defs>
-                  <linearGradient id="appTotalTraffic" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0} />
-                  </linearGradient>
-                  <linearGradient id="appDivertedTraffic" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.6} />
-                    <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.0} />
+                  <linearGradient id="trafficGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0.0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
-                <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} tickLine={false} />
-                <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
+                <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
+                <YAxis stroke="var(--text-muted)" fontSize={11} />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: 'var(--bg-surface-elevated)',
-                    borderColor: 'var(--border-default)',
-                    borderRadius: '8px',
-                    color: 'var(--text-primary)',
+                    backgroundColor: 'var(--bg-surface-card)',
+                    borderColor: 'var(--border-subtle)',
+                    borderRadius: '6px',
                     fontSize: '12px'
                   }}
                 />
-                <Area
-                  type="monotone"
-                  dataKey="requests"
-                  name="Ingress Requests"
-                  stroke="#3b82f6"
-                  fillOpacity={1}
-                  fill="url(#appTotalTraffic)"
-                />
-                <Area
-                  type="monotone"
-                  dataKey="diverted"
-                  name="Diverted to Decoys"
-                  stroke="#06b6d4"
-                  fillOpacity={1}
-                  fill="url(#appDivertedTraffic)"
-                />
+                <Area type="monotone" dataKey="requests" stroke="#38bdf8" fillOpacity={1} fill="url(#trafficGradient)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
-        </div>
-
-        {/* Security Events for this specific Application */}
-        <div className="cyber-card">
-          <div className="cyber-card-header">
-            <div>
-              <div className="cyber-card-title">
-                <Shuffle size={18} style={{ color: 'var(--accent-diverted)' }} />
-                <span>Associated Security & Deception Events</span>
-              </div>
-              <div className="cyber-card-subtitle">
-                Targeted attack vectors detected and handled for this endpoint
-              </div>
-            </div>
-
-            <Link
-              to={`/owner/events?appId=${app.id}`}
-              className="btn btn-secondary btn-sm"
-            >
-              <span>View In Security Events Explorer →</span>
-            </Link>
-          </div>
-
-          {appEvents.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: '13px', padding: '1rem 0' }}>
-              No threat events logged for this application in the current mock session.
-            </p>
-          ) : (
-            <div className="cyber-table-container">
-              <table className="cyber-table">
-                <thead>
-                  <tr>
-                    <th>Timestamp</th>
-                    <th>Attacker IP</th>
-                    <th>Vector / Attack Category</th>
-                    <th>Gateway Deception Action</th>
-                    <th>Severity</th>
-                    <th style={{ textAlign: 'right' }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {appEvents.map((evt) => (
-                    <tr key={evt.id}>
-                      <td style={{ whiteSpace: 'nowrap', fontSize: '12px', color: 'var(--text-muted)' }}>
-                        {evt.timestamp}
-                      </td>
-                      <td>
-                        <span className="mono-tag">{evt.sourceIp}</span>
-                      </td>
-                      <td>
-                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{evt.vector}</div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{evt.category}</div>
-                      </td>
-                      <td>
-                        <StatusBadge status="diverted" label={evt.gatewayAction} />
-                      </td>
-                      <td>
-                        <StatusBadge status={evt.severity} />
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <Link to={`/owner/events/${evt.id}`} className="btn btn-ghost btn-sm">
-                          <span>Inspect →</span>
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
       </div>
     </>

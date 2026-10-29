@@ -17,30 +17,27 @@ import {
   ShieldAlert,
   GitBranch,
   Compass,
-  PlayCircle
+  PlayCircle,
+  Building2,
+  ChevronDown
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 export default function Sidebar({ isOpen, onClose }) {
-  const { role, user, switchRole, logout, ROLES } = useAuth();
+  const { role, user, logout, activeTenant, authorizedTenants, switchTenant, ROLES } = useAuth();
   const navigate = useNavigate();
 
-  const isOwner = role === ROLES.OWNER;
-  const isAdmin = role === ROLES.ADMIN;
+  const isOwner = role === ROLES.OWNER || user?.isPlatformAdmin;
+  const isAdmin = role === ROLES.ADMIN || user?.isPlatformAdmin;
 
-  const handleRoleToggle = (targetRole) => {
-    switchRole(targetRole);
-    if (targetRole === ROLES.OWNER) {
-      navigate('/owner/overview');
-    } else {
-      navigate('/admin/overview');
-    }
-    if (onClose) onClose();
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
+  const handleTenantChange = (e) => {
+    const tenantIdentifier = e.target.value;
+    switchTenant(tenantIdentifier);
   };
 
   return (
@@ -55,7 +52,7 @@ export default function Sidebar({ isOpen, onClose }) {
             <div className="brand-info">
               <span className="brand-title">DeceptionGateway</span>
               <span className="brand-subtitle">
-                {isOwner ? 'Tenant Console' : 'Platform Ops'}
+                {user?.isPlatformAdmin ? 'Platform Operations' : (activeTenant?.displayName || 'Tenant Console')}
               </span>
             </div>
           </div>
@@ -128,7 +125,7 @@ export default function Sidebar({ isOpen, onClose }) {
 
           {/* Admin Navigation */}
           {isAdmin && (
-            <div>
+            <div style={{ marginTop: isOwner ? '1.5rem' : '0' }}>
               <div className="nav-section-title">Platform Administration</div>
               <ul className="nav-list">
                 <li>
@@ -251,46 +248,48 @@ export default function Sidebar({ isOpen, onClose }) {
             </div>
           )}
 
-          {/* Simulation Helper Box in Sidebar */}
-          <div style={{ marginTop: 'auto' }}>
+          {/* Tenant Switcher & Session Info in Sidebar */}
+          <div style={{ marginTop: 'auto', paddingTop: '1rem' }}>
             <div className="role-switch-box">
               <div className="role-switch-header">
-                <span>SIMULATION PERSONA</span>
-                <span className="demo-tag">DEV MODE</span>
+                <span>ACTIVE TENANT CONTEXT</span>
+                <span className="demo-tag" style={{ borderColor: '#10b981', color: '#6ee7b7' }}>
+                  POSTGRES
+                </span>
               </div>
-              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-                Currently acting as <strong>{user?.roleTitle || 'Guest'}</strong> ({user?.tenant}).
-              </p>
-              <div style={{ display: 'flex', gap: '4px', flexDirection: 'column' }}>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${isOwner ? 'btn-primary' : 'btn-secondary'}`}
-                  style={{ width: '100%', justifyContent: 'flex-start' }}
-                  onClick={() => handleRoleToggle(ROLES.OWNER)}
-                >
-                  <Layers size={14} />
-                  <span>Switch to App Owner</span>
-                </button>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${isAdmin ? 'btn-primary' : 'btn-secondary'}`}
-                  style={{ width: '100%', justifyContent: 'flex-start' }}
-                  onClick={() => handleRoleToggle(ROLES.ADMIN)}
-                >
-                  <Shield size={14} />
-                  <span>Switch to Gateway Admin</span>
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  style={{ width: '100%', justifyContent: 'flex-start', color: 'var(--text-muted)' }}
-                  onClick={() => {
-                    navigate('/select-role');
-                    if (onClose) onClose();
-                  }}
-                >
-                  <span>Open Role Selector View</span>
-                </button>
+
+              {authorizedTenants && authorizedTenants.length > 1 ? (
+                <div style={{ marginBottom: '0.65rem' }}>
+                  <label style={{ display: 'block', fontSize: '10px', color: 'var(--text-muted)', marginBottom: '3px' }}>
+                    Switch Authorized Tenant
+                  </label>
+                  <select
+                    className="cyber-select"
+                    style={{ width: '100%', fontSize: '11px', padding: '0.35rem 0.5rem' }}
+                    value={activeTenant?.identifier || activeTenant?.id || ''}
+                    onChange={handleTenantChange}
+                  >
+                    {authorizedTenants.map((item) => {
+                      const t = item.tenant || item;
+                      return (
+                        <option key={t.identifier || t.id} value={t.identifier || t.id}>
+                          {t.displayName || t.identifier}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              ) : (
+                <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                  Tenant: <strong>{activeTenant?.displayName || 'Apex FinTech Cloud'}</strong>
+                </p>
+              )}
+
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
+                Signed in as: <strong style={{ color: 'var(--text-primary)' }}>{user?.name || 'Guest'}</strong>
+                <div style={{ fontSize: '10px', color: 'var(--accent-primary-light)' }}>
+                  {user?.roleTitle}
+                </div>
               </div>
             </div>
           </div>
@@ -300,11 +299,11 @@ export default function Sidebar({ isOpen, onClose }) {
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            style={{ width: '100%', justifyContent: 'flex-start', color: 'var(--text-muted)' }}
+            style={{ width: '100%', justifyContent: 'flex-start', color: 'var(--severity-critical)' }}
             onClick={handleLogout}
           >
             <LogOut size={16} />
-            <span>Sign Out (Simulation)</span>
+            <span>Sign Out</span>
           </button>
         </div>
       </aside>
