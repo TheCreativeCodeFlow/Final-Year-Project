@@ -1,0 +1,460 @@
+// ==============================================================================
+// Adaptive Deception Gateway - Prisma Domain Schema
+// Stage 3B: PostgreSQL Relational Models with Strict Tenant Isolation
+// ==============================================================================
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ------------------------------------------------------------------------------
+// A. Organization & Tenancy
+// ------------------------------------------------------------------------------
+
+model Tenant {
+  id          String   @id @default(uuid())
+  identifier  String   @unique // e.g. "tenant-apex-9941", "tenant-medsecure-7712"
+  displayName String
+  status      String   @default("ACTIVE") // ACTIVE, SUSPENDED, DECOMMISSIONED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  applications           ProtectedApplication[]
+  policies               DeceptionPolicy[]
+  strategies             DeceptionStrategy[]
+  environments           DeceptionEnvironment[]
+  investigations         Investigation[]
+  attackerProfiles       AttackerProfile[]
+  investigationProfiles  InvestigationAttackerProfile[]
+  securityObservations   SecurityObservation[]
+  behavioralAssessments  BehavioralAssessment[]
+  policyDecisions        PolicyDecision[]
+  routingDecisions       RoutingDecision[]
+  routingOutcomes        RoutingOutcome[]
+  executionEvidences     ExecutionEvidence[]
+  graphs                 DeceptionGraph[]
+  graphTransitions       DeceptionGraphTransition[]
+  auditEvents            AuditEvent[]
+
+  @@map("tenants")
+}
+
+// ------------------------------------------------------------------------------
+// B. Protected Applications
+// ------------------------------------------------------------------------------
+
+model ProtectedApplication {
+  id                    String   @id @default(uuid())
+  tenantId              String
+  applicationIdentifier String   // e.g. "app-01", "app-14"
+  name                  String   // e.g. "Customer Accounts API"
+  domain                String   // e.g. "accounts.apexfintech.internal"
+  status                String   @default("PROTECTED") // PROTECTED, DEGRADED, BYPASS
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  investigations   Investigation[]
+  observations     SecurityObservation[]
+  routingDecisions RoutingDecision[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, applicationIdentifier])
+  @@index([tenantId])
+  @@map("protected_applications")
+}
+
+// ------------------------------------------------------------------------------
+// C. Deception Policies
+// ------------------------------------------------------------------------------
+
+model DeceptionPolicy {
+  id                            String   @id @default(uuid())
+  tenantId                      String?  // Null indicates platform-wide baseline policy
+  policyIdentifier              String   // e.g. "pol-sec-01", "pol-sec-06"
+  name                          String
+  description                   String?
+  enabled                       Boolean  @default(true)
+  priority                      Int      @default(100) // 1 (highest) to 1000 (lowest)
+  version                       Int      @default(1)
+  triggerConditions             Json     // Structured conditions e.g. { pathPrefix: "/api/v1/admin" }
+  requiredEvidenceCriteria      Json     // Thresholds e.g. { minConfidence: 0.8, requiresCanaryHit: true }
+  permittedActions              Json     // e.g. ["DIVERSION", "CONTAINMENT", "DELAY"]
+  prohibitedActions             Json     // e.g. ["RUN_ARBITRARY_COMMAND", "EXFILTRATE_DATA"]
+  protectedIsolationConstraints Json     // e.g. { strictNamespaceIsolation: true, noOutboundEgress: true }
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
+
+  tenant    Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  decisions PolicyDecision[]
+
+  @@unique([policyIdentifier, version])
+  @@index([tenantId])
+  @@index([priority])
+  @@map("deception_policies")
+}
+
+// ------------------------------------------------------------------------------
+// D. Deception Strategies
+// ------------------------------------------------------------------------------
+
+model DeceptionStrategy {
+  id                           String   @id @default(uuid())
+  tenantId                     String?  // Null indicates platform-wide strategy
+  strategyIdentifier           String   @unique // e.g. "strat-contain-06", "strat-tarpit-02"
+  name                         String
+  description                  String?
+  strategyType                 String   // "CONTAINMENT", "TARPIT", "HONEYPOT_DIVERSION", "CANARY_INJECTION"
+  enabled                      Boolean  @default(true)
+  prerequisites                Json     // Structured prerequisites
+  permittedStateChangeProposal Json     // Structured state-change proposal (NO arbitrary code/commands)
+  isolationRequirements        Json     // Required sandbox isolation boundaries
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("deception_strategies")
+}
+
+// ------------------------------------------------------------------------------
+// E. Deception Environments
+// ------------------------------------------------------------------------------
+
+model DeceptionEnvironment {
+  id                     String   @id @default(uuid())
+  tenantId               String
+  environmentIdentifier  String   // e.g. "env-apex-sandbox-01", "env-medsecure-tarpit"
+  name                   String
+  description            String?
+  lifecycleState         String   @default("ACTIVE") // PROVISIONING, ACTIVE, DRAINING, TERMINATED
+  isolationConfiguration Json     // Network namespace, egress policy, cpu/memory limits
+  metadata               Json?    // Synthetic service blueprints and version metadata
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  graphs           DeceptionGraph[]
+  routingDecisions RoutingDecision[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, environmentIdentifier])
+  @@index([tenantId])
+  @@map("deception_environments")
+}
+
+// ------------------------------------------------------------------------------
+// F. Investigations & Attacker Behavior Profiles
+// ------------------------------------------------------------------------------
+
+model Investigation {
+  id                      String   @id @default(uuid())
+  tenantId                String
+  applicationId           String?
+  investigationIdentifier String   // e.g. "inv-801", "inv-804", "inv-806"
+  status                  String   @default("OPEN") // OPEN, IN_REVIEW, CLOSED, DISCREPANCY_FLAGGED
+  severity                String   @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  summary                 String
+  evidenceReferences      Json?    // Structured references to observed facts and external correlation
+  openedAt                DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  tenant                Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application           ProtectedApplication?          @relation(fields: [applicationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  attackerProfiles      InvestigationAttackerProfile[]
+  observations          SecurityObservation[]
+  behavioralAssessments BehavioralAssessment[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, investigationIdentifier])
+  @@index([tenantId])
+  @@map("investigations")
+}
+
+model AttackerProfile {
+  id                         String    @id @default(uuid())
+  tenantId                   String
+  profileIdentifier          String    // e.g. "prof-701", "prof-704"
+  displayLabel               String    // Pseudonymous label: preserves uncertainty (not verified real identity)
+  observedBehaviorIndicators Json      // Indicators, heuristics, and observed TTP signatures
+  firstSeenAt                DateTime?
+  lastSeenAt                 DateTime?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+
+  tenant         Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  investigations InvestigationAttackerProfile[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, profileIdentifier])
+  @@index([tenantId])
+  @@map("attacker_profiles")
+}
+
+model InvestigationAttackerProfile {
+  id                String   @id @default(uuid())
+  tenantId          String
+  investigationId   String
+  attackerProfileId String
+  associatedAt      DateTime @default(now())
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  investigation   Investigation   @relation(fields: [investigationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  attackerProfile AttackerProfile @relation(fields: [attackerProfileId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([investigationId, attackerProfileId])
+  @@index([tenantId])
+  @@map("investigation_attacker_profiles")
+}
+
+// ------------------------------------------------------------------------------
+// G. Gateway Observations & Decision Lifecycle
+// (Strict semantic separation across observation, assessment, decision, outcome, evidence)
+// ------------------------------------------------------------------------------
+
+model SecurityObservation {
+  id                          String   @id @default(uuid())
+  tenantId                    String
+  applicationId               String?
+  investigationId             String?
+  observationIdentifier       String   @unique // e.g. "obs-901"
+  observationType             String   // e.g. "CANARY_TOKEN_TRIGGER", "PATH_TRAVERSAL_PROBE"
+  observedAt                  DateTime @default(now())
+  sanitizedStructuredEvidence Json     // Sanitized headers, URI, method, payload metadata
+  evidenceProvenance          String   // e.g. "INGRESS_WAF", "EDGE_PROXY", "CANARY_SERVICE"
+  correlationId               String
+  evidenceStatus              String   @default("OBSERVED") // "OBSERVED", "FILTERED", "SUPPRESSED"
+
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application     ProtectedApplication? @relation(fields: [applicationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  investigation   Investigation?        @relation(fields: [investigationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  assessments     BehavioralAssessment[]
+  policyDecisions PolicyDecision[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([correlationId])
+  @@map("security_observations")
+}
+
+model BehavioralAssessment {
+  id                 String   @id @default(uuid())
+  tenantId           String
+  observationId      String?
+  investigationId    String?
+  classification     String   // e.g. "CREDENTIAL_STUFFING", "ANOMALOUS_PROBE"
+  riskScore          Float?   // Documented valid range [0.0, 1.0]
+  confidenceScore    Float?   // Documented valid range [0.0, 1.0]; NOT proof of malicious intent
+  modelOrRuleVersion String   // Assessment provenance / model revision
+  explanation        Json?    // Detailed explanation and uncertainty factors
+  assessedAt         DateTime @default(now())
+
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  observation     SecurityObservation? @relation(fields: [observationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  investigation   Investigation?       @relation(fields: [investigationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  policyDecisions PolicyDecision[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@map("behavioral_assessments")
+}
+
+model PolicyDecision {
+  id                 String   @id @default(uuid())
+  tenantId           String
+  observationId      String?
+  assessmentId       String?
+  policyId           String?
+  policyVersion      Int?
+  decisionResult     String   // "PERMIT_DIVERSION", "BLOCK", "ALLOW_NORMAL"
+  decisionRationale  String
+  evidenceReferences Json?
+  decidedAt          DateTime @default(now())
+
+  tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  observation      SecurityObservation?  @relation(fields: [observationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  assessment       BehavioralAssessment? @relation(fields: [assessmentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  policy           DeceptionPolicy?      @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  routingDecisions RoutingDecision[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@map("policy_decisions")
+}
+
+model RoutingDecision {
+  id                  String   @id @default(uuid())
+  tenantId            String
+  policyDecisionId    String?
+  intendedAction      String   // "NORMAL_ROUTING", "BLOCK", "PROPOSED_DECEPTION_DIVERSION"
+  targetApplicationId String?
+  targetEnvironmentId String?
+  correlationId       String
+  decisionStatus      String   @default("DECIDED") // "DECIDED", "TRANSMITTED", "SUPERSEDED"
+  decidedAt           DateTime @default(now())
+
+  tenant            Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  policyDecision    PolicyDecision?       @relation(fields: [policyDecisionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  targetApplication ProtectedApplication? @relation(fields: [targetApplicationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  targetEnvironment DeceptionEnvironment? @relation(fields: [targetEnvironmentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  outcome           RoutingOutcome?
+  executionEvidence ExecutionEvidence?
+
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([correlationId])
+  @@map("routing_decisions")
+}
+
+model RoutingOutcome {
+  id                          String   @id @default(uuid())
+  tenantId                    String
+  routingDecisionId           String   @unique
+  outcomeStatus               String   // "DIVERTED_TO_SANDBOX", "BLOCKED_AT_INGRESS", "FAILED_UPSTREAM", "DISCREPANCY_DETECTED", "UNKNOWN"
+  outcomeSource               String   // Provenance e.g. "EDGE_ENVOY_PROXY", "CONTAINER_SUPERVISOR"
+  recordedAt                  DateTime @default(now())
+  failureOrDiscrepancyDetails Json?    // Preserves recorded discrepancy vs intended routing
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  routingDecision RoutingDecision @relation(fields: [routingDecisionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([routingDecisionId, tenantId])
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@map("routing_outcomes")
+}
+
+model ExecutionEvidence {
+  id                String    @id @default(uuid())
+  tenantId          String
+  routingDecisionId String    @unique
+  evidenceStatus    String    // "CONFIRMED_EXECUTION", "MISSING", "INCONCLUSIVE", "EXECUTION_FAILED"
+  evidenceSource    String?   // null if unverified / missing
+  evidenceData      Json?     // null if unverified / missing
+  recordedAt        DateTime? // null if unverified / missing
+  correlationId     String
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  routingDecision RoutingDecision @relation(fields: [routingDecisionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([routingDecisionId, tenantId])
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([correlationId])
+  @@map("execution_evidences")
+}
+
+// ------------------------------------------------------------------------------
+// H. Deception State Graph (DSG)
+// ------------------------------------------------------------------------------
+
+model DeceptionGraph {
+  id              String   @id @default(uuid())
+  tenantId        String
+  environmentId   String
+  graphIdentifier String   // e.g. "dsg-apex-01"
+  graphVersion    Int      @default(1)
+  status          String   @default("ACTIVE") // ACTIVE, DRAFT, ARCHIVED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant      Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  environment DeceptionEnvironment       @relation(fields: [environmentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  nodes       DeceptionGraphNode[]
+  edges       DeceptionGraphEdge[]
+  transitions DeceptionGraphTransition[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, graphIdentifier, graphVersion])
+  @@index([tenantId])
+  @@map("deception_graphs")
+}
+
+model DeceptionGraphNode {
+  id                   String   @id @default(uuid())
+  graphId              String
+  nodeIdentifier       String   // e.g. "node-auth-decoy", "node-fake-admin"
+  nodeType             String   // e.g. "SYNTHETIC_API", "HONEY_CREDENTIAL", "SANDBOX_DATABASE"
+  assetDescription     String
+  layerClassification  String   // "PROTECTED_DECEPTION_POLICY", "CONTROLLED_DYNAMIC_STATE", "OBSERVATIONAL_ATTACKER_STATE"
+  structuredAttributes Json     // Attributes, fake service ports, simulated response templates
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  graph         DeceptionGraph       @relation(fields: [graphId], references: [id], onDelete: Cascade)
+  outgoingEdges DeceptionGraphEdge[] @relation("SourceNode")
+  incomingEdges DeceptionGraphEdge[] @relation("TargetNode")
+
+  @@unique([id, graphId])
+  @@unique([graphId, nodeIdentifier])
+  @@index([graphId])
+  @@map("deception_graph_nodes")
+}
+
+model DeceptionGraphEdge {
+  id                   String   @id @default(uuid())
+  graphId              String
+  sourceNodeId         String
+  targetNodeId         String
+  edgeType             String   // e.g. "LATERAL_MOVEMENT_TRAP", "DATA_EXFIL_SINK", "DEPENDENCY"
+  structuredAttributes Json
+  createdAt            DateTime @default(now())
+
+  graph      DeceptionGraph     @relation(fields: [graphId], references: [id], onDelete: Cascade)
+  sourceNode DeceptionGraphNode @relation("SourceNode", fields: [sourceNodeId, graphId], references: [id, graphId], onDelete: Cascade)
+  targetNode DeceptionGraphNode @relation("TargetNode", fields: [targetNodeId, graphId], references: [id, graphId], onDelete: Cascade)
+
+  @@unique([graphId, sourceNodeId, targetNodeId, edgeType])
+  @@index([graphId])
+  @@map("deception_graph_edges")
+}
+
+model DeceptionGraphTransition {
+  id                      String    @id @default(uuid())
+  tenantId                String
+  graphId                 String
+  previousState           Json
+  proposedState           Json
+  transitionStatus        String    @default("PROPOSED") // "PROPOSED", "APPROVED", "EXECUTED", "REJECTED"
+  triggeringObservationId String?
+  triggeringDecisionId    String?
+  provenance              String    // e.g. "ADAPTIVE_PLANNER_SIMULATION", "MANUAL_ADMIN_PROPOSAL"
+  proposedAt              DateTime  @default(now())
+  resolvedAt              DateTime?
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  graph  DeceptionGraph @relation(fields: [graphId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([graphId])
+  @@map("deception_graph_transitions")
+}
+
+// ------------------------------------------------------------------------------
+// I. Audit Events
+// ------------------------------------------------------------------------------
+
+model AuditEvent {
+  id                 String   @id @default(uuid())
+  tenantId           String?  // Null indicates platform-wide administrative event
+  actorIdentifier    String?  // Identity/role label without fabricating auth session
+  action             String   // e.g. "POLICY_CREATED", "TRANSITION_PROPOSED", "ISOLATION_VERIFIED"
+  targetEntityType   String   // e.g. "DeceptionPolicy", "DeceptionEnvironment"
+  targetEntityId     String
+  timestamp          DateTime @default(now())
+  correlationId      String?
+  structuredMetadata Json     // Audit details; append-only semantics
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([timestamp])
+  @@index([correlationId])
+  @@map("audit_events")
+}

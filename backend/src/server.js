@@ -1,6 +1,7 @@
 import { loadEnv } from './config/env.js';
 import { createApp } from './app.js';
 import { logger } from './utils/logger.js';
+import { disconnectDatabase } from './db/client.js';
 
 let serverInstance = null;
 
@@ -25,13 +26,19 @@ export function setupGracefulShutdown(server) {
     }, 5000);
     forceExitTimer.unref();
 
-    server.close((err) => {
+    server.close(async (err) => {
       clearTimeout(forceExitTimer);
+      try {
+        await disconnectDatabase();
+      } catch (dbErr) {
+        logger.error('Error during database disconnection on shutdown', { error: dbErr.message });
+      }
+
       if (err) {
         logger.error('Error during HTTP server socket closure', { error: err.message });
         process.exit(1);
       }
-      logger.info('HTTP server closed successfully. Process exiting cleanly.');
+      logger.info('HTTP server and database resources closed successfully. Process exiting cleanly.');
       process.exit(0);
     });
   };

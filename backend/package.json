@@ -7,13 +7,21 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test tests/**/*.test.js"
+    "test": "node --test --test-concurrency=1 tests/**/*.test.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:seed": "node prisma/seed.js"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.3",
     "cors": "^2.8.5",
     "express": "^4.21.2"
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.19.3"
   }
 }

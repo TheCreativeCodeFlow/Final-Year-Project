@@ -64,6 +64,7 @@ function parseCorsOrigins(val) {
  *   LOG_LEVEL: string,
  *   CORS_ORIGIN: string[],
  *   BODY_LIMIT: string,
+ *   DATABASE_URL?: string,
  *   isProduction: boolean,
  *   isDevelopment: boolean,
  *   isTest: boolean
@@ -89,7 +90,7 @@ export function loadEnv(sourceEnv = process.env) {
   const CORS_ORIGIN = parseCorsOrigins(sourceEnv.CORS_ORIGIN);
   const BODY_LIMIT = sourceEnv.BODY_LIMIT ? sourceEnv.BODY_LIMIT.trim() : '100kb';
 
-  return Object.freeze({
+  const config = {
     NODE_ENV,
     HOST,
     PORT,
@@ -99,7 +100,33 @@ export function loadEnv(sourceEnv = process.env) {
     isProduction: NODE_ENV === 'production',
     isDevelopment: NODE_ENV === 'development',
     isTest: NODE_ENV === 'test'
-  });
+  };
+
+  // Only attach DATABASE_URL property if explicitly present in source environment
+  if (typeof sourceEnv.DATABASE_URL === 'string' && sourceEnv.DATABASE_URL.trim()) {
+    config.DATABASE_URL = sourceEnv.DATABASE_URL.trim();
+  }
+
+  return Object.freeze(config);
+}
+
+/**
+ * Validates database configuration when database operations are requested.
+ * @param {Record<string, any>} [sourceEnv=process.env]
+ * @returns {string}
+ */
+export function validateDatabaseConfig(sourceEnv = process.env) {
+  const url = sourceEnv.DATABASE_URL || (sourceEnv.DATABASE_URL ? sourceEnv.DATABASE_URL : null);
+  if (!url || typeof url !== 'string' || !url.trim()) {
+    throw new Error('DATABASE_URL is required for database operations but was not provided in the environment.');
+  }
+
+  const trimmed = url.trim();
+  if (!/^postgres(ql)?:\/\//i.test(trimmed)) {
+    throw new Error('Invalid DATABASE_URL: Must be a valid PostgreSQL connection URL starting with postgresql:// or postgres://');
+  }
+
+  return trimmed;
 }
 
 // Export pre-evaluated default environment for standard runtime imports

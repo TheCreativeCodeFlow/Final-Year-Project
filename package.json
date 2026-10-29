@@ -9,7 +9,11 @@
     "preview": "vite preview",
     "backend:dev": "npm --prefix backend run dev",
     "backend:start": "npm --prefix backend start",
-    "backend:test": "npm --prefix backend test"
+    "backend:test": "npm --prefix backend test",
+    "backend:prisma:generate": "npm --prefix backend run prisma:generate",
+    "backend:prisma:migrate": "npm --prefix backend run prisma:migrate",
+    "backend:prisma:deploy": "npm --prefix backend run prisma:deploy",
+    "backend:prisma:seed": "npm --prefix backend run prisma:seed"
   },
   "dependencies": {
     "lucide-react": "^1.16.0",
