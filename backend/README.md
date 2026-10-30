@@ -7,6 +7,7 @@ This service forms the security-conscious backend foundation, persistent domain 
 - **Stage 3C**: Established secure user identity, Argon2id credential hashing, stateful server-side sessions, anti-CSRF protections, login rate limiting, and strict tenant membership authorization.
 - **Stage 3D**: Established database-backed, tenant-scoped REST APIs connecting persistent PostgreSQL domain models to client workflows for protected applications, deception policies, strategies, security observations, and investigations.
 - **Stage 3E**: Integrates the React/Vite frontend with Stage 3C authentication and Stage 3D tenant-scoped APIs, establishing server-authoritative sessions, anti-CSRF token handling, role-guarded routing, tenant switching, and database-backed application management.
+- **Stage 3F (Current)**: Connects Security Operations frontend to backend APIs — live deception policies, security observations with 7-stage semantic cards, threat investigations with linked dossiers, pseudonymous attacker behavior profiles, and dashboard data integrity verification.
 
 ---
 
@@ -40,6 +41,7 @@ backend/
 │   │   └── client.js                   # Controlled Prisma client, lazy connect & transactions
 │   ├── controllers/
 │   │   ├── applications.controller.js  # Tenant-scoped Protected Applications CRUD
+│   │   ├── attacker-profiles.controller.js # Tenant-scoped Attacker Behavior Profiles
 │   │   ├── auth.controller.js          # Authentication, logout, identity & tenant introspection
 │   │   ├── health.controller.js        # Liveness, readiness, and API descriptor controllers
 │   │   ├── policies.controller.js      # Tenant-scoped Deception Policies CRUD
@@ -47,6 +49,7 @@ backend/
 │   │   └── strategies.controller.js    # Tenant-safe Deception Strategies reader
 │   ├── routes/
 │   │   ├── applications.routes.js      # /tenants/:tenantId/applications routes
+│   │   ├── attacker-profiles.routes.js # /tenants/:tenantId/attacker-profiles routes
 │   │   ├── auth.routes.js              # /api/v1/auth routes
 │   │   ├── health.routes.js            # /api/v1/health probe routes
 │   │   ├── policies.routes.js          # /tenants/:tenantId/policies routes
@@ -77,6 +80,7 @@ backend/
 │   ├── health.test.js                  # Liveness, readiness, and identity endpoint tests
 │   ├── logger.test.js                  # Log redaction, query string omission, CRLF tests
 │   ├── request-id.test.js              # ID sanitization, validation, and propagation tests
+│   ├── security-operations.test.js     # Stage 3F security operations & semantic integrity tests
 │   ├── seed.test.js                    # Seed idempotency, duplication safety, and prod lockout
 │   ├── shutdown.test.js                # Server lifecycle, socket drain & DB disconnect tests
 │   └── tenant-api.test.js              # Stage 3D comprehensive tenant-scoped REST API tests

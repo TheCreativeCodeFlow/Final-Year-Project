@@ -16,6 +16,7 @@ import { applicationsRouter } from './applications.routes.js';
 import { policiesRouter } from './policies.routes.js';
 import { strategiesRouter } from './strategies.routes.js';
 import { securityEventsRouter, investigationsRouter } from './security-events.routes.js';
+import { attackerProfilesRouter } from './attacker-profiles.routes.js';
 
 export const tenantRouter = Router({ mergeParams: true });
 
@@ -28,3 +29,4 @@ tenantRouter.use('/policies', policiesRouter);
 tenantRouter.use('/strategies', strategiesRouter);
 tenantRouter.use('/security-events', securityEventsRouter);
 tenantRouter.use('/investigations', investigationsRouter);
+tenantRouter.use('/attacker-profiles', attackerProfilesRouter);

@@ -20,7 +20,8 @@ The **Adaptive Cyber Deception Gateway (ADG)** is an intelligent reverse-proxy s
 - **Stage 3B**: PostgreSQL persistence layer via Prisma ORM, versioned migrations, relational domain models, and synthetic seed data.
 - **Stage 3C**: Authentication engine with Argon2id password hashing, stateful database sessions, HttpOnly cookies, anti-CSRF protection, and login throttling.
 - **Stage 3D**: Secure tenant-scoped REST APIs for applications, policies, strategies, observations, and investigations.
-- **Stage 3E (Current)**: Production-oriented frontend authentication and backend integration, server-validated sessions, role-based route guards, multi-tenant switching, and live database-backed application management.
+- **Stage 3E**: Production-oriented frontend authentication and backend integration, server-validated sessions, role-based route guards, multi-tenant switching, and live database-backed application management.
+- **Stage 3F (Current)**: Security Operations Frontend Integration — live database-backed deception policies, security observations with 7-stage semantic audit, threat investigations with linked dossiers, pseudonymous attacker behavior profiles, and dashboard data integrity verification.
 
 ---
 
@@ -119,8 +120,12 @@ In accordance with scientific research integrity, all UI views explicitly report
 | **Authentication & Session** | **LIVE: PostgreSQL** | Real sessions validated via Argon2id, cookie, and `/auth/me` |
 | **Owner Applications List** | **LIVE: PostgreSQL** | Real applications persisted under authorized tenant in database |
 | **Owner Application Detail** | **LIVE: PostgreSQL** | Real application metadata from database; traffic chart is prototype preview |
-| **Owner Security Events** | **Hybrid / Prototype** | Live observations supported via API; prototype fallback with explicit badge |
-| **Admin Operations Overview**| **DEMO: Prototype Telemetry**| Clear simulation disclaimer; live metrics await Stage 4 proxy engine |
+| **Owner Security Events** | **LIVE: PostgreSQL** | Live security observations with 7-stage semantic cards and explicit absence states |
+| **Admin Deception Policies** | **LIVE: PostgreSQL** | Live tenant policies & global baselines with baseline modification protection |
+| **Admin Threat Investigations** | **LIVE: PostgreSQL** | Real investigations dossiers with linked profiles and discrepancy flags |
+| **Admin Attacker Profiles** | **LIVE: PostgreSQL** | Heuristic anomaly profiles with explicit attribution & identity disclaimers |
+| **Admin Deception Strategies** | **LIVE: PostgreSQL** | Strategy blueprints with explicit non-execution definition disclaimers |
+| **Owner & Admin Overviews** | **Hybrid Verified** | Real database entity counts labeled `LIVE: PostgreSQL`; timeseries labeled `PROTOTYPE` |
 | **Gateway Simulator** | **Simulated Rule Engine** | 8 multi-stage decision scenarios with semantic safety verification |
 | **Deception State Graph** | **Prototype Visualization**| Relational models seeded; live graph transitions remain deferred |
 
@@ -128,10 +133,10 @@ In accordance with scientific research integrity, all UI views explicitly report
 
 ## 8. Automated Testing & Verification
 
-The project includes 100 automated integration tests covering the complete backend API, domain integrity, and frontend authentication flow:
+The project includes 111 automated integration tests covering the complete backend API, domain integrity, authentication flow, and security operations:
 
 ```bash
-# Run all 100 integration tests
+# Run all 111 integration tests
 npm test
 
 # Or run backend tests specifically
@@ -142,6 +147,7 @@ npm run build
 ```
 
 ### Test Suite Summary:
+- **`tests/security-operations.test.js`** (11 tests): Attacker profiles tenant scoping, attribution disclaimers, baseline policy protection (403 for owners, allowed for admins), explicit `NOT_RECORDED` outcome and `MISSING` execution evidence reporting, strategy metadata notice, and investigation dossiers.
 - **`tests/frontend-auth-integration.test.js`** (18 tests): Frontend authentication flow, session recovery, deduplication, role derivation, logout, and applications CRUD.
 - **`tests/tenant-api.test.js`** (17 tests): Tenant isolation, IDOR defense, CSRF, and permissions.
 - **`tests/auth.test.js`** (16 tests): Argon2id hashing, sessions, cookie serialization, rate limiting.
@@ -159,7 +165,7 @@ npm run build
 
 ## 9. Current Limitations & Scope Boundaries
 
-Stage 3E establishes frontend integration with the existing authenticated management APIs. The following components are deferred to future stages:
+Stage 3F establishes comprehensive frontend security operations integration with the authenticated backend APIs. The following components remain deferred to subsequent stages:
 - **ML Detection Runtime**: Online feature extraction, statistical anomaly scoring, and model inference.
 - **Reverse Proxy Engine**: Live packet interception, Envoy filter dispatching, and dynamic socket proxying.
 - **Runtime Container Honeynets**: Docker/Kubernetes container decoy cluster orchestration.

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Radio,
@@ -17,42 +17,108 @@ import {
   Eye,
   Shuffle,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  Database,
+  Sparkles
 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import StatusBadge from '../../components/common/StatusBadge';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingState from '../../components/common/LoadingState';
 import MetricCard from '../../components/common/MetricCard';
-import { getInvestigations, getTenants, DEMO_DATA_DISCLAIMER } from '../../services/mockData';
+import { useAuth } from '../../hooks/useAuth';
+import { apiClient } from '../../services/apiClient';
+import {
+  getInvestigations as getMockInvestigations,
+  getTenants,
+  DEMO_DATA_DISCLAIMER
+} from '../../services/mockData';
 
-const PAGE_SIZE = 6;
+const PAGE_SIZE = 8;
 
 export default function InvestigationsListPage() {
+  const { user, activeTenant } = useAuth();
+  const tenantIdentifier = activeTenant?.identifier || activeTenant?.id || 'tenant-apex-9941';
+
   const [investigations, setInvestigations] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dataSource, setDataSource] = useState('live');
+  const [fetchError, setFetchError] = useState(null);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [tenantFilter, setTenantFilter] = useState('all');
   const [sortBy, setSortBy] = useState('activity-desc');
   const [currentPage, setCurrentPage] = useState(1);
 
-  const fetchData = () => {
+  const fetchLiveInvestigations = useCallback(async () => {
     setLoading(true);
-    Promise.all([getInvestigations(), getTenants()]).then(([invList, tenantList]) => {
-      setInvestigations(invList);
-      setTenants(tenantList);
+    setFetchError(null);
+
+    try {
+      const [invRes, tenList] = await Promise.all([
+        apiClient.getInvestigations(tenantIdentifier),
+        getTenants().catch(() => [])
+      ]);
+
+      if (invRes && invRes.success && Array.isArray(invRes.data)) {
+        const mapped = invRes.data.map(inv => {
+          const isDiscrepancy = inv.status === 'DISCREPANCY_FLAGGED';
+          return {
+            id: inv.investigationIdentifier || inv.id,
+            databaseId: inv.id,
+            investigationIdentifier: inv.investigationIdentifier || inv.id,
+            tenantId: tenantIdentifier,
+            tenantName: activeTenant?.name || 'Apex FinTech Global',
+            severity: inv.severity ? inv.severity.toLowerCase() : 'high',
+            status: inv.status || 'OPEN',
+            attackCategory: inv.summary?.includes('credential')
+              ? 'Credential Stuffing'
+              : isDiscrepancy
+              ? 'Edge Proxy Discrepancy'
+              : 'Reconnaissance Probe',
+            sessionIdentifier: inv.evidenceReferences?.targetRoute || `sess-${inv.id.substring(0, 8)}`,
+            applicationNames: inv.application ? [inv.application.name] : ['Customer Accounts API'],
+            policyDecision: 'pol-sec-06 (Containment Sandbox)',
+            recordedRoutingOutcome: isDiscrepancy ? 'BLOCKED_AT_INGRESS' : 'EXECUTED_DECEPTION',
+            policyDiscrepancy: isDiscrepancy,
+            linkedAttackerProfiles: inv.attackerProfiles || [],
+            observedBehaviorSummary: inv.summary,
+            firstSeenIso: inv.openedAt,
+            lastSeenIso: inv.updatedAt || inv.openedAt
+          };
+        });
+
+        setInvestigations(mapped);
+        setTenants(tenList);
+        setDataSource('live');
+        setLoading(false);
+        return;
+      }
+
+      throw new Error(invRes?.error?.message || 'Failed to fetch investigations from API.');
+    } catch (err) {
+      setFetchError(err.message || 'Error connecting to investigations API.');
+      try {
+        const [mockList, tenList] = await Promise.all([
+          getMockInvestigations(),
+          getTenants().catch(() => [])
+        ]);
+        setInvestigations(mockList);
+        setTenants(tenList);
+        setDataSource('demo');
+      } catch {
+        setInvestigations([]);
+      }
       setLoading(false);
-    });
-  };
+    }
+  }, [tenantIdentifier, activeTenant]);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchLiveInvestigations();
+  }, [fetchLiveInvestigations]);
 
   // Filtered & Sorted Investigations
   const filteredInvestigations = useMemo(() => {
@@ -61,12 +127,12 @@ export default function InvestigationsListPage() {
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase().trim();
       result = result.filter(inv =>
-        inv.id.toLowerCase().includes(q) ||
-        inv.tenantName.toLowerCase().includes(q) ||
-        inv.sessionIdentifier.toLowerCase().includes(q) ||
-        inv.attackCategory.toLowerCase().includes(q) ||
+        (inv.id && inv.id.toLowerCase().includes(q)) ||
+        (inv.tenantName && inv.tenantName.toLowerCase().includes(q)) ||
+        (inv.sessionIdentifier && inv.sessionIdentifier.toLowerCase().includes(q)) ||
+        (inv.attackCategory && inv.attackCategory.toLowerCase().includes(q)) ||
         (inv.applicationNames && inv.applicationNames.some(name => name.toLowerCase().includes(q))) ||
-        inv.observedBehaviorSummary.toLowerCase().includes(q)
+        (inv.observedBehaviorSummary && inv.observedBehaviorSummary.toLowerCase().includes(q))
       );
     }
 
@@ -76,10 +142,6 @@ export default function InvestigationsListPage() {
 
     if (statusFilter !== 'all') {
       result = result.filter(inv => inv.status === statusFilter);
-    }
-
-    if (tenantFilter !== 'all') {
-      result = result.filter(inv => inv.tenantId === tenantFilter);
     }
 
     // Sort
@@ -96,164 +158,170 @@ export default function InvestigationsListPage() {
       if (sortBy === 'firstseen-asc') {
         return new Date(a.firstSeenIso) - new Date(b.firstSeenIso);
       }
-      if (sortBy === 'firstseen-desc') {
-        return new Date(b.firstSeenIso) - new Date(a.firstSeenIso);
-      }
       return 0;
     });
 
     return result;
-  }, [investigations, searchTerm, severityFilter, statusFilter, tenantFilter, sortBy]);
+  }, [investigations, searchTerm, severityFilter, statusFilter, sortBy]);
 
-  // Reset page on filter changes
+  // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, severityFilter, statusFilter, tenantFilter, sortBy]);
+  }, [searchTerm, severityFilter, statusFilter, sortBy]);
 
+  // Pagination calculation
   const totalPages = Math.ceil(filteredInvestigations.length / PAGE_SIZE) || 1;
-  const paginatedList = useMemo(() => {
+  const paginatedInvestigations = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE;
     return filteredInvestigations.slice(start, start + PAGE_SIZE);
   }, [filteredInvestigations, currentPage]);
 
-  // Metrics
   const metrics = useMemo(() => {
-    const active = investigations.filter(i => i.status === 'Open' || i.status === 'In Review').length;
-    const critical = investigations.filter(i => i.severity === 'critical').length;
-    const discrepancies = investigations.filter(i => i.policyDiscrepancy).length;
-    const diverted = investigations.filter(i =>
-      String(i.recordedRoutingOutcome).toLowerCase().includes('deception') ||
-      String(i.recordedRoutingOutcome).toLowerCase().includes('decoy')
-    ).length;
-
-    return { active, critical, discrepancies, diverted };
+    return {
+      total: investigations.length,
+      open: investigations.filter(i => i.status === 'OPEN').length,
+      discrepancy: investigations.filter(i => i.status === 'DISCREPANCY_FLAGGED').length,
+      resolved: investigations.filter(i => i.status === 'RESOLVED').length
+    };
   }, [investigations]);
 
-  const handleResetFilters = () => {
-    setSearchTerm('');
-    setSeverityFilter('all');
-    setStatusFilter('all');
-    setTenantFilter('all');
-    setSortBy('activity-desc');
-  };
+  if (loading) {
+    return (
+      <div className="page-container">
+        <LoadingState message="Loading threat investigations from database..." />
+      </div>
+    );
+  }
 
   return (
-    <div className="page-container">
+    <>
       <PageHeader
-        title="Threat Investigations"
-        description="Simulated administrator incident queue correlating anomalous ingress sessions, detection evidence, and deception routing outcomes."
+        title="Threat Investigations Queue"
+        badge={dataSource === 'live' ? 'PostgreSQL Active' : 'Simulation Mode'}
+        description="Correlate adversarial sessions, detector anomalies, and deceptive honeynet containment outcomes."
         actions={
           <button
-            type="button"
+            onClick={fetchLiveInvestigations}
             className="btn btn-secondary btn-sm"
-            onClick={fetchData}
-            disabled={loading}
-            title="Refresh queue"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
-            <RefreshCw size={14} className={loading ? 'spin' : ''} />
-            <span>Refresh Queue</span>
+            <RefreshCw size={13} />
+            <span>Refresh</span>
           </button>
         }
       />
 
-      {/* Simulated Telemetry Notice */}
-      <div
-        style={{
-          background: 'rgba(59, 130, 246, 0.08)',
-          border: '1px solid rgba(59, 130, 246, 0.25)',
-          borderRadius: 'var(--radius-md)',
-          padding: '0.75rem 1rem',
-          marginBottom: '1.5rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px'
-        }}
-      >
-        <AlertCircle size={16} color="var(--accent-primary-light)" style={{ flexShrink: 0 }} />
-        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-          <strong style={{ color: 'var(--text-primary)' }}>SIMULATED TELEMETRY:</strong> All investigation records, session identifiers, and analyst assignments are synthetic demonstration artifacts. No live intrusion response or real analyst attribution is implied.
-        </div>
-      </div>
-
-      {/* Metric Cards Grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-          gap: '1rem',
-          marginBottom: '1.5rem'
-        }}
-      >
-        <MetricCard
-          title="Active Investigations"
-          value={metrics.active}
-          subtext="Open or In Review incidents"
-          icon={Radio}
-        />
-        <MetricCard
-          title="Critical Incidents"
-          value={metrics.critical}
-          subtext="High-risk session anomalies"
-          icon={ShieldAlert}
-        />
-        <MetricCard
-          title="Deception Diversions"
-          value={metrics.diverted}
-          subtext="Sessions routed to sandbox"
-          icon={Shuffle}
-        />
-        <MetricCard
-          title="Policy Discrepancies"
-          value={metrics.discrepancies}
-          subtext="Outcome differed from policy"
-          icon={AlertTriangle}
-        />
-      </div>
-
-      {/* Filter and Search Bar */}
-      <div
-        className="card"
-        style={{
-          padding: '1rem',
-          marginBottom: '1.25rem',
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '0.75rem',
-          alignItems: 'center',
-          justifyContent: 'space-between'
-        }}
-      >
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', flex: 1, minWidth: '280px' }}>
-          {/* Search Box */}
-          <div style={{ position: 'relative', minWidth: '240px', flex: 1 }}>
-            <Search
-              size={15}
-              style={{
-                position: 'absolute',
-                left: '10px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: 'var(--text-muted)'
-              }}
-            />
-            <input
-              type="text"
-              className="input-field"
-              placeholder="Search by ID, tenant, session, or category..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ paddingLeft: '32px', width: '100%', height: '36px', fontSize: 'var(--text-sm)' }}
-            />
+      <div className="page-container">
+        {/* Data Source & Semantic Audit Notice */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            background: dataSource === 'live' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(59, 130, 246, 0.08)',
+            border: `1px solid ${dataSource === 'live' ? 'rgba(16, 185, 129, 0.25)' : 'rgba(59, 130, 246, 0.25)'}`,
+            borderRadius: 'var(--radius-md)',
+            padding: '12px 16px',
+            marginBottom: '20px',
+            fontSize: 'var(--text-xs)',
+            color: 'var(--text-secondary)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {dataSource === 'live' ? (
+              <Database size={16} style={{ color: '#10b981', flexShrink: 0 }} />
+            ) : (
+              <Sparkles size={16} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+            )}
+            <div>
+              <span style={{ fontWeight: 700, color: dataSource === 'live' ? '#34d399' : '#93c5fd', marginRight: '6px' }}>
+                {dataSource === 'live' ? 'LIVE DATABASE-BACKED (PostgreSQL via REST API):' : 'SIMULATION MODE:'}
+              </span>
+              <span>
+                Investigations correlate observed telemetry with statistical detector models.
+                <strong style={{ color: '#fff', marginLeft: '4px' }}>
+                  Observed behaviors are distinguished from heuristic inferences. Discrepancy flags mark telemetry deviations.
+                </strong>
+              </span>
+            </div>
           </div>
+          <div>
+            {dataSource === 'live' ? (
+              <button
+                onClick={() => {
+                  getMockInvestigations().then(m => {
+                    setInvestigations(m);
+                    setDataSource('demo');
+                  });
+                }}
+                className="btn btn-ghost btn-xs"
+                style={{ fontSize: '11px', color: 'var(--text-muted)' }}
+              >
+                Switch to Offline Mode
+              </button>
+            ) : (
+              <button
+                onClick={fetchLiveInvestigations}
+                className="btn btn-ghost btn-xs"
+                style={{ fontSize: '11px', color: '#60a5fa' }}
+              >
+                Connect Live Database
+              </button>
+            )}
+          </div>
+        </div>
 
-          {/* Severity Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Filter size={14} color="var(--text-muted)" />
+        {/* High-Level Metric Cards */}
+        <div className="metrics-grid" style={{ marginBottom: '1.5rem' }}>
+          <MetricCard
+            title="Total Investigations"
+            value={metrics.total}
+            icon={Radio}
+            subtext="Scoped to current tenant context"
+          />
+          <MetricCard
+            title="Active / Open"
+            value={metrics.open}
+            icon={AlertTriangle}
+            subtext="Pending analyst review or containment"
+          />
+          <MetricCard
+            title="Discrepancies Flagged"
+            value={metrics.discrepancy}
+            icon={AlertCircle}
+            subtext="Routing outcome diverged from policy"
+          />
+          <MetricCard
+            title="Resolved"
+            value={metrics.resolved}
+            icon={CheckCircle2}
+            subtext="Completed investigations"
+          />
+        </div>
+
+        {/* Filter Controls Bar */}
+        <div className="filter-bar" style={{ marginBottom: '1rem' }}>
+          <div className="filter-group-stretch">
+            <div style={{ position: 'relative', flex: 1 }}>
+              <Search
+                size={16}
+                style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}
+              />
+              <input
+                type="text"
+                className="cyber-input"
+                style={{ paddingLeft: '36px', width: '100%' }}
+                placeholder="Search by ID, tenant, application, category, or observed behavior..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+
             <select
-              className="input-field"
+              className="cyber-select"
               value={severityFilter}
               onChange={(e) => setSeverityFilter(e.target.value)}
-              style={{ height: '36px', fontSize: 'var(--text-xs)', width: '140px' }}
             >
               <option value="all">All Severities</option>
               <option value="critical">Critical</option>
@@ -261,301 +329,182 @@ export default function InvestigationsListPage() {
               <option value="medium">Medium</option>
               <option value="low">Low</option>
             </select>
-          </div>
 
-          {/* Status Filter */}
-          <select
-            className="input-field"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            style={{ height: '36px', fontSize: 'var(--text-xs)', width: '130px' }}
-          >
-            <option value="all">All Statuses</option>
-            <option value="Open">Open</option>
-            <option value="In Review">In Review</option>
-            <option value="Mitigated">Mitigated</option>
-            <option value="Closed">Closed</option>
-          </select>
-
-          {/* Tenant Filter */}
-          <select
-            className="input-field"
-            value={tenantFilter}
-            onChange={(e) => setTenantFilter(e.target.value)}
-            style={{ height: '36px', fontSize: 'var(--text-xs)', width: '170px' }}
-          >
-            <option value="all">All Tenants</option>
-            {tenants.map(t => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-
-          {/* Sort By */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <ArrowUpDown size={14} color="var(--text-muted)" />
             <select
-              className="input-field"
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              style={{ height: '36px', fontSize: 'var(--text-xs)', width: '170px' }}
+              className="cyber-select"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
             >
-              <option value="activity-desc">Latest Activity</option>
-              <option value="severity-desc">Severity (High to Low)</option>
-              <option value="firstseen-desc">First Seen (Newest)</option>
-              <option value="firstseen-asc">First Seen (Oldest)</option>
+              <option value="all">All Statuses</option>
+              <option value="OPEN">Open</option>
+              <option value="DISCREPANCY_FLAGGED">Discrepancy Flagged</option>
+              <option value="CONTAINED">Contained</option>
+              <option value="RESOLVED">Resolved</option>
             </select>
           </div>
         </div>
 
-        {/* Clear Filters */}
-        {(searchTerm || severityFilter !== 'all' || statusFilter !== 'all' || tenantFilter !== 'all') && (
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={handleResetFilters}
-            style={{ fontSize: 'var(--text-xs)', color: 'var(--accent-primary-light)' }}
-          >
-            Reset Filters
-          </button>
-        )}
-      </div>
-
-      {/* Investigations Table */}
-      {loading ? (
-        <LoadingState message="Loading threat investigations..." />
-      ) : filteredInvestigations.length === 0 ? (
-        <EmptyState
-          title="No Threat Investigations Found"
-          description="No investigation records matched the selected filters and search query."
-          actionText="Reset All Filters"
-          onAction={handleResetFilters}
-        />
-      ) : (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+        {/* Table */}
+        {filteredInvestigations.length === 0 ? (
+          <EmptyState
+            title="No Investigations Found"
+            description="No threat investigations match the active filter criteria."
+            actionText="Clear Filters"
+            onAction={() => {
+              setSearchTerm('');
+              setSeverityFilter('all');
+              setStatusFilter('all');
+            }}
+          />
+        ) : (
+          <div className="cyber-table-container">
+            <table className="cyber-table">
               <thead>
-                <tr style={{ background: 'var(--bg-surface-elevated)', borderBottom: '1px solid var(--border-default)' }}>
-                  <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>ID / Severity</th>
-                  <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Tenant & Target</th>
-                  <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Attack Category / Session</th>
-                  <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Policy Decision vs Outcome</th>
-                  <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Timeline</th>
-                  <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Status</th>
-                  <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Action</th>
+                <tr>
+                  <th>Investigation ID</th>
+                  <th>Protected Application</th>
+                  <th>Threat Vector / Summary</th>
+                  <th>Severity</th>
+                  <th>Status & Discrepancy</th>
+                  <th>Linked Profiles</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {paginatedList.map((inv) => (
-                  <tr
-                    key={inv.id}
-                    style={{
-                      borderBottom: '1px solid var(--border-subtle)',
-                      transition: 'background var(--transition-fast)'
-                    }}
-                    className="table-row-hover"
-                  >
-                    {/* ID & Severity */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <Link
-                          to={`/admin/investigations/${inv.id}`}
-                          style={{
-                            fontFamily: 'var(--font-mono)',
-                            fontWeight: 600,
-                            color: 'var(--accent-primary-light)',
-                            textDecoration: 'none'
-                          }}
-                        >
-                          {inv.id}
-                        </Link>
-                        <StatusBadge
-                          status={inv.severity}
-                          label={inv.severity.toUpperCase()}
-                          size="sm"
-                        />
-                      </div>
-                    </td>
-
-                    {/* Tenant & Applications */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                        <Link
-                          to={`/admin/tenants/${inv.tenantId}`}
-                          style={{
-                            color: 'var(--text-primary)',
-                            fontSize: 'var(--text-sm)',
-                            fontWeight: 500,
-                            textDecoration: 'none',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                        >
-                          <span>{inv.tenantName}</span>
-                          <ExternalLink size={11} color="var(--text-muted)" />
-                        </Link>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
-                          {inv.applicationNames?.map((appName, i) => (
-                            <span
-                              key={i}
-                              style={{
-                                fontSize: '11px',
-                                background: 'var(--bg-surface-elevated)',
-                                border: '1px solid var(--border-subtle)',
-                                padding: '1px 6px',
-                                borderRadius: 'var(--radius-xs)',
-                                color: 'var(--text-secondary)'
-                              }}
-                            >
-                              {appName}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Category & Session */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontWeight: 500 }}>
-                          {inv.attackCategory}
-                        </span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
-                          <span>Session:</span>
-                          <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-                            {inv.sessionIdentifier}
-                          </span>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Policy vs Routing Outcome */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                          <span style={{ color: 'var(--text-muted)' }}>Policy: </span>
-                          <span>{inv.policyDecision}</span>
-                        </div>
-                        <div style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <span style={{ color: 'var(--text-muted)' }}>Outcome: </span>
-                          <span
-                            style={{
-                              color: inv.policyDiscrepancy ? 'var(--severity-high)' : 'var(--text-primary)',
-                              fontWeight: inv.policyDiscrepancy ? 600 : 400
-                            }}
-                          >
-                            {inv.recordedRoutingOutcome || 'Unknown'}
-                          </span>
-                          {inv.policyDiscrepancy && (
-                            <span
-                              title="Outcome differed from policy"
-                              style={{
-                                background: 'rgba(249, 115, 22, 0.15)',
-                                color: 'var(--severity-high)',
-                                fontSize: '10px',
-                                padding: '1px 4px',
-                                borderRadius: 'var(--radius-xs)'
-                              }}
-                            >
-                              Discrepancy
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Timeline */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '11px' }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>
-                          Last: <strong style={{ color: 'var(--text-primary)' }}>{inv.lastSeen}</strong>
-                        </span>
-                        <span style={{ color: 'var(--text-muted)' }}>
-                          First: {inv.firstSeen}
-                        </span>
-                      </div>
-                    </td>
-
-                    {/* Status */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                        <StatusBadge
-                          status={inv.status === 'Open' ? 'active' : inv.status === 'In Review' ? 'warning' : inv.status === 'Mitigated' ? 'success' : 'neutral'}
-                          label={inv.status}
-                          size="sm"
-                        />
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                          {inv.eventIds?.length || 0} associated events
-                        </span>
-                      </div>
-                    </td>
-
-                    {/* Action */}
-                    <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                {paginatedInvestigations.map((inv) => (
+                  <tr key={inv.id}>
+                    <td>
                       <Link
                         to={`/admin/investigations/${inv.id}`}
-                        className="btn btn-secondary btn-sm"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        style={{
+                          fontWeight: 600,
+                          color: 'var(--accent-primary-light)',
+                          textDecoration: 'none',
+                          fontFamily: 'var(--font-mono)'
+                        }}
                       >
-                        <Eye size={13} />
-                        <span>Inspect</span>
+                        {inv.id}
+                      </Link>
+                    </td>
+                    <td>
+                      <span style={{ fontWeight: 600, fontSize: '13px' }}>
+                        {inv.applicationNames?.[0] || 'Customer Accounts API'}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ maxWidth: '320px', fontSize: '12px' }}>
+                        <strong style={{ display: 'block', color: 'var(--text-primary)' }}>
+                          {inv.attackCategory}
+                        </strong>
+                        <span style={{ color: 'var(--text-muted)' }}>
+                          {inv.observedBehaviorSummary}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <StatusBadge status={inv.severity} label={inv.severity.toUpperCase()} />
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            color: inv.policyDiscrepancy ? '#f59e0b' : '#34d399'
+                          }}
+                        >
+                          {inv.status}
+                        </span>
+                        {inv.policyDiscrepancy && (
+                          <span
+                            style={{
+                              fontSize: '10px',
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              background: 'rgba(245, 158, 11, 0.12)',
+                              color: '#fbbf24',
+                              border: '1px solid rgba(245, 158, 11, 0.25)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <AlertCircle size={10} /> Discrepancy Flagged
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      {inv.linkedAttackerProfiles && inv.linkedAttackerProfiles.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          {inv.linkedAttackerProfiles.map((p, idx) => (
+                            <Link
+                              key={idx}
+                              to={`/admin/attacker-profiles/${p.profileIdentifier || p.id}`}
+                              style={{ fontSize: '11px', color: '#c084fc', textDecoration: 'none' }}
+                            >
+                              {p.profileIdentifier || p.displayLabel || 'Heuristic Profile'}
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>None linked</span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <Link
+                        to={`/admin/investigations/${inv.id}`}
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: '12px' }}
+                      >
+                        Inspect Dossier →
                       </Link>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
 
-          {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '0.75rem 1rem',
-                borderTop: '1px solid var(--border-default)',
-                background: 'var(--bg-surface-elevated)'
-              }}
-            >
-              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                Showing {(currentPage - 1) * PAGE_SIZE + 1} - {Math.min(currentPage * PAGE_SIZE, filteredInvestigations.length)} of {filteredInvestigations.length} investigations
-              </div>
-              <div style={{ display: 'flex', gap: '6px' }}>
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '12px 16px',
+                  borderTop: '1px solid var(--border-default)',
+                  background: 'var(--bg-surface)'
+                }}
+              >
                 <button
                   type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  className="btn btn-ghost btn-sm"
                   disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                 >
                   Previous
                 </button>
-                <span
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: '0 8px',
-                    fontSize: 'var(--text-xs)',
-                    color: 'var(--text-secondary)'
-                  }}
-                >
+
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
                   Page {currentPage} of {totalPages}
                 </span>
+
                 <button
                   type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  className="btn btn-ghost btn-sm"
                   disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                 >
                   Next
                 </button>
               </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   );
 }

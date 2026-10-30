@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Sliders,
@@ -17,15 +17,21 @@ import {
   ExternalLink,
   Info,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  RefreshCw,
+  Sparkles,
+  Database,
+  Lock
 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import MetricCard from '../../components/common/MetricCard';
 import StatusBadge from '../../components/common/StatusBadge';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingState from '../../components/common/LoadingState';
+import { useAuth } from '../../hooks/useAuth';
+import { apiClient } from '../../services/apiClient';
 import {
-  getDeceptionPolicies,
+  getDeceptionPolicies as getMockDeceptionPolicies,
   getTenants,
   getDeceptionEnvironments,
   DEMO_DATA_DISCLAIMER
@@ -52,10 +58,14 @@ const CATEGORY_COLORS = {
 };
 
 export default function DeceptionPoliciesPage() {
+  const { user, activeTenant } = useAuth();
+
   const [policies, setPolicies] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [environments, setEnvironments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dataSource, setDataSource] = useState('live'); // 'live' | 'demo'
+  const [fetchError, setFetchError] = useState(null);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -67,19 +77,94 @@ export default function DeceptionPoliciesPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 8;
 
-  useEffect(() => {
+  const tenantIdentifier = activeTenant?.identifier || activeTenant?.id || 'tenant-apex-9941';
+
+  const fetchLivePolicies = useCallback(async () => {
     setLoading(true);
-    Promise.all([
-      getDeceptionPolicies(),
-      getTenants(),
-      getDeceptionEnvironments()
-    ]).then(([polList, tenList, envList]) => {
-      setPolicies(polList);
+    setFetchError(null);
+
+    try {
+      const [policiesRes, tenList, envList] = await Promise.all([
+        apiClient.getPolicies(tenantIdentifier),
+        getTenants().catch(() => []),
+        getDeceptionEnvironments().catch(() => [])
+      ]);
+
+      if (policiesRes && policiesRes.success) {
+        // Map backend policies to unified structure
+        const mapped = (policiesRes.data || []).map((p) => {
+          const isBaseline = p.tenantId === null;
+          let cat = 'suspicious_activity_handling';
+          if (p.permittedActions && Array.isArray(p.permittedActions)) {
+            if (p.permittedActions.includes('CONTAINMENT')) cat = 'isolation_egress_restrictions';
+            else if (p.permittedActions.includes('CANARY_INJECTION')) cat = 'canary_token_response';
+            else if (p.permittedActions.includes('DIVERSION')) cat = 'deception_routing_eligibility';
+          }
+
+          return {
+            id: p.policyIdentifier || p.id,
+            databaseId: p.id,
+            policyIdentifier: p.policyIdentifier || p.id,
+            name: p.name,
+            description: p.description,
+            scope: isBaseline ? 'platform' : 'tenant',
+            tenantId: p.tenantId,
+            tenantName: isBaseline ? 'Platform-Wide Baseline' : (activeTenant?.name || 'Active Tenant'),
+            category: p.category || cat,
+            priority: p.priority ?? 100,
+            status: p.enabled ? 'Enabled (Simulated)' : 'Disabled',
+            enabled: Boolean(p.enabled),
+            isBaseline,
+            humanReviewRequired: p.priority <= 10,
+            owner: isBaseline ? 'Platform Administrator' : 'Tenant Security Lead',
+            associatedStrategyIds: Array.isArray(p.permittedActions) ? p.permittedActions : [],
+            triggerConditions: p.triggerConditions || {},
+            requiredEvidence: p.requiredEvidenceCriteria || {},
+            permittedActions: p.permittedActions || [],
+            prohibitedActions: p.prohibitedActions || [],
+            safetyConstraints: p.protectedIsolationConstraints || {},
+            updatedAt: p.updatedAt ? new Date(p.updatedAt).toISOString() : null
+          };
+        });
+
+        setPolicies(mapped);
+        setTenants(tenList);
+        setEnvironments(envList);
+        setDataSource('live');
+        setLoading(false);
+        return;
+      }
+
+      throw new Error(policiesRes?.error?.message || 'Failed to fetch policies from gateway API.');
+    } catch (err) {
+      setFetchError(err.message || 'Error connecting to policies REST API.');
+      setLoading(false);
+    }
+  }, [tenantIdentifier, activeTenant]);
+
+  const loadOfflineDemoData = useCallback(async () => {
+    setLoading(true);
+    setFetchError(null);
+    try {
+      const [mockList, tenList, envList] = await Promise.all([
+        getMockDeceptionPolicies(),
+        getTenants(),
+        getDeceptionEnvironments()
+      ]);
+      setPolicies(mockList);
       setTenants(tenList);
       setEnvironments(envList);
+      setDataSource('demo');
+    } catch {
+      setFetchError('Failed to load offline demonstration fixtures.');
+    } finally {
       setLoading(false);
-    });
+    }
   }, []);
+
+  useEffect(() => {
+    fetchLivePolicies();
+  }, [fetchLivePolicies]);
 
   // Filtered Policies
   const filteredPolicies = useMemo(() => {
@@ -87,9 +172,9 @@ export default function DeceptionPoliciesPage() {
       // Search filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const matchesName = p.name.toLowerCase().includes(q);
-        const matchesId = p.id.toLowerCase().includes(q);
-        const matchesDesc = p.description.toLowerCase().includes(q);
+        const matchesName = p.name && p.name.toLowerCase().includes(q);
+        const matchesId = p.id && p.id.toLowerCase().includes(q);
+        const matchesDesc = p.description && p.description.toLowerCase().includes(q);
         const matchesTenant = p.tenantName && p.tenantName.toLowerCase().includes(q);
         const matchesEnv = p.environmentName && p.environmentName.toLowerCase().includes(q);
         const matchesOwner = p.owner && p.owner.toLowerCase().includes(q);
@@ -121,9 +206,9 @@ export default function DeceptionPoliciesPage() {
   const metrics = useMemo(() => {
     return {
       total: policies.length,
-      enabled: policies.filter(p => p.status === 'Enabled (Simulated)').length,
-      draft: policies.filter(p => p.status === 'Draft').length,
-      reviewReq: policies.filter(p => p.status === 'Review Required').length
+      enabled: policies.filter(p => p.status === 'Enabled (Simulated)' || p.enabled === true).length,
+      baseline: policies.filter(p => p.isBaseline).length,
+      tenantScoped: policies.filter(p => !p.isBaseline).length
     };
   }, [policies]);
 
@@ -143,7 +228,7 @@ export default function DeceptionPoliciesPage() {
   };
 
   if (loading) {
-    return <LoadingState message="Loading simulated deception policies and boundary rules..." />;
+    return <LoadingState message="Loading deception policies from database..." />;
   }
 
   return (
@@ -151,39 +236,113 @@ export default function DeceptionPoliciesPage() {
       {/* Header */}
       <PageHeader
         title="Deception Policies"
-        description="Configure, review, and validate operational deception policies governing simulated adversary diversion, honeynet containment, and tripwire response rules."
+        description="Configure, review, and validate operational deception policies governing adversary diversion, honeynet containment, and tripwire response rules."
         actions={
-          <Link
-            to="/admin/deception-policies/new"
-            className="btn btn-primary btn-sm"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-          >
-            <Plus size={16} /> Create Policy
-          </Link>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              onClick={fetchLivePolicies}
+              className="btn btn-secondary btn-sm"
+              title="Refresh from PostgreSQL API"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <RefreshCw size={14} /> Refresh
+            </button>
+            <Link
+              to="/admin/deception-policies/new"
+              className="btn btn-primary btn-sm"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Plus size={16} /> Create Policy
+            </Link>
+          </div>
         }
       />
 
-      {/* Demonstration Alert Banner */}
+      {/* Data Source & Telemetry Integrity Banner */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
+          justifyContent: 'space-between',
           gap: '12px',
-          background: 'rgba(59, 130, 246, 0.08)',
-          border: '1px solid rgba(59, 130, 246, 0.25)',
+          background: dataSource === 'live' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(59, 130, 246, 0.08)',
+          border: `1px solid ${dataSource === 'live' ? 'rgba(16, 185, 129, 0.25)' : 'rgba(59, 130, 246, 0.25)'}`,
           borderRadius: 'var(--radius-md)',
-          padding: '10px 16px',
+          padding: '12px 16px',
           marginBottom: '20px',
           fontSize: 'var(--text-xs)',
           color: 'var(--text-secondary)'
         }}
       >
-        <Info size={16} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
-        <div style={{ flex: 1 }}>
-          <strong style={{ color: '#fff' }}>Demonstration Policy Management:</strong>{' '}
-          {DEMO_DATA_DISCLAIMER} All policy definitions, priority interlocks, and permitted/prohibited synthetic actions represent simulated gateway decision models for prototype demonstration.
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {dataSource === 'live' ? (
+            <Database size={16} style={{ color: '#10b981', flexShrink: 0 }} />
+          ) : (
+            <Sparkles size={16} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+          )}
+          <div>
+            <span style={{ fontWeight: 700, color: dataSource === 'live' ? '#34d399' : '#93c5fd', marginRight: '6px' }}>
+              {dataSource === 'live' ? 'LIVE DATABASE-BACKED (PostgreSQL via REST API):' : 'DEMONSTRATION MODE:'}
+            </span>
+            <span>
+              Policy configurations represent tenant-scoped rules stored in the gateway database.
+              <strong style={{ color: '#fff', marginLeft: '4px' }}>
+                Policy configuration does not constitute proof of active live traffic enforcement.
+              </strong>
+            </span>
+          </div>
+        </div>
+        <div>
+          {dataSource === 'live' ? (
+            <button
+              onClick={loadOfflineDemoData}
+              className="btn btn-ghost btn-xs"
+              style={{ fontSize: '11px', color: 'var(--text-muted)' }}
+            >
+              Switch to Offline Fixtures
+            </button>
+          ) : (
+            <button
+              onClick={fetchLivePolicies}
+              className="btn btn-ghost btn-xs"
+              style={{ fontSize: '11px', color: '#60a5fa' }}
+            >
+              Connect to Live Database
+            </button>
+          )}
         </div>
       </div>
+
+      {fetchError && (
+        <div
+          style={{
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: 'var(--radius-md)',
+            padding: '12px 16px',
+            marginBottom: '20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            fontSize: 'var(--text-xs)',
+            color: '#fca5a5'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertTriangle size={16} />
+            <span>{fetchError}</span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={fetchLivePolicies} className="btn btn-secondary btn-xs">
+              Retry Connection
+            </button>
+            <button onClick={loadOfflineDemoData} className="btn btn-ghost btn-xs">
+              Load Offline Fixtures
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Metric Summary Cards */}
       <div
@@ -197,26 +356,26 @@ export default function DeceptionPoliciesPage() {
         <MetricCard
           title="Total Policies"
           value={metrics.total}
-          subtitle="Registered deception rules"
+          subtitle="Accessible in current tenant context"
           icon={Sliders}
         />
         <MetricCard
-          title="Simulated Enabled"
+          title="Active Candidate Policies"
           value={metrics.enabled}
-          subtitle="Active decision candidates"
+          subtitle="Enabled for policy evaluation"
           icon={CheckCircle2}
         />
         <MetricCard
-          title="Draft Policies"
-          value={metrics.draft}
-          subtitle="Under authoring / revision"
-          icon={FileText}
+          title="Global Baselines"
+          value={metrics.baseline}
+          subtitle="Platform-wide baseline rules (Read-Only)"
+          icon={Shield}
         />
         <MetricCard
-          title="Review Required"
-          value={metrics.reviewReq}
-          subtitle="Safeguard or discrepancy flags"
-          icon={AlertTriangle}
+          title="Tenant-Scoped"
+          value={metrics.tenantScoped}
+          subtitle="Custom rules for this tenant"
+          icon={Layers}
         />
       </div>
 
@@ -248,7 +407,7 @@ export default function DeceptionPoliciesPage() {
             />
             <input
               type="text"
-              placeholder="Search by policy name, ID, tenant, environment, or owner..."
+              placeholder="Search by policy name, ID, or description..."
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
@@ -309,9 +468,8 @@ export default function DeceptionPoliciesPage() {
             }}
           >
             <option value="all">All Scopes</option>
-            <option value="platform">Platform-Wide</option>
+            <option value="platform">Platform-Wide Baseline</option>
             <option value="tenant">Tenant-Scoped</option>
-            <option value="environment">Environment-Scoped</option>
           </select>
 
           {/* Status Filter */}
@@ -332,9 +490,7 @@ export default function DeceptionPoliciesPage() {
             }}
           >
             <option value="all">All Statuses</option>
-            <option value="Enabled (Simulated)">Enabled (Simulated)</option>
-            <option value="Draft">Draft</option>
-            <option value="Review Required">Review Required</option>
+            <option value="Enabled (Simulated)">Enabled</option>
             <option value="Disabled">Disabled</option>
           </select>
 
@@ -385,11 +541,11 @@ export default function DeceptionPoliciesPage() {
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-default)', background: 'var(--bg-surface)' }}>
                   <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Policy Name & ID</th>
-                  <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Target Scope & Context</th>
+                  <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Target Scope</th>
                   <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Category</th>
                   <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Priority</th>
                   <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Status</th>
-                  <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Strategies</th>
+                  <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Permitted Actions</th>
                   <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Last Modified</th>
                   <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600, textAlign: 'right' }}>Actions</th>
                 </tr>
@@ -398,6 +554,8 @@ export default function DeceptionPoliciesPage() {
                 {paginatedPolicies.map((pol) => {
                   const catColor = CATEGORY_COLORS[pol.category] || 'var(--accent-primary)';
                   const catLabel = CATEGORY_LABELS[pol.category] || pol.category;
+                  const canEdit = !pol.isBaseline || user?.isPlatformAdmin;
+
                   return (
                     <tr
                       key={pol.id}
@@ -424,7 +582,7 @@ export default function DeceptionPoliciesPage() {
                         </Link>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <code style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{pol.id}</code>
-                          {pol.humanReviewRequired && (
+                          {pol.isBaseline && (
                             <span
                               style={{
                                 fontSize: '10px',
@@ -432,10 +590,13 @@ export default function DeceptionPoliciesPage() {
                                 borderRadius: '4px',
                                 background: 'rgba(234, 179, 8, 0.12)',
                                 color: '#eab308',
-                                border: '1px solid rgba(234, 179, 8, 0.25)'
+                                border: '1px solid rgba(234, 179, 8, 0.25)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px'
                               }}
                             >
-                              Human Sign-off
+                              <Lock size={10} /> Global Baseline
                             </span>
                           )}
                         </div>
@@ -444,14 +605,10 @@ export default function DeceptionPoliciesPage() {
                       {/* Scope & Context */}
                       <td style={{ padding: '12px 16px' }}>
                         <div style={{ textTransform: 'capitalize', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '2px' }}>
-                          {pol.scope === 'platform' ? 'Platform-Wide' : `${pol.scope} Scope`}
+                          {pol.isBaseline ? 'Platform Baseline' : 'Tenant-Scoped'}
                         </div>
                         <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                          {pol.scope === 'environment'
-                            ? pol.environmentName || pol.environmentId
-                            : pol.scope === 'tenant'
-                            ? pol.tenantName || pol.tenantId
-                            : 'All Gateway Decoy Clusters'}
+                          {pol.tenantName || 'All Tenants'}
                         </div>
                       </td>
 
@@ -480,15 +637,15 @@ export default function DeceptionPoliciesPage() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span
                             style={{
-                              width: '20px',
-                              height: '20px',
+                              width: '24px',
+                              height: '24px',
                               borderRadius: '50%',
                               background: pol.priority <= 10 ? 'rgba(239, 68, 68, 0.15)' : 'var(--bg-canvas)',
                               color: pol.priority <= 10 ? '#ef4444' : 'var(--text-secondary)',
                               display: 'inline-flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              fontSize: '10px',
+                              fontSize: '11px',
                               fontWeight: 700,
                               border: `1px solid ${pol.priority <= 10 ? 'rgba(239, 68, 68, 0.3)' : 'var(--border-subtle)'}`
                             }}
@@ -496,7 +653,7 @@ export default function DeceptionPoliciesPage() {
                             {pol.priority}
                           </span>
                           <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                            {pol.priority <= 5 ? 'Critical' : pol.priority <= 15 ? 'High' : 'Normal'}
+                            {pol.priority <= 10 ? 'High Precedence' : pol.priority <= 50 ? 'Medium' : 'Baseline'}
                           </span>
                         </div>
                       </td>
@@ -504,21 +661,13 @@ export default function DeceptionPoliciesPage() {
                       {/* Status */}
                       <td style={{ padding: '12px 16px' }}>
                         <StatusBadge
-                          status={
-                            pol.status === 'Enabled (Simulated)'
-                              ? 'operational'
-                              : pol.status === 'Review Required'
-                              ? 'warning'
-                              : pol.status === 'Draft'
-                              ? 'neutral'
-                              : 'low'
-                          }
-                          label={pol.status}
+                          status={pol.enabled ? 'operational' : 'low'}
+                          label={pol.enabled ? 'Enabled' : 'Disabled'}
                           size="sm"
                         />
                       </td>
 
-                      {/* Associated Strategies */}
+                      {/* Associated Actions/Strategies */}
                       <td style={{ padding: '12px 16px' }}>
                         <span
                           style={{
@@ -530,7 +679,7 @@ export default function DeceptionPoliciesPage() {
                             border: '1px solid rgba(56, 189, 248, 0.25)'
                           }}
                         >
-                          {pol.associatedStrategyIds?.length || 0} Strategies
+                          {pol.associatedStrategyIds?.length || 0} Actions Permitted
                         </span>
                       </td>
 
@@ -547,15 +696,30 @@ export default function DeceptionPoliciesPage() {
                             className="btn btn-secondary btn-sm"
                             style={{ padding: '4px 8px', fontSize: '11px' }}
                           >
-                            View Details
+                            View
                           </Link>
-                          <Link
-                            to={`/admin/deception-policies/${pol.id}/edit`}
-                            className="btn btn-ghost btn-sm"
-                            style={{ padding: '4px 8px', fontSize: '11px' }}
-                          >
-                            Edit
-                          </Link>
+                          {canEdit ? (
+                            <Link
+                              to={`/admin/deception-policies/${pol.id}/edit`}
+                              className="btn btn-ghost btn-sm"
+                              style={{ padding: '4px 8px', fontSize: '11px' }}
+                            >
+                              Edit
+                            </Link>
+                          ) : (
+                            <span
+                              title="Global baseline policies can only be edited by Platform Administrators."
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: '11px',
+                                color: 'var(--text-muted)',
+                                cursor: 'not-allowed',
+                                opacity: 0.6
+                              }}
+                            >
+                              Locked
+                            </span>
+                          )}
                         </div>
                       </td>
                     </tr>

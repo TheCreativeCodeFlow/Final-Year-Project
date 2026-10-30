@@ -293,6 +293,19 @@ export const apiClient = {
 
   getInvestigationById: async (tenantId, investigationId) => {
     return apiClient.get(`/tenants/${tenantId}/investigations/${investigationId}`);
+  },
+
+  // ----------------------------------------------------------------------------
+  // Stage 3F: Attacker Behavior Profiles
+  // ----------------------------------------------------------------------------
+  getAttackerProfiles: async (tenantId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/attacker-profiles${qs}`);
+  },
+
+  getAttackerProfileById: async (tenantId, profileId) => {
+    return apiClient.get(`/tenants/${tenantId}/attacker-profiles/${profileId}`);
   }
 };
 
