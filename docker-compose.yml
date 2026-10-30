@@ -1,0 +1,140 @@
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Database: PostgreSQL 16
+  # ----------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: adaptive_deception_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal-mgmt-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  # ----------------------------------------------------------------------------
+  # 2. Backend Management API
+  # ----------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/adaptive_deception_dev?schema=public
+      GATEWAY_INTERNAL_TOKEN: dev-internal-gateway-token-secret-min32chars!
+      SESSION_SECRET: dev-session-secret-must-be-at-least-32-chars-long!
+      CORS_ORIGIN: http://localhost:3000,http://127.0.0.1:3000
+      LOG_LEVEL: info
+    ports:
+      - "4000:4000"
+    networks:
+      - internal-mgmt-net
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "http.get('http://127.0.0.1:4000/api/v1/health/live', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  # ----------------------------------------------------------------------------
+  # 3. Gateway Reverse Proxy Runtime
+  # ----------------------------------------------------------------------------
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 8000
+      HOST: 0.0.0.0
+      MANAGEMENT_API_URL: http://backend:4000/api/v1
+      GATEWAY_INTERNAL_TOKEN: dev-internal-gateway-token-secret-min32chars!
+      GATEWAY_ORIGIN_MAP: '{"accounts.apexfintech.internal":{"tenantIdentifier":"tenant-apex-9941","applicationIdentifier":"app-01","upstreamUrl":"http://synthetic-origin:8081"},"test-app.local":{"tenantIdentifier":"tenant-apex-9941","applicationIdentifier":"app-01","upstreamUrl":"http://synthetic-origin:8081"}}'
+      UPSTREAM_TIMEOUT_MS: 5000
+      MAX_REQUEST_SIZE_BYTES: 1048576
+      LOG_LEVEL: info
+    ports:
+      - "8000:8000"
+    networks:
+      - internal-mgmt-net
+      - protected-origin-net
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "http.get('http://127.0.0.1:8000/health/live', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  # ----------------------------------------------------------------------------
+  # 4. Synthetic Protected Origin Test Service
+  # (Isolated internal network only; NOT exposed to host)
+  # ----------------------------------------------------------------------------
+  synthetic-origin:
+    build:
+      context: ./synthetic-origin
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8081
+      HOST: 0.0.0.0
+    expose:
+      - "8081"
+    networks:
+      - protected-origin-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "http.get('http://127.0.0.1:8081/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+networks:
+  # Network connecting backend management services, database, and gateway
+  internal-mgmt-net:
+    driver: bridge
+
+  # Isolated network for synthetic protected origins; no host port mapping
+  protected-origin-net:
+    driver: bridge
+    internal: true
+
+volumes:
+  postgres_data:

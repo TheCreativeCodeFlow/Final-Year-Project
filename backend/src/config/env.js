@@ -112,6 +112,15 @@ export function loadEnv(sourceEnv = process.env) {
     config.SESSION_SECRET = sourceEnv.SESSION_SECRET.trim();
   }
 
+  // Attach GATEWAY_INTERNAL_TOKEN (internal service authentication)
+  const gatewayToken = sourceEnv.GATEWAY_INTERNAL_TOKEN
+    ? sourceEnv.GATEWAY_INTERNAL_TOKEN.trim()
+    : 'dev-internal-gateway-token-secret-min32chars!';
+  if (NODE_ENV === 'production' && gatewayToken.length < 32) {
+    throw new Error('In production, GATEWAY_INTERNAL_TOKEN must be at least 32 characters long.');
+  }
+  config.GATEWAY_INTERNAL_TOKEN = gatewayToken;
+
   // Only attach DATABASE_URL property if explicitly present in source environment
   if (typeof sourceEnv.DATABASE_URL === 'string' && sourceEnv.DATABASE_URL.trim()) {
     config.DATABASE_URL = sourceEnv.DATABASE_URL.trim();

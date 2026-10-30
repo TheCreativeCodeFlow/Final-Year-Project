@@ -133,40 +133,58 @@ In accordance with scientific research integrity, all UI views explicitly report
 
 ## 8. Automated Testing & Verification
 
-The project includes 111 automated integration tests covering the complete backend API, domain integrity, authentication flow, and security operations:
+The project includes **141 automated integration tests** covering the complete backend API, domain integrity, authentication flow, security operations, and the Stage 4A gateway reverse proxy runtime:
 
 ```bash
-# Run all 111 integration tests
+# Run all 141 integration tests (backend + gateway runtime)
 npm test
 
-# Or run backend tests specifically
+# Run backend management tests specifically (119 tests)
 npm run backend:test
+
+# Run gateway reverse proxy runtime tests specifically (22 tests)
+npm run gateway:test
 
 # Run frontend production build
 npm run build
 ```
 
 ### Test Suite Summary:
-- **`tests/security-operations.test.js`** (11 tests): Attacker profiles tenant scoping, attribution disclaimers, baseline policy protection (403 for owners, allowed for admins), explicit `NOT_RECORDED` outcome and `MISSING` execution evidence reporting, strategy metadata notice, and investigation dossiers.
-- **`tests/frontend-auth-integration.test.js`** (18 tests): Frontend authentication flow, session recovery, deduplication, role derivation, logout, and applications CRUD.
-- **`tests/tenant-api.test.js`** (17 tests): Tenant isolation, IDOR defense, CSRF, and permissions.
-- **`tests/auth.test.js`** (16 tests): Argon2id hashing, sessions, cookie serialization, rate limiting.
-- **`tests/database-integrity.test.js`** (13 tests): PostgreSQL constraints, foreign keys, cascade rules.
-- **`tests/config.test.js`** (9 tests): Environment validation.
-- **`tests/request-id.test.js`** (7 tests): Correlation IDs.
-- **`tests/logger.test.js`** (5 tests): Structured logging and secret redaction.
-- **`tests/cors.test.js`** (4 tests): CORS allowlist and preflight.
-- **`tests/error-handler.test.js`** (4 tests): Error masking and envelopes.
-- **`tests/health.test.js`** (3 tests): Liveness and readiness probes.
-- **`tests/seed.test.js`** (2 tests): Seed idempotency and production lockout.
-- **`tests/shutdown.test.js`** (2 tests): Graceful shutdown and database disconnect.
+- **`gateway/tests/gateway-runtime.test.js`** (22 tests): End-to-end reverse proxying to synthetic test origin, method allowlist (`GET`, `POST`, etc.), 405 TRACE rejection, Host header syntax validation, SSRF protection against cloud metadata (AWS/GCP), link-local and multicast ranges, RFC 7230 hop-by-hop header stripping, client-injected proxy identity stripping, 504 timeout, 502 connection refused without port leak, decision controller fail-closed enforcement (503), no silent fallback on deception target unavailability, and sensitive credential redaction.
+- **`backend/tests/gateway-internal-api.test.js`** (8 tests): Internal service token authentication (`X-Gateway-Service-Token`), domain-based application and tenant resolution against PostgreSQL, tenant status gating, 404 on unregistered domains, and telemetry/observation persistence.
+- **`backend/tests/security-operations.test.js`** (11 tests): Attacker profiles tenant scoping, attribution disclaimers, baseline policy protection (403 for owners, allowed for admins), explicit `NOT_RECORDED` outcome and `MISSING` execution evidence reporting, strategy metadata notice, and investigation dossiers.
+- **`backend/tests/frontend-auth-integration.test.js`** (18 tests): Frontend authentication flow, session recovery, deduplication, role derivation, logout, and applications CRUD.
+- **`backend/tests/tenant-api.test.js`** (17 tests): Tenant isolation, IDOR defense, CSRF, and permissions.
+- **`backend/tests/auth.test.js`** (16 tests): Argon2id hashing, sessions, cookie serialization, rate limiting.
+- **`backend/tests/database-integrity.test.js`** (13 tests): PostgreSQL constraints, foreign keys, cascade rules.
+- **`backend/tests/config.test.js`** (9 tests): Environment validation.
+- **`backend/tests/request-id.test.js`** (7 tests): Correlation IDs.
+- **`backend/tests/logger.test.js`** (5 tests): Structured logging and secret redaction.
+- **`backend/tests/cors.test.js`** (4 tests): CORS allowlist and preflight.
+- **`backend/tests/error-handler.test.js`** (4 tests): Error masking and envelopes.
+- **`backend/tests/health.test.js`** (3 tests): Liveness and readiness probes.
+- **`backend/tests/seed.test.js`** (2 tests): Seed idempotency and production lockout.
+- **`backend/tests/shutdown.test.js`** (2 tests): Graceful shutdown and database disconnect.
 
 ---
 
-## 9. Current Limitations & Scope Boundaries
+## 9. Gateway Runtime Architecture (Stage 4A)
 
-Stage 3F establishes comprehensive frontend security operations integration with the authenticated backend APIs. The following components remain deferred to subsequent stages:
+Stage 4A introduces the isolated Gateway Reverse Proxy Runtime and multi-container Docker Compose infrastructure. Detailed architectural design, networking topologies, and 8-stage lifecycle definitions are documented in:
+👉 [Gateway Architecture Documentation](docs/gateway-architecture.md)
+
+### Key Architecture Highlights:
+- **Separated Gateway Process**: Runs independently on port `8000`, communicating with the backend management API via internal service tokens (`X-Gateway-Service-Token`).
+- **Isolated Synthetic Origin**: Runs on internal network `protected-origin-net` without host port exposure or external egress.
+- **SSRF & Rebinding Defense**: Blocks cloud metadata (`169.254.169.254`), link-local IPs, multicast ranges, and dangerous ports.
+- **Fail-Closed Semantics**: Rejects unknown domains (404), inactive tenants (403), controller failures (503), and prohibits silent fallback to real origin if deception is unavailable.
+- **8-Stage Evidence Semantics**: Explicitly distinguishes between request observation, validation, assessment, policy evaluation, routing decision, forwarding attempt, routing outcome, and execution evidence.
+
+---
+
+## 10. Current Limitations & Scope Boundaries
+
+Stage 4A establishes the operational gateway reverse-proxy foundation. The following components remain deferred to subsequent stages:
 - **ML Detection Runtime**: Online feature extraction, statistical anomaly scoring, and model inference.
-- **Reverse Proxy Engine**: Live packet interception, Envoy filter dispatching, and dynamic socket proxying.
-- **Runtime Container Honeynets**: Docker/Kubernetes container decoy cluster orchestration.
+- **Dynamic Honeynet Spawning**: Automated Docker/Kubernetes container decoy cluster orchestration.
 - **External DNS Challenges**: Automatic ACME / DNS record verification.

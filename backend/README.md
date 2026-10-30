@@ -197,7 +197,28 @@ npm run backend:test
 npm test
 ```
 
-### Full Backend Test Suite Summary (100 Tests across 12 Suites — 100% Pass)
+### Full Backend Test Suite Summary (119 Tests across 19 Suites — 100% Pass)
+- **`tests/gateway-internal-api.test.js`** (8 Tests — Stage 4A):
+  1. Subsystem health endpoint responds 200 without authentication.
+  2. Missing X-Gateway-Service-Token returns 401 MISSING_SERVICE_TOKEN.
+  3. Invalid X-Gateway-Service-Token returns 403 INVALID_SERVICE_TOKEN.
+  4. Missing domain parameter returns 400 MISSING_DOMAIN_PARAMETER.
+  5. Valid registered domain resolves application and active tenant metadata.
+  6. Unregistered domain returns 404 APPLICATION_NOT_FOUND.
+  7. Application under SUSPENDED tenant returns 403 TENANT_INACTIVE.
+  8. Telemetry ingestion persists SecurityObservation and RoutingOutcome to PostgreSQL.
+- **`tests/security-operations.test.js`** (11 Tests — Stage 3F):
+  1. Attacker profiles list strictly scoped to tenant.
+  2. Pseudonymous heuristic notice returned with attacker profiles.
+  3. Attacker profile details retrieval with investigations.
+  4. Global baseline policy protected against non-platform admin update (403).
+  5. Platform admin can update global baseline policy (200).
+  6. Non-execution notice returned with strategies endpoints.
+  7. Unrecorded routing outcome reported truthfully as NOT_RECORDED.
+  8. Missing execution evidence reported truthfully as MISSING.
+  9. Investigation dossier with linked profiles and observations.
+  10. Cross-tenant investigation access denied (404/403).
+  11. Cross-tenant profile access denied (404/403).
 - **`tests/frontend-auth-integration.test.js`** (18 Tests — Stage 3E):
   1. `deriveRole`: strictly derives role from backend identity and memberships (no email inference).
   2. `authService.login`: valid credentials authenticate, set cookie, and return role and csrfToken.
@@ -262,14 +283,15 @@ npm test
 | **Decision Simulator** | Simulated | Client-side rule evaluator based on synthetic test scenarios |
 | **Deception State Graph (DSG)** | Simulated / Prototype | Relational models created; live graph mutations remain deferred |
 | **Machine Learning Detection** | Non-Goal (Deferred) | Model weights, feature extraction, and online inference engine deferred |
-| **Reverse Proxy & Honeynet Pods** | Non-Goal (Deferred) | Live packet interception, Envoy filters, and honeynet supervisor deferred |
+| **Gateway Reverse Proxy Runtime** | Operational Foundation (Stage 4A) | Express/HTTP runtime on port 8000, SSRF guard, Docker isolation |
+| **Synthetic Test Origin** | Operational Foundation (Stage 4A) | Isolated Node.js service on port 8081 (protected-origin-net) |
+| **Dynamic Honeynet Pods** | Non-Goal (Deferred) | Dynamic decoy container orchestration deferred |
 
 ---
 
-## 8. Current Non-Goals (Stage 3D Scope Boundaries)
+## 8. Current Non-Goals (Stage 4A Scope Boundaries)
 
-To preserve system safety, modularity, and evidence integrity, Stage 3D explicitly omits:
-- **ML Threat Detection**: Model training, live scoring, and ML inference engines remain deferred to future stages.
-- **Reverse Proxy & Traffic Redirection**: Live packet routing, Envoy filters, and honeynet container supervisor daemons are non-goals for this stage.
-- **Live Honeypot Deployment**: No runtime decoy containers or honeynet networks are spawned.
+To preserve system safety, modularity, and evidence integrity, Stage 4A explicitly omits:
+- **ML Threat Detection**: Model training, live scoring, and online ML inference engines remain deferred to future stages.
+- **Dynamic Honeypot Deployment**: No live decoy containers or honeynet networks are spawned dynamically.
 - **DNS / Domain Verification**: No live DNS challenge or external domain verification probe is executed.
