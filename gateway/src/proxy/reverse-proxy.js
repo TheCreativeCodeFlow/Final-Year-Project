@@ -3,17 +3,18 @@
  *
  * Implements:
  * 1. Controlled upstream request forwarding using native Node.js HTTP/HTTPS agents.
- * 2. SSRF destination pre-flight validation.
+ * 2. Pre-connection DNS resolution and connection pinning (SSRF and DNS rebinding defense).
  * 3. Connection and response timeouts with safe error translation.
  * 4. Header sanitization on request and response.
- * 5. Stream piping with backpressure and byte accounting.
- * 6. Non-leaking error responses (never reveals internal origin topology).
+ * 5. Stream piping with backpressure, byte accounting, and zero unlimited memory buffering.
+ * 6. Non-leaking error responses (never reveals internal origin topology, IPs, or closed ports).
  * 7. Manual redirect handling (never silently follows upstream redirects into unintended targets).
+ * 8. Client disconnect cleanup and socket aborts.
  */
 
 import http from 'node:http';
 import https from 'node:https';
-import { validateUpstreamDestination } from './ssrf-guard.js';
+import { resolveAndPinUpstreamDestination } from './ssrf-guard.js';
 import { sanitizeForwardedHeaders, sanitizeResponseHeaders } from './header-sanitizer.js';
 import { logger } from '../utils/logger.js';
 
@@ -31,6 +32,10 @@ const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 100, timeout: 
  * @param {string} params.validatedHost
  * @param {string} params.requestId
  * @param {number} [params.timeoutMs=5000]
+ * @param {object} [params.options]
+ * @param {boolean} [params.options.allowLoopback=true]
+ * @param {boolean} [params.options.allowPrivateIps=true]
+ * @param {Function} [params.options.dnsResolver]
  * @returns {Promise<{
  *   success: boolean,
  *   statusCode: number,
@@ -40,19 +45,37 @@ const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 100, timeout: 
  *   errorDetails?: string
  * }>}
  */
-export function proxyRequest(params) {
-  const { req, res, upstreamBaseUrl, validatedHost, requestId, timeoutMs = 5000 } = params;
+export async function proxyRequest(params) {
+  const {
+    req,
+    res,
+    upstreamBaseUrl,
+    validatedHost,
+    requestId,
+    timeoutMs = 5000,
+    options = {}
+  } = params;
 
-  return new Promise((resolve) => {
-    // 1. SSRF Pre-flight Validation
-    const ssrfCheck = validateUpstreamDestination(upstreamBaseUrl);
-    if (!ssrfCheck.valid) {
-      logger.error('SSRF Check Failed for Upstream Destination', {
-        upstreamBaseUrl,
-        reason: ssrfCheck.reason,
-        requestId
-      });
+  // Pause incoming stream so chunks are not dropped during async pre-flight checks
+  if (typeof req.pause === 'function') {
+    req.pause();
+  }
 
+  // 1. SSRF Pre-flight & Pre-Connection DNS Resolution with Connection Pinning
+  const pinResult = await resolveAndPinUpstreamDestination(upstreamBaseUrl, {
+    allowLoopback: options.allowLoopback !== undefined ? options.allowLoopback : true,
+    allowPrivateIps: options.allowPrivateIps !== undefined ? options.allowPrivateIps : true,
+    dnsResolver: options.dnsResolver
+  });
+
+  if (!pinResult.valid) {
+    logger.error('SSRF Check Failed for Upstream Destination', {
+      upstreamBaseUrl,
+      reason: pinResult.reason,
+      requestId
+    });
+
+    if (!res.headersSent) {
       res.status(502).json({
         success: false,
         error: {
@@ -61,43 +84,60 @@ export function proxyRequest(params) {
         },
         requestId
       });
-
-      return resolve({
-        success: false,
-        statusCode: 502,
-        forwardingResult: 'SSRF_BLOCKED',
-        requestSizeBytes: 0,
-        responseSizeBytes: 0,
-        errorDetails: ssrfCheck.reason
-      });
     }
 
-    const upstreamUrl = new URL(req.url, upstreamBaseUrl);
-    const isHttps = upstreamUrl.protocol === 'https:';
-    const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
-
-    // 2. Sanitize Request Headers
-    const headers = sanitizeForwardedHeaders(req.headers, {
-      clientIp,
-      validatedHost,
-      requestId,
-      protocol: req.protocol || 'http'
-    });
-
-    const transport = isHttps ? https : http;
-    const agent = isHttps ? httpsAgent : httpAgent;
-
-    const requestOptions = {
-      protocol: upstreamUrl.protocol,
-      hostname: upstreamUrl.hostname,
-      port: upstreamUrl.port || (isHttps ? 443 : 80),
-      path: upstreamUrl.pathname + upstreamUrl.search,
-      method: req.method,
-      headers,
-      agent,
-      timeout: timeoutMs
+    return {
+      success: false,
+      statusCode: 502,
+      forwardingResult: 'SSRF_BLOCKED',
+      requestSizeBytes: 0,
+      responseSizeBytes: 0,
+      errorDetails: pinResult.reason
     };
+  }
 
+  const { pinnedIp, family, parsedUrl } = pinResult;
+  const upstreamUrl = new URL(req.url, upstreamBaseUrl);
+  const isHttps = upstreamUrl.protocol === 'https:';
+  const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
+
+  // 2. Sanitize Request Headers
+  const headers = sanitizeForwardedHeaders(req.headers, {
+    clientIp,
+    validatedHost,
+    requestId,
+    protocol: req.protocol || 'http'
+  });
+
+  const transport = isHttps ? https : http;
+  const agent = isHttps ? httpsAgent : httpAgent;
+
+  // 3. Request Options with DNS Connection Pinning
+  const requestOptions = {
+    protocol: upstreamUrl.protocol,
+    hostname: upstreamUrl.hostname,
+    port: upstreamUrl.port || (isHttps ? 443 : 80),
+    path: upstreamUrl.pathname + upstreamUrl.search,
+    method: req.method,
+    headers,
+    agent,
+    timeout: timeoutMs,
+    // Socket DNS Pinning: bypasses re-resolution and connects directly to the validated IP
+    lookup: (hostname, lookupOpts, callback) => {
+      if (lookupOpts && lookupOpts.all) {
+        callback(null, [{ address: pinnedIp, family }]);
+      } else {
+        callback(null, pinnedIp, family);
+      }
+    }
+  };
+
+  // For HTTPS, preserve SNI / servername so TLS certificate validation succeeds against the hostname
+  if (isHttps) {
+    requestOptions.servername = upstreamUrl.hostname;
+  }
+
+  return new Promise((resolve) => {
     let requestSizeBytes = 0;
     let responseSizeBytes = 0;
     let settled = false;
@@ -110,13 +150,26 @@ export function proxyRequest(params) {
     };
 
     const upstreamReq = transport.request(requestOptions, (upstreamRes) => {
-      // 3. Upstream response received
+      // 4. Upstream response received
       const responseStatus = upstreamRes.statusCode || 502;
       const sanitizedRespHeaders = sanitizeResponseHeaders(upstreamRes.headers, requestId);
 
       // Write response status and headers
       res.writeHead(responseStatus, sanitizedRespHeaders);
 
+      // For HEAD requests, no response body is sent
+      if (req.method === 'HEAD') {
+        res.end();
+        return finalize({
+          success: responseStatus < 500,
+          statusCode: responseStatus,
+          forwardingResult: responseStatus >= 400 ? 'UPSTREAM_HTTP_ERROR' : 'SUCCESS',
+          requestSizeBytes,
+          responseSizeBytes: 0
+        });
+      }
+
+      // Stream response chunks without buffering unlimited payloads in memory
       upstreamRes.on('data', (chunk) => {
         responseSizeBytes += chunk.length;
         res.write(chunk);
@@ -161,7 +214,7 @@ export function proxyRequest(params) {
       });
     });
 
-    // 4. Handle Socket Timeouts
+    // 5. Handle Socket Timeouts
     upstreamReq.on('timeout', () => {
       logger.warn('Upstream request timed out', {
         timeoutMs,
@@ -191,7 +244,7 @@ export function proxyRequest(params) {
       });
     });
 
-    // 5. Handle Network/Connection Failures Safely
+    // 6. Handle Network/Connection Failures Safely (Without leaking internal topology)
     upstreamReq.on('error', (err) => {
       logger.error('Upstream connection error', {
         error: err.message,
@@ -222,30 +275,49 @@ export function proxyRequest(params) {
       });
     });
 
-    // 6. Handle Client Disconnect
-    req.on('aborted', () => {
-      logger.info('Client aborted connection before upstream completed', { requestId });
-      upstreamReq.destroy();
-      finalize({
-        success: false,
-        statusCode: 499,
-        forwardingResult: 'CLIENT_CLOSED_REQUEST',
-        requestSizeBytes,
-        responseSizeBytes
-      });
+    // 7. Handle Client Disconnect & Socket Aborts
+    const onClientClose = () => {
+      if (!upstreamReq.destroyed) {
+        logger.info('Client closed connection; destroying upstream request', { requestId });
+        upstreamReq.destroy();
+        finalize({
+          success: false,
+          statusCode: 499,
+          forwardingResult: 'CLIENT_CLOSED_REQUEST',
+          requestSizeBytes,
+          responseSizeBytes
+        });
+      }
+    };
+
+    req.on('aborted', onClientClose);
+    res.on('close', () => {
+      if (!res.writableEnded && !settled) {
+        onClientClose();
+      }
     });
 
-    // 7. Pipe Request Body if Present
+    // 8. Stream Request Body with Backpressure (avoiding unlimited in-memory buffering)
     if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
       req.on('data', (chunk) => {
         requestSizeBytes += chunk.length;
-        upstreamReq.write(chunk);
+        const canContinue = upstreamReq.write(chunk);
+        if (!canContinue) {
+          req.pause();
+          upstreamReq.once('drain', () => req.resume());
+        }
       });
       req.on('end', () => {
         upstreamReq.end();
       });
+      if (typeof req.resume === 'function') {
+        req.resume();
+      }
     } else {
       upstreamReq.end();
+      if (typeof req.resume === 'function') {
+        req.resume();
+      }
     }
   });
 }

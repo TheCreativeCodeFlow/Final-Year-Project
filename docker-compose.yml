@@ -10,11 +10,15 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: adaptive_deception_dev
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - internal-mgmt-net
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -47,6 +51,10 @@ services:
       - "4000:4000"
     networks:
       - internal-mgmt-net
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       db:
         condition: service_healthy
@@ -84,6 +92,10 @@ services:
     networks:
       - internal-mgmt-net
       - protected-origin-net
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       backend:
         condition: service_healthy
@@ -115,6 +127,10 @@ services:
       - "8081"
     networks:
       - protected-origin-net
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD", "node", "-e", "http.get('http://127.0.0.1:8081/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
       interval: 10s

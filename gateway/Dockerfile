@@ -2,13 +2,14 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Run as non-root user
-USER node
-
 COPY --chown=node:node package*.json ./
 RUN npm ci --only=production
 
 COPY --chown=node:node src/ ./src/
+
+RUN chown -R node:node /app
+
+USER node
 
 ENV PORT=8000 \
     HOST=0.0.0.0 \

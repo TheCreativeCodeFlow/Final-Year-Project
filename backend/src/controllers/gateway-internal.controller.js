@@ -146,6 +146,24 @@ export async function recordTelemetry(req, res, next) {
       });
     }
 
+    // Deduplication check: if observation already exists with this correlationId
+    const existingObservation = await prisma.securityObservation.findFirst({
+      where: { tenantId, correlationId }
+    });
+
+    if (existingObservation) {
+      return res.status(200).json({
+        success: true,
+        duplicate: true,
+        persistenceStatus: 'TELEMETRY_PERSISTED',
+        data: {
+          observationId: existingObservation.id,
+          observationIdentifier: existingObservation.observationIdentifier,
+          correlationId
+        }
+      });
+    }
+
     // Create SecurityObservation record
     const observationIdentifier = `obs-gw-${crypto.randomUUID().slice(0, 8)}`;
     const observation = await prisma.securityObservation.create({
@@ -200,6 +218,7 @@ export async function recordTelemetry(req, res, next) {
 
     res.status(201).json({
       success: true,
+      persistenceStatus: 'TELEMETRY_PERSISTED',
       data: {
         observationId: observation.id,
         observationIdentifier: observation.observationIdentifier,

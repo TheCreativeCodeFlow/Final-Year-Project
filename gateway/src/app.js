@@ -191,7 +191,8 @@ export function createGatewayApp(options = {}) {
       upstreamBaseUrl: targetOrigin,
       validatedHost: appContext.domain,
       requestId: req.id,
-      timeoutMs: appContext.timeoutMs
+      timeoutMs: appContext.timeoutMs,
+      options: options.proxyOptions || { dnsResolver: options.dnsResolver }
     });
 
     const endTime = process.hrtime.bigint();

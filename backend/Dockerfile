@@ -13,6 +13,8 @@ RUN npx prisma generate
 
 COPY src/ ./src/
 
+RUN chown -R node:node /app
+
 USER node
 
 ENV PORT=4000 \

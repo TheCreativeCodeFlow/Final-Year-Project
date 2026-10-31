@@ -75,6 +75,17 @@ export function startGatewayServer() {
     );
   });
 
+  // Client-level HTTP parse error handler (malformed chunks, smuggling attempts)
+  serverInstance.on('clientError', (err, socket) => {
+    logger.warn('Client HTTP protocol error detected', {
+      error: err.message,
+      code: err.code
+    });
+    if (socket.writable) {
+      socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\nBad Request\r\n');
+    }
+  });
+
   setupGatewayGracefulShutdown(serverInstance);
   return serverInstance;
 }
