@@ -85,12 +85,20 @@ export function createGatewayApp(options = {}) {
     });
   });
 
-  // 4. Ingress Request Validation
+  // 4. Request context & telemetry instrumentation
+  app.use((req, res, next) => {
+    req.telemetryRecorder = telemetryRecorder;
+    req.appResolver = appResolver;
+    req.startTime = process.hrtime.bigint();
+    next();
+  });
+
+  // Ingress Request Validation
   app.use(validateGatewayRequest);
 
   // 5. Main Gateway Reverse Proxy Handler
   app.use(async (req, res) => {
-    const startTime = process.hrtime.bigint();
+    const startTime = req.startTime || process.hrtime.bigint();
     const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
     const method = req.method;
     const rawPath = req.url;

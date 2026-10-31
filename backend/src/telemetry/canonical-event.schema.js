@@ -23,7 +23,11 @@ export const ALLOWED_HTTP_METHODS = new Set([
   'PATCH',
   'DELETE',
   'HEAD',
-  'OPTIONS'
+  'OPTIONS',
+  'TRACE',
+  'CONNECT',
+  'PROPFIND',
+  'SEARCH'
 ]);
 
 export const FORWARDING_RESULTS = new Set([
@@ -242,8 +246,9 @@ export function validateAndNormalizeCanonicalEvent(rawEvent, options = {}) {
 
   // 6. HTTP Method Validation
   const httpMethod = (rawEvent.httpMethod || rawEvent.method || '').toUpperCase();
-  if (!ALLOWED_HTTP_METHODS.has(httpMethod)) {
-    errors.push(`INVALID_HTTP_METHOD: Method "${httpMethod}" is not in the allowed HTTP method allowlist.`);
+  const isValidMethodToken = /^[A-Z]{3,16}$/.test(httpMethod);
+  if (!isValidMethodToken || (!ALLOWED_HTTP_METHODS.has(httpMethod) && !rawEvent.validationOutcome)) {
+    errors.push(`INVALID_HTTP_METHOD: Method "${httpMethod}" is not a valid or recognized HTTP method.`);
   }
 
   // 7. Route Normalization

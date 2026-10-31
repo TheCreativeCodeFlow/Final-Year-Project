@@ -1,15 +1,20 @@
 /**
- * Behavioral Session Correlation Service (Stage 4B)
+ * Behavioral Session Correlation Service (Stage 4B & 4B.1 Hardened)
  *
  * Correlates canonical telemetry events into coherent behavioral session tracks:
  * 1. Associative session reference resolution:
  *    - Uses trusted explicit session tokens if provided by the application.
- *    - Falls back to pseudonymous ephemeral session keys if absent.
+ *    - Explicit session tokens are pseudonymized via a keyed HMAC (HMAC-SHA256) with tenant-isolated keys.
+ *    - Raw credentials/tokens are NEVER stored in behavioral features or session states.
+ *    - Key rotation: Rotating SESSION_HMAC_SECRET alters the derived keys; historical correlations remain
+ *      isolated, and active sessions gracefully rotate epochs without leaking plaintext credentials.
+ *    - Falls back to pseudonymous ephemeral session keys if explicit session is absent.
  * 2. Inactivity timeout enforcement (sliding inactivity window; default 15m).
  * 3. Session rotation handling (links predecessor epochs without conflating identities).
  * 4. NAT and shared-IP disambiguation:
  *    - Explicitly maintains separate concepts for client session, network source, investigation, and behavioral profile.
  *    - An IP address alone is NEVER treated as proof of single-actor identity.
+ *    - Collision-risk metadata explicitly tags shared NAT and ambiguous fallback sessions.
  * 5. Bounded in-memory session index to prevent memory exhaustion.
  */
 
@@ -17,18 +22,51 @@ import crypto from 'node:crypto';
 
 const DEFAULT_INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_ACTIVE_SESSIONS = 10000;
+const DEFAULT_HMAC_SECRET = 'adg-session-correlation-master-secret-2026';
 
 export class BehavioralSessionCorrelator {
   /**
    * @param {object} [options]
    * @param {number} [options.inactivityTimeoutMs=900000] - 15 minutes
    * @param {number} [options.maxActiveSessions=10000]
+   * @param {string} [options.hmacSecret] - Master secret for keyed HMAC session pseudonymization
    */
   constructor(options = {}) {
     this.inactivityTimeoutMs = options.inactivityTimeoutMs || DEFAULT_INACTIVITY_TIMEOUT_MS;
     this.maxActiveSessions = options.maxActiveSessions || MAX_ACTIVE_SESSIONS;
+    this.hmacSecret = options.hmacSecret || process.env.SESSION_HMAC_SECRET || DEFAULT_HMAC_SECRET;
     // Map key: `${tenantId}:${applicationId || 'none'}:${sessionRef}`
     this.activeSessions = new Map();
+  }
+
+  /**
+   * Derives a tenant-specific HMAC key from the master secret, guaranteeing
+   * strict cross-tenant cryptographic isolation.
+   *
+   * @param {string} tenantId
+   * @returns {Buffer}
+   */
+  deriveTenantKey(tenantId) {
+    return crypto.createHmac('sha256', this.hmacSecret).update(tenantId || 'global').digest();
+  }
+
+  /**
+   * Generates a protected pseudonymous session reference from a trusted raw session token.
+   * Uses HMAC-SHA256 with tenant-scoped keying to prevent storing raw credentials or tokens.
+   *
+   * @param {string} tenantId
+   * @param {string} rawToken
+   * @returns {string}
+   */
+  generateExplicitSessionRef(tenantId, rawToken) {
+    if (!rawToken || typeof rawToken !== 'string') return null;
+    const cleanToken = rawToken.trim();
+    if (/^sess-hmac-[0-9a-f]{32}$/i.test(cleanToken)) {
+      return cleanToken.toLowerCase();
+    }
+    const tenantKey = this.deriveTenantKey(tenantId);
+    const hmac = crypto.createHmac('sha256', tenantKey).update(cleanToken).digest('hex').slice(0, 32);
+    return `sess-hmac-${hmac}`;
   }
 
   /**
@@ -59,7 +97,9 @@ export class BehavioralSessionCorrelator {
    *   correlationType: string,
    *   isPseudonymous: boolean,
    *   correlationConfidence: number,
+   *   collisionRisk: { level: string, riskFactors: string[] },
    *   caveats: string[],
+   *   isAttackerIdentity: boolean,
    *   firstSeenAt: string,
    *   lastActiveAt: string,
    *   eventCount: number,
@@ -75,30 +115,66 @@ export class BehavioralSessionCorrelator {
     const ipSubnetHash = canonicalEvent.sourceMetadata?.ipSubnetHash || 'unknown-subnet';
 
     let rawSessionRef = canonicalEvent.sessionReference;
-    let isExplicit = Boolean(rawSessionRef && typeof rawSessionRef === 'string' && rawSessionRef.trim());
-    let sessionRef = isExplicit ? rawSessionRef.trim() : null;
-    let previousSessionRef = canonicalEvent.previousSessionReference || null;
+    const hasRawSession = Boolean(rawSessionRef && typeof rawSessionRef === 'string' && rawSessionRef.trim());
+    const isUntrustedClient = Boolean(canonicalEvent.sessionProvenance?.isClientSuppliedUntrusted || canonicalEvent.isClientSuppliedSessionRef);
 
-    let correlationType = isExplicit ? 'EXPLICIT_APPLICATION_SESSION' : 'PSEUDONYMOUS_NETWORK_HEURISTIC';
-    let correlationConfidence = isExplicit ? 1.0 : 0.5;
-    let caveats = isExplicit
-      ? []
-      : [
-          'SHARED_NAT_COLLISION_POSSIBLE',
-          'EPHEMERAL_WINDOW_BOUNDED',
-          'NOT_PERMANENT_INDIVIDUAL_IDENTITY'
-        ];
+    let sessionRef;
+    let correlationType;
+    let correlationConfidence;
+    let caveats = [];
+    let collisionRisk;
+    let isExplicit = false;
 
-    // If no explicit session token, generate initial pseudonymous key
-    if (!sessionRef) {
+    if (hasRawSession && !isUntrustedClient) {
+      // 1. Trusted explicit session token -> Pseudonymize with Keyed HMAC
+      isExplicit = true;
+      sessionRef = this.generateExplicitSessionRef(tenantId, rawSessionRef);
+      correlationType = 'EXPLICIT_APPLICATION_SESSION';
+      correlationConfidence = 1.0;
+      caveats = [];
+      collisionRisk = {
+        level: 'LOW',
+        riskFactors: []
+      };
+    } else if (hasRawSession && isUntrustedClient) {
+      // 2. Client-supplied / unverified session header -> Treat with caution
+      sessionRef = this.generateExplicitSessionRef(tenantId, rawSessionRef);
+      correlationType = 'UNTRUSTED_CLIENT_SESSION_METADATA';
+      correlationConfidence = 0.4;
+      caveats = [
+        'CLIENT_FORGED_SESSION_METADATA_SUSPECTED',
+        'NOT_PERMANENT_INDIVIDUAL_IDENTITY'
+      ];
+      collisionRisk = {
+        level: 'HIGH',
+        riskFactors: ['CLIENT_UNVERIFIED_SESSION_HEADER', 'SPOOFING_POSSIBLE']
+      };
+    } else {
+      // 3. Fallback to Pseudonymous Network Heuristic
       sessionRef = this.generatePseudonymousSessionRef({
         tenantId,
         applicationId,
         ipSubnetHash,
         epochWindowId: 0
       });
+      correlationType = 'PSEUDONYMOUS_NETWORK_HEURISTIC';
+      correlationConfidence = 0.5;
+      caveats = [
+        'SHARED_NAT_COLLISION_POSSIBLE',
+        'EPHEMERAL_WINDOW_BOUNDED',
+        'NOT_PERMANENT_INDIVIDUAL_IDENTITY'
+      ];
+      collisionRisk = {
+        level: 'HIGH',
+        riskFactors: [
+          'SHARED_NAT_POSSIBLE',
+          'IDENTICAL_USER_AGENT_POSSIBLE',
+          'EPHEMERAL_WINDOW_BOUNDED'
+        ]
+      };
     }
 
+    let previousSessionRef = canonicalEvent.previousSessionReference || null;
     const sessionLookupKey = `${tenantId}:${applicationId || 'none'}:${sessionRef}`;
     let sessionState = this.activeSessions.get(sessionLookupKey);
 
@@ -109,7 +185,6 @@ export class BehavioralSessionCorrelator {
 
       // Inactivity timeout check: if inactive for longer than threshold, rotate to a new session epoch
       if (inactiveDuration > this.inactivityTimeoutMs) {
-        // Record predecessor linkage and bump epoch
         const nextEpoch = sessionState.epoch + 1;
         previousSessionRef = sessionRef;
 
@@ -120,6 +195,7 @@ export class BehavioralSessionCorrelator {
           sessionState.lastActiveAtMs = eventTime;
           sessionState.eventCount = 1;
           sessionState.epoch = nextEpoch;
+          sessionState.previousSessionRef = previousSessionRef;
           isNewSession = true;
         } else {
           // For pseudonymous correlation, a timeout starts a fresh epoch identifier
@@ -138,6 +214,7 @@ export class BehavioralSessionCorrelator {
             correlationType,
             isPseudonymous: !isExplicit,
             correlationConfidence,
+            collisionRisk,
             caveats,
             firstSeenAt: eventTimeIso,
             lastActiveAt: eventTimeIso,
@@ -166,6 +243,7 @@ export class BehavioralSessionCorrelator {
         correlationType,
         isPseudonymous: !isExplicit,
         correlationConfidence,
+        collisionRisk,
         caveats,
         firstSeenAt: eventTimeIso,
         lastActiveAt: eventTimeIso,
@@ -185,7 +263,9 @@ export class BehavioralSessionCorrelator {
       correlationType: sessionState.correlationType,
       isPseudonymous: sessionState.isPseudonymous,
       correlationConfidence: sessionState.correlationConfidence,
+      collisionRisk: sessionState.collisionRisk,
       caveats: sessionState.caveats,
+      isAttackerIdentity: false, // IP clusters & sessions are NEVER treated as individual attacker identities
       firstSeenAt: sessionState.firstSeenAt,
       lastActiveAt: sessionState.lastActiveAt,
       eventCount: sessionState.eventCount,

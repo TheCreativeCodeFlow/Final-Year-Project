@@ -26,9 +26,9 @@ describe('Stage 4B: Synthetic Research Evaluation Dataset & Extraction Pipeline'
   const extractor = new BehavioralFeatureExtractor();
   const correlator = new BehavioralSessionCorrelator();
 
-  test('1. Dataset produces all 10 distinct scenario specifications with ground-truth separation', () => {
+  test('1. Dataset produces all 20 distinct scenario specifications with ground-truth separation', () => {
     const keys = Object.keys(dataset);
-    assert.equal(keys.length, 10);
+    assert.equal(keys.length, 20);
     assert.ok(keys.includes('normal_browsing'));
     assert.ok(keys.includes('repeated_login_failures'));
     assert.ok(keys.includes('endpoint_enumeration'));
@@ -39,6 +39,16 @@ describe('Stage 4B: Synthetic Research Evaluation Dataset & Extraction Pipeline'
     assert.ok(keys.includes('sudden_behavioral_change'));
     assert.ok(keys.includes('shared_ip_distinct_sessions'));
     assert.ok(keys.includes('incomplete_telemetry'));
+    assert.ok(keys.includes('legitimate_repeated_login_failures'));
+    assert.ok(keys.includes('legitimate_api_polling'));
+    assert.ok(keys.includes('legitimate_crawler_traversal'));
+    assert.ok(keys.includes('developer_endpoint_exploration'));
+    assert.ok(keys.includes('legitimate_repeated_404_asset'));
+    assert.ok(keys.includes('shared_nat_identical_user_agents'));
+    assert.ok(keys.includes('legitimate_api_pagination'));
+    assert.ok(keys.includes('mobile_client_irregular_timing'));
+    assert.ok(keys.includes('mixed_attacker_and_normal_traffic'));
+    assert.ok(keys.includes('telemetry_loss_during_session'));
 
     for (const [key, scen] of Object.entries(dataset)) {
       assert.ok(scen.scenarioName, `${key} missing scenarioName`);
@@ -157,7 +167,7 @@ describe('Stage 4B: Synthetic Research Evaluation Dataset & Extraction Pipeline'
     assert.ok(methodDist['HEAD'] > 0);
   });
 
-  test('8. Scenario 9 (Shared IP with Distinct Sessions) correctly correlates 3 separate sessions', () => {
+  test('8. Scenario 9 (Shared IP with Distinct Sessions) correctly correlates 3 separate sessions via keyed HMAC', () => {
     const scen = dataset.shared_ip_distinct_sessions;
     const correlatedSessions = new Set();
 
@@ -168,9 +178,9 @@ describe('Stage 4B: Synthetic Research Evaluation Dataset & Extraction Pipeline'
 
     // Must have preserved exactly 3 distinct sessions despite identical source IP
     assert.equal(correlatedSessions.size, 3);
-    assert.ok(correlatedSessions.has('user-alpha-session'));
-    assert.ok(correlatedSessions.has('user-beta-session'));
-    assert.ok(correlatedSessions.has('user-gamma-session'));
+    for (const sRef of correlatedSessions) {
+      assert.ok(sRef.startsWith('sess-hmac-'));
+    }
   });
 
   test('9. Scenario 10 (Incomplete Telemetry) processes without throwing and records quality metadata', () => {
@@ -189,5 +199,108 @@ describe('Stage 4B: Synthetic Research Evaluation Dataset & Extraction Pipeline'
     const set5m = featureSets.find((f) => f.windowLabel === '5m');
     assert.ok(set5m.qualityMetadata.featureCompletenessRatio > 0);
     assert.ok(set5m.qualityMetadata.missingFieldTotal > 0);
+  });
+
+  test('10. Scenario 11 (Legitimate Login Failures) shows login typo pattern followed by clean success', () => {
+    const scen = dataset.legitimate_repeated_login_failures;
+    const refTime = scen.events[scen.events.length - 1].timestamp;
+
+    const featureSets = extractor.extractFeatures({
+      canonicalEvents: scen.events,
+      tenantId: 'tenant-apex-9941',
+      applicationId: 'app-apex-01',
+      sessionRef: 'sess-user-typo-auth',
+      referenceTimestamp: refTime
+    });
+
+    const f15 = featureSets.find((f) => f.windowLabel === '15m').features;
+    assert.equal(f15.request_count.value, 7);
+    assert.equal(f15.auth_failure_count.value, 3);
+    // Success on attempt 4 + 3 profile requests = 4 successful 200s out of 7
+    assert.ok(f15.response_status_distribution.value['2xx'] > 0.5);
+  });
+
+  test('11. Scenario 12 (Legitimate API Polling) produces 0.0 resource enumeration score', () => {
+    const scen = dataset.legitimate_api_polling;
+    const refTime = scen.events[scen.events.length - 1].timestamp;
+
+    const featureSets = extractor.extractFeatures({
+      canonicalEvents: scen.events,
+      tenantId: 'tenant-apex-9941',
+      applicationId: 'app-apex-01',
+      sessionRef: 'sess-dashboard-poller',
+      referenceTimestamp: refTime
+    });
+
+    const f5m = featureSets.find((f) => f.windowLabel === '5m').features;
+    assert.equal(f5m.repeated_endpoint_ratio.value, 1.0);
+    assert.equal(f5m.resource_enumeration_score.value, 0.0, 'Legitimate polling must never be flagged as enumeration');
+  });
+
+  test('12. Scenario 13 (Legitimate Crawler) exhibits high diversity with zero errors and zero enumeration', () => {
+    const scen = dataset.legitimate_crawler_traversal;
+    const refTime = scen.events[scen.events.length - 1].timestamp;
+
+    const featureSets = extractor.extractFeatures({
+      canonicalEvents: scen.events,
+      tenantId: 'tenant-apex-9941',
+      applicationId: 'app-apex-01',
+      sessionRef: 'sess-doc-crawler',
+      referenceTimestamp: refTime
+    });
+
+    const f5m = featureSets.find((f) => f.windowLabel === '5m').features;
+    assert.equal(f5m.unique_endpoint_count.value, 15);
+    assert.equal(f5m.endpoint_diversity_ratio.value, 1.0);
+    assert.equal(f5m.http_4xx_ratio.value, 0.0);
+    assert.equal(f5m.resource_enumeration_score.value, 0.0);
+  });
+
+  test('13. Scenario 15 (Repeated 404 Asset) isolates missing asset without triggering enumeration score', () => {
+    const scen = dataset.legitimate_repeated_404_asset;
+    const refTime = scen.events[scen.events.length - 1].timestamp;
+
+    const featureSets = extractor.extractFeatures({
+      canonicalEvents: scen.events,
+      tenantId: 'tenant-apex-9941',
+      applicationId: 'app-apex-01',
+      sessionRef: 'sess-browser-broken-img',
+      referenceTimestamp: refTime
+    });
+
+    const f5m = featureSets.find((f) => f.windowLabel === '5m').features;
+    assert.equal(f5m.unique_endpoint_count.value, 1);
+    assert.equal(f5m.repeated_not_found_count.value, 6);
+    // Unique 404 count is 1 out of threshold 5 -> breadth is 0.2
+    assert.equal(f5m.resource_enumeration_score.value, 0.2);
+  });
+
+  test('14. Scenario 16 (Shared NAT with Identical User-Agents) partitions users via HMAC tokens', () => {
+    const scen = dataset.shared_nat_identical_user_agents;
+    const correlatedSessions = new Set();
+
+    for (const ev of scen.events) {
+      const res = correlator.correlateEvent(ev);
+      correlatedSessions.add(res.sessionRef);
+    }
+
+    assert.equal(correlatedSessions.size, 2, 'Distinct session tokens behind shared NAT must yield 2 distinct HMAC sessions');
+  });
+
+  test('15. Scenario 20 (Telemetry Loss During Session) flags telemetryLossDetected and PARTIAL completeness', () => {
+    const scen = dataset.telemetry_loss_during_session;
+    const refTime = scen.events[scen.events.length - 1].timestamp;
+
+    const featureSets = extractor.extractFeatures({
+      canonicalEvents: scen.events,
+      tenantId: 'tenant-apex-9941',
+      applicationId: 'app-apex-01',
+      sessionRef: 'sess-degraded-telemetry',
+      referenceTimestamp: refTime
+    });
+
+    const set5m = featureSets.find((f) => f.windowLabel === '5m');
+    assert.equal(set5m.qualityMetadata.telemetryLossDetected, true);
+    assert.equal(set5m.qualityMetadata.windowCompleteness, 'PARTIAL');
   });
 });

@@ -95,4 +95,47 @@ describe('Stage 4B: Telemetry Reliability and Data Loss Tracking', () => {
     const metrics = dedupService.getQueueMetrics();
     assert.equal(metrics.duplicateEventCount, 1);
   });
+
+  test('4. Durable loss summary survives simulated process restarts via persistent log', async () => {
+    const testLogPath = './test-telemetry-loss.json';
+
+    // Instance 1: drops 2 records
+    const service1 = new TelemetryRecorderService({
+      managementApiUrl: 'http://127.0.0.1:59997/api/v1',
+      gatewayInternalToken: 'secret-token',
+      maxQueueSize: 2,
+      durableLossLogPath: testLogPath,
+      fetchImpl: async () => {
+        throw new Error('Down');
+      }
+    });
+
+    for (let i = 1; i <= 4; i++) {
+      await service1.recordTelemetry({
+        correlationId: `corr-restart-${i}`,
+        tenantId: 'tenant-apex',
+        applicationId: 'app-01',
+        method: 'GET',
+        responseStatus: 200
+      });
+    }
+
+    assert.equal(service1.getQueueMetrics().droppedEventCount, 2);
+
+    // Instance 2 (Simulated Process Restart): reads from same testLogPath
+    const service2 = new TelemetryRecorderService({
+      managementApiUrl: 'http://127.0.0.1:59997/api/v1',
+      gatewayInternalToken: 'secret-token',
+      maxQueueSize: 2,
+      durableLossLogPath: testLogPath,
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ success: true }) })
+    });
+
+    const metricsRestart = service2.getQueueMetrics();
+    assert.equal(metricsRestart.droppedEventCount, 2, 'Restarted service must recover historical droppedEventCount');
+    assert.equal(metricsRestart.hasDataLoss, true, 'hasDataLoss must remain true after restart');
+
+    // Clean up test file
+    service2.resetDurableLossSummary();
+  });
 });

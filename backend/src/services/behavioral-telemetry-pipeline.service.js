@@ -102,6 +102,9 @@ export class BehavioralTelemetryPipelineService {
             responseSizeBytes: event.responseSizeBytes,
             sessionRef: correlation.sessionRef,
             correlationType: correlation.correlationType,
+            correlationConfidence: correlation.correlationConfidence,
+            collisionRisk: correlation.collisionRisk,
+            caveats: correlation.caveats,
             isPseudonymous: correlation.isPseudonymous,
             sourceMetadata: event.sourceMetadata,
             forwardingResult: event.forwardingResult,
@@ -186,7 +189,7 @@ export class BehavioralTelemetryPipelineService {
           .filter(Boolean);
 
         // Fetch active baseline for this application
-        const activeBaseline = await this.prisma.behavioralBaseline.findFirst({
+        let activeBaseline = await this.prisma.behavioralBaseline.findFirst({
           where: {
             tenantId: event.tenantId,
             applicationId: event.applicationId,
@@ -194,6 +197,11 @@ export class BehavioralTelemetryPipelineService {
           },
           orderBy: { createdAt: 'desc' }
         });
+
+        // Evaluate baseline staleness before using for deltas
+        if (activeBaseline && this.baselineService.isBaselineStale(activeBaseline, event.timestamp)) {
+          activeBaseline = { ...activeBaseline, status: 'STALE' };
+        }
 
         // Compute features
         const computedFeatureSets = this.featureExtractor.extractFeatures({

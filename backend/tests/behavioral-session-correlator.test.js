@@ -23,7 +23,7 @@ describe('Stage 4B: Behavioral Session Correlator', () => {
     });
   });
 
-  test('1. Explicit session token is associated with 1.0 confidence and zero caveats', () => {
+  test('1. Explicit session token is pseudonymized via keyed HMAC with 1.0 confidence and zero caveats', () => {
     const event = {
       tenantId: 'tenant-apex',
       applicationId: 'app-01',
@@ -33,11 +33,14 @@ describe('Stage 4B: Behavioral Session Correlator', () => {
     };
 
     const result = correlator.correlateEvent(event);
-    assert.equal(result.sessionRef, 'sess-auth-user-9912');
+    assert.ok(result.sessionRef.startsWith('sess-hmac-'), 'Explicit token must be converted to keyed HMAC');
+    assert.notEqual(result.sessionRef, 'sess-auth-user-9912', 'Raw session token must NEVER be stored raw');
     assert.equal(result.correlationType, 'EXPLICIT_APPLICATION_SESSION');
     assert.equal(result.isPseudonymous, false);
     assert.equal(result.correlationConfidence, 1.0);
+    assert.equal(result.collisionRisk.level, 'LOW');
     assert.deepEqual(result.caveats, []);
+    assert.equal(result.isAttackerIdentity, false);
     assert.equal(result.eventCount, 1);
   });
 
@@ -130,8 +133,10 @@ describe('Stage 4B: Behavioral Session Correlator', () => {
     const resB = correlator.correlateEvent(eventB);
 
     assert.notEqual(resA.sessionRef, resB.sessionRef);
-    assert.equal(resA.sessionRef, 'sess-employee-A');
-    assert.equal(resB.sessionRef, 'sess-employee-B');
+    assert.ok(resA.sessionRef.startsWith('sess-hmac-'));
+    assert.ok(resB.sessionRef.startsWith('sess-hmac-'));
+    assert.equal(resA.collisionRisk.level, 'LOW');
+    assert.equal(resB.collisionRisk.level, 'LOW');
   });
 
   test('6. Bounded capacity evicts oldest active session on overflow', () => {
@@ -152,5 +157,49 @@ describe('Stage 4B: Behavioral Session Correlator', () => {
 
     const stats = tinyCorrelator.getStats();
     assert.equal(stats.activeSessionCount, 3, 'Active sessions count must not exceed max capacity of 3');
+  });
+
+  test('7. Cross-tenant identifier isolation: same raw token derives different HMACs per tenant', () => {
+    const rawToken = 'shared-cookie-value-abc';
+    const refTenantA = correlator.generateExplicitSessionRef('tenant-apex', rawToken);
+    const refTenantB = correlator.generateExplicitSessionRef('tenant-medsecure', rawToken);
+
+    assert.ok(refTenantA.startsWith('sess-hmac-'));
+    assert.ok(refTenantB.startsWith('sess-hmac-'));
+    assert.notEqual(refTenantA, refTenantB, 'Cryptographic tenant isolation must prevent cross-tenant correlation');
+  });
+
+  test('8. Client-forged / untrusted session metadata is tagged with reduced confidence and caveats', () => {
+    const event = {
+      tenantId: 'tenant-apex',
+      applicationId: 'app-01',
+      sessionReference: 'spoofed-admin-id',
+      sessionProvenance: { isClientSuppliedUntrusted: true },
+      timestamp: '2026-10-31T20:00:00.000Z',
+      sourceMetadata: { ipSubnetHash: 'hash-attacker' }
+    };
+
+    const res = correlator.correlateEvent(event);
+    assert.equal(res.correlationType, 'UNTRUSTED_CLIENT_SESSION_METADATA');
+    assert.equal(res.correlationConfidence, 0.4);
+    assert.equal(res.collisionRisk.level, 'HIGH');
+    assert.ok(res.caveats.includes('CLIENT_FORGED_SESSION_METADATA_SUSPECTED'));
+  });
+
+  test('9. Identical User-Agent without tokens flags high collision risk and caveats', () => {
+    const event1 = {
+      tenantId: 'tenant-apex',
+      applicationId: 'app-01',
+      sessionReference: null,
+      timestamp: '2026-10-31T20:00:00.000Z',
+      sourceMetadata: { ipSubnetHash: 'corporate-cgnat' },
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0'
+    };
+
+    const res = correlator.correlateEvent(event1);
+    assert.equal(res.collisionRisk.level, 'HIGH');
+    assert.ok(res.collisionRisk.riskFactors.includes('SHARED_NAT_POSSIBLE'));
+    assert.ok(res.collisionRisk.riskFactors.includes('IDENTICAL_USER_AGENT_POSSIBLE'));
+    assert.equal(res.isAttackerIdentity, false);
   });
 });

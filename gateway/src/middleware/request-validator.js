@@ -20,6 +20,44 @@ const ALLOWED_METHODS = new Set(gatewayConfig.ALLOWED_HTTP_METHODS);
 const HOSTNAME_SYNTAX_REGEX = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:[0-9]+)?$/i;
 
 /**
+ * Helper to record telemetry for rejected requests before connection termination.
+ * Safe metadata only; never forwards to upstream origins.
+ */
+function recordRejectionTelemetry(req, { statusCode, errorCode }) {
+  if (!req.telemetryRecorder) return;
+  const startTime = req.startTime || process.hrtime.bigint();
+  const durationMs = Number(process.hrtime.bigint() - startTime) / 1e6;
+  const clientIp = req.ip || req.socket?.remoteAddress || '127.0.0.1';
+  const host = req.headers?.host;
+
+  let tenantId = null;
+  let applicationId = null;
+  if (req.appResolver && host && typeof host === 'string') {
+    try {
+      const local = req.appResolver.resolveTrustedOriginLocal(host);
+      if (local) {
+        tenantId = local.tenantId || null;
+        applicationId = local.applicationId || null;
+      }
+    } catch {}
+  }
+
+  req.telemetryRecorder.recordTelemetry({
+    tenantId,
+    applicationId,
+    correlationId: req.id || req.headers['x-request-id'] || 'req-rejected',
+    method: req.method || 'UNKNOWN',
+    normalizedRoute: req.url || '/',
+    responseStatus: statusCode,
+    durationMs,
+    clientIp,
+    validationOutcome: errorCode,
+    forwardingResult: 'NOT_ATTEMPTED',
+    routingDecision: null
+  });
+}
+
+/**
  * Validates incoming HTTP requests before any upstream processing.
  *
  * @param {import('express').Request} req
@@ -32,6 +70,7 @@ export function validateGatewayRequest(req, res, next) {
 
   // 1. Method Validation
   if (!ALLOWED_METHODS.has(method)) {
+    recordRejectionTelemetry(req, { statusCode: 405, errorCode: 'METHOD_NOT_ALLOWED' });
     res.setHeader('Allow', Array.from(ALLOWED_METHODS).join(', '));
     res.setHeader('Connection', 'close');
     return res.status(405).json({
@@ -49,6 +88,7 @@ export function validateGatewayRequest(req, res, next) {
   const hasContentLength = Boolean(req.headers['content-length']);
 
   if (hasTransferEncoding && hasContentLength) {
+    recordRejectionTelemetry(req, { statusCode: 400, errorCode: 'REQUEST_SMUGGLING_DETECTED' });
     res.setHeader('Connection', 'close');
     return res.status(400).json({
       success: false,
@@ -72,6 +112,7 @@ export function validateGatewayRequest(req, res, next) {
     }
 
     if (hostCount > 1) {
+      recordRejectionTelemetry(req, { statusCode: 400, errorCode: 'DUPLICATE_HOST_HEADER' });
       res.setHeader('Connection', 'close');
       return res.status(400).json({
         success: false,
@@ -84,6 +125,7 @@ export function validateGatewayRequest(req, res, next) {
     }
 
     if (clCount > 1) {
+      recordRejectionTelemetry(req, { statusCode: 400, errorCode: 'DUPLICATE_CONTENT_LENGTH' });
       res.setHeader('Connection', 'close');
       return res.status(400).json({
         success: false,
@@ -99,6 +141,7 @@ export function validateGatewayRequest(req, res, next) {
   // 4. Host Header Presence and Syntax Validation
   const host = req.headers.host;
   if (!host || typeof host !== 'string' || !host.trim()) {
+    recordRejectionTelemetry(req, { statusCode: 400, errorCode: 'MISSING_HOST_HEADER' });
     res.setHeader('Connection', 'close');
     return res.status(400).json({
       success: false,
@@ -118,6 +161,7 @@ export function validateGatewayRequest(req, res, next) {
     trimmedHost.includes('\0') ||
     trimmedHost.includes(' ')
   ) {
+    recordRejectionTelemetry(req, { statusCode: 400, errorCode: 'INVALID_HOST_HEADER' });
     res.setHeader('Connection', 'close');
     return res.status(400).json({
       success: false,
@@ -133,6 +177,7 @@ export function validateGatewayRequest(req, res, next) {
   const rawCl = req.headers['content-length'];
   if (rawCl !== undefined) {
     if (typeof rawCl !== 'string' || !/^\d+$/.test(rawCl.trim())) {
+      recordRejectionTelemetry(req, { statusCode: 400, errorCode: 'INVALID_CONTENT_LENGTH' });
       res.setHeader('Connection', 'close');
       return res.status(400).json({
         success: false,
@@ -146,6 +191,7 @@ export function validateGatewayRequest(req, res, next) {
 
     const lengthBytes = Number(rawCl.trim());
     if (lengthBytes > gatewayConfig.MAX_REQUEST_SIZE_BYTES) {
+      recordRejectionTelemetry(req, { statusCode: 413, errorCode: 'PAYLOAD_TOO_LARGE' });
       res.setHeader('Connection', 'close');
       return res.status(413).json({
         success: false,

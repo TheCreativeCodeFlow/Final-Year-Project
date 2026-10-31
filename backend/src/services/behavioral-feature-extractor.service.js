@@ -138,6 +138,7 @@ export class BehavioralFeatureExtractor {
     const methodCounts = {};
     const statusClassCounts = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0 };
     const routeCounts = {};
+    const route404Set = new Set();
 
     let count4xx = 0;
     let count5xx = 0;
@@ -165,6 +166,10 @@ export class BehavioralFeatureExtractor {
       const method = (ev.httpMethod || 'UNKNOWN').toUpperCase();
       methodCounts[method] = (methodCounts[method] || 0) + 1;
 
+      // Endpoint tracking
+      const route = ev.normalizedRoute || '/';
+      routeCounts[route] = (routeCounts[route] || 0) + 1;
+
       // Status breakdown
       const status = Number(ev.responseStatus) || 0;
       if (status >= 200 && status < 300) statusClassCounts['2xx']++;
@@ -174,13 +179,12 @@ export class BehavioralFeatureExtractor {
 
       if (status >= 400 && status < 500) count4xx++;
       if (status >= 500 && status < 600) count5xx++;
-      if (status === 404) count404++;
+      if (status === 404) {
+        count404++;
+        route404Set.add(route);
+      }
       if (status === 401 || status === 403) countAuthFailures++;
       if (status === 502 || status === 503 || status === 504) countUpstreamFailures++;
-
-      // Endpoint tracking
-      const route = ev.normalizedRoute || '/';
-      routeCounts[route] = (routeCounts[route] || 0) + 1;
 
       // Burst bucketing (per-second epoch)
       const evTimeMs = new Date(ev.timestamp).getTime();
@@ -250,10 +254,16 @@ export class BehavioralFeatureExtractor {
       ? Number((count404 / totalRequests).toFixed(4))
       : 0;
 
-    // Resource enumeration heuristic score (0.0 to 1.0)
-    // High unique endpoint count (> 5) + high 404 ratio (> 0.5) increases score
-    const enumerationScale = Math.min(1.0, uniqueEndpointCount / 5);
-    const resourceEnumerationScore = Number((enumerationScale * 0.5 + unusualRouteRatio * 0.5).toFixed(4));
+    // Resource enumeration reproducible score (0.0 to 1.0)
+    // Formula: product of breadth (ratio of distinct 404 paths vs threshold K=5)
+    // and route 404 concentration factor. Avoids false positives on repeated hits to
+    // a single missing asset or legitimate multi-endpoint pagination/crawling.
+    const notFoundUniqueRouteCount = route404Set.size;
+    const enumerationBreadth = Math.min(1.0, notFoundUniqueRouteCount / 5);
+    const notFoundDiversityRatio = uniqueEndpointCount > 0
+      ? notFoundUniqueRouteCount / uniqueEndpointCount
+      : 0;
+    const resourceEnumerationScore = Number((enumerationBreadth * notFoundDiversityRatio).toFixed(4));
 
     // 3. Failure Behavior
     const http4xxRatio = totalRequests > 0 ? Number((count4xx / totalRequests).toFixed(4)) : 0;
@@ -265,7 +275,10 @@ export class BehavioralFeatureExtractor {
     let failureRatioDelta = null;
     let baselineDataStatus = MISSING_DATA_STATUS.NO_BASELINE;
 
-    if (baseline && baseline.metrics) {
+    // Only compute numeric deltas if the baseline is ESTABLISHED
+    const isBaselineUsable = baseline && baseline.status === 'ESTABLISHED' && baseline.metrics;
+
+    if (isBaselineUsable) {
       baselineDataStatus = MISSING_DATA_STATUS.COMPLETE;
       const bMetrics = baseline.metrics;
 
@@ -278,6 +291,12 @@ export class BehavioralFeatureExtractor {
       if (typeof bMetrics.typical4xxRatio === 'number') {
         failureRatioDelta = Number((http4xxRatio - bMetrics.typical4xxRatio).toFixed(4));
       }
+    } else if (baseline && baseline.status === 'STALE') {
+      baselineDataStatus = 'BASELINE_STALE';
+    } else if (baseline && baseline.status === 'INVALID') {
+      baselineDataStatus = 'BASELINE_INVALID';
+    } else if (baseline && baseline.status === 'CALIBRATING') {
+      baselineDataStatus = 'BASELINE_CALIBRATING';
     }
 
     // Build structured feature dictionary
@@ -509,12 +528,25 @@ export class BehavioralFeatureExtractor {
     }
     const featureCompletenessRatio = Number((validFeatures / featureKeys.length).toFixed(4));
 
+    const hasTelemetryLoss = events.some(
+      (ev) =>
+        ev.hasDataLoss ||
+        ev.persistenceStatus === 'TELEMETRY_PERSISTENCE_FAILED' ||
+        ev.persistenceStatus === 'NOT_RECORDED'
+    );
+
     const qualityMetadata = {
       totalObservationCount: totalRequests,
       missingFieldTotal,
       telemetryPersistenceBreakdown: persistenceCounts,
       featureCompletenessRatio,
-      hasSufficientData: totalRequests >= 1
+      hasSufficientData: totalRequests >= 1,
+      telemetryLossDetected: hasTelemetryLoss,
+      windowCompleteness: hasTelemetryLoss
+        ? 'PARTIAL'
+        : totalRequests > 0
+          ? 'COMPLETE'
+          : 'EMPTY'
     };
 
     return { features, qualityMetadata };

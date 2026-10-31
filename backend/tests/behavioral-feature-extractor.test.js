@@ -235,4 +235,116 @@ describe('Stage 4B: Behavioral Feature Extractor', () => {
     assert.equal(f30.inter_request_interval_variance_ms.value, null);
     assert.equal(f30.inter_request_interval_mean_ms.missingDataStatus, MISSING_DATA_STATUS.INSUFFICIENT_DATA);
   });
+
+  test('8. Empty window handles zero denominators without throwing or NaN', () => {
+    const featureSets = extractor.extractFeatures({
+      canonicalEvents: [],
+      tenantId: 'tenant-apex-9941',
+      applicationId: 'app-01',
+      sessionRef: 'sess-test-01',
+      referenceTimestamp: refTime
+    });
+
+    const f30 = featureSets.find((f) => f.windowLabel === '30s').features;
+    assert.equal(f30.request_count.value, 0);
+    assert.equal(f30.request_rate_per_sec.value, 0.0);
+    assert.equal(f30.endpoint_diversity_ratio.value, 0.0);
+    assert.equal(f30.resource_enumeration_score.value, 0.0);
+    assert.equal(f30.http_4xx_ratio.value, 0.0);
+  });
+
+  test('9. Out-of-order events are sorted chronologically and intervals calculated deterministically', () => {
+    // Events arriving out-of-order (10s ago, 2s ago, 6s ago)
+    const events = [makeEvent(10), makeEvent(2), makeEvent(6)];
+
+    const featureSets = extractor.extractFeatures({
+      canonicalEvents: events,
+      tenantId: 'tenant-apex-9941',
+      applicationId: 'app-01',
+      sessionRef: 'sess-test-01',
+      referenceTimestamp: refTime
+    });
+
+    const f30 = featureSets.find((f) => f.windowLabel === '30s').features;
+    // Sorted chronological: -10s, -6s, -2s -> intervals: 4000ms, 4000ms
+    assert.equal(f30.inter_request_interval_mean_ms.value, 4000);
+    assert.equal(f30.inter_request_interval_variance_ms.value, 0);
+  });
+
+  test('10. Duplicate timestamps produce interval = 0ms without division by zero', () => {
+    const events = [makeEvent(5), makeEvent(5), makeEvent(0)];
+
+    const featureSets = extractor.extractFeatures({
+      canonicalEvents: events,
+      tenantId: 'tenant-apex-9941',
+      applicationId: 'app-01',
+      sessionRef: 'sess-test-01',
+      referenceTimestamp: refTime
+    });
+
+    const f30 = featureSets.find((f) => f.windowLabel === '30s').features;
+    // Intervals: 0ms, 5000ms -> Mean: 2500ms
+    assert.equal(f30.inter_request_interval_mean_ms.value, 2500);
+    assert.ok(f30.inter_request_interval_variance_ms.value > 0);
+  });
+
+  test('11. Legitimate API polling and pagination strictly produce resource_enumeration_score = 0.0', () => {
+    // 10 legitimate polling requests to /api/status returning 200 OK
+    const pollingEvents = [];
+    for (let i = 0; i < 10; i++) {
+      pollingEvents.push(makeEvent(20 - i * 2, { normalizedRoute: '/api/v1/status', responseStatus: 200 }));
+    }
+
+    const featureSets = extractor.extractFeatures({
+      canonicalEvents: pollingEvents,
+      tenantId: 'tenant-apex-9941',
+      applicationId: 'app-01',
+      sessionRef: 'sess-test-01',
+      referenceTimestamp: refTime
+    });
+
+    const f30 = featureSets.find((f) => f.windowLabel === '30s').features;
+    assert.equal(f30.repeated_endpoint_ratio.value, 1.0);
+    assert.equal(f30.resource_enumeration_score.value, 0.0, 'Legitimate polling must not be scored as enumeration');
+  });
+
+  test('12. Stale or calibrating baseline yields null deltas with explicit status metadata', () => {
+    const calibratingBaseline = {
+      status: 'CALIBRATING',
+      metrics: { typicalRequestRate: 0.1 }
+    };
+    const events = [makeEvent(5)];
+
+    const featureSets = extractor.extractFeatures({
+      canonicalEvents: events,
+      tenantId: 'tenant-apex-9941',
+      applicationId: 'app-01',
+      sessionRef: 'sess-test-01',
+      referenceTimestamp: refTime,
+      baseline: calibratingBaseline
+    });
+
+    const f30 = featureSets.find((f) => f.windowLabel === '30s').features;
+    assert.equal(f30.rate_delta_vs_baseline.value, null);
+    assert.equal(f30.rate_delta_vs_baseline.missingDataStatus, 'BASELINE_CALIBRATING');
+  });
+
+  test('13. Telemetry loss during window flags telemetryLossDetected and PARTIAL completeness', () => {
+    const events = [
+      makeEvent(10, { persistenceStatus: 'TELEMETRY_PERSISTED' }),
+      makeEvent(5, { persistenceStatus: 'TELEMETRY_PERSISTENCE_FAILED' })
+    ];
+
+    const featureSets = extractor.extractFeatures({
+      canonicalEvents: events,
+      tenantId: 'tenant-apex-9941',
+      applicationId: 'app-01',
+      sessionRef: 'sess-test-01',
+      referenceTimestamp: refTime
+    });
+
+    const set30 = featureSets.find((f) => f.windowLabel === '30s');
+    assert.equal(set30.qualityMetadata.telemetryLossDetected, true);
+    assert.equal(set30.qualityMetadata.windowCompleteness, 'PARTIAL');
+  });
 });

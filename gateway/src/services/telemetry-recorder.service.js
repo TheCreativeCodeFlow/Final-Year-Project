@@ -17,6 +17,7 @@
  */
 
 import { logger } from '../utils/logger.js';
+import fs from 'node:fs';
 
 export const TELEMETRY_OUTCOMES = {
   PERSISTED: 'TELEMETRY_PERSISTED',
@@ -42,6 +43,7 @@ export class TelemetryRecorderService {
     this.maxQueueSize = options.maxQueueSize || MAX_QUEUE_SIZE;
     this.pendingQueue = [];
     this.isFlushing = false;
+    this.durableLossLogPath = options.durableLossLogPath || process.env.TELEMETRY_LOSS_LOG_PATH || null;
 
     // Reliability & Data Loss Instrumentation
     this.totalIngested = 0;
@@ -51,6 +53,74 @@ export class TelemetryRecorderService {
     this.duplicateEventCount = 0;
     this.retryCount = 0;
     this.dataLossEvents = [];
+
+    // Load durable loss history if configured
+    if (this.durableLossLogPath) {
+      this.loadDurableLossSummary();
+    }
+  }
+
+  /**
+   * Loads durable telemetry loss summary from disk if available to preserve
+   * accounting across process restarts.
+   */
+  loadDurableLossSummary() {
+    try {
+      if (this.durableLossLogPath && fs.existsSync(this.durableLossLogPath)) {
+        const raw = fs.readFileSync(this.durableLossLogPath, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.droppedEventCount === 'number') {
+          this.droppedEventCount = parsed.droppedEventCount;
+        }
+        if (Array.isArray(parsed.dataLossEvents)) {
+          this.dataLossEvents = parsed.dataLossEvents;
+        }
+        logger.info('Loaded durable telemetry loss summary', {
+          droppedEventCount: this.droppedEventCount,
+          hasDataLoss: this.droppedEventCount > 0,
+          durablePath: this.durableLossLogPath
+        });
+      }
+    } catch (err) {
+      logger.warn('Failed to load durable telemetry loss summary from disk', {
+        error: err.message,
+        path: this.durableLossLogPath
+      });
+    }
+  }
+
+  /**
+   * Persists durable telemetry loss summary to disk atomically.
+   */
+  persistDurableLossSummary() {
+    if (!this.durableLossLogPath) return;
+    try {
+      const summary = {
+        droppedEventCount: this.droppedEventCount,
+        hasDataLoss: this.droppedEventCount > 0,
+        lastUpdated: new Date().toISOString(),
+        dataLossEvents: this.dataLossEvents
+      };
+      fs.writeFileSync(this.durableLossLogPath, JSON.stringify(summary, null, 2), 'utf8');
+    } catch (err) {
+      logger.warn('Failed to persist durable telemetry loss summary to disk', {
+        error: err.message,
+        path: this.durableLossLogPath
+      });
+    }
+  }
+
+  /**
+   * Resets durable loss history (for testing or clean maintenance).
+   */
+  resetDurableLossSummary() {
+    this.droppedEventCount = 0;
+    this.dataLossEvents = [];
+    if (this.durableLossLogPath && fs.existsSync(this.durableLossLogPath)) {
+      try {
+        fs.unlinkSync(this.durableLossLogPath);
+      } catch {}
+    }
   }
 
   /**
@@ -100,6 +170,10 @@ export class TelemetryRecorderService {
     this.dataLossEvents.push(lossRecord);
     if (this.dataLossEvents.length > 100) {
       this.dataLossEvents.shift();
+    }
+
+    if (this.durableLossLogPath) {
+      this.persistDurableLossSummary();
     }
 
     logger.warn('TELEMETRY_DATA_LOSS: Queue capacity exceeded; dropping oldest record to prevent memory exhaustion', lossRecord);

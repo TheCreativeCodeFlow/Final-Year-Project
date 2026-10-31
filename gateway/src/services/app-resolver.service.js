@@ -56,6 +56,18 @@ export class ApplicationResolverService {
   }
 
   /**
+   * Synchronous resolution helper against local trusted origin map for rapid rejection telemetry.
+   *
+   * @param {string} rawHost
+   * @returns {{ tenantId: string, applicationId?: string, upstreamUrl?: string } | null}
+   */
+  resolveTrustedOriginLocal(rawHost) {
+    const val = this.validateHostHeader(rawHost);
+    if (!val.valid) return null;
+    return this.trustedOriginMap[val.hostClean] || null;
+  }
+
+  /**
    * Resolves a request's Host to a verified protected application and trusted upstream origin.
    *
    * @param {string} rawHost

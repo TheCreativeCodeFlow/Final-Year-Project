@@ -278,7 +278,7 @@ describe('Stage 4B: Behavioral Features & Baselines REST APIs', () => {
   });
 
   test('6. Baseline calibration endpoint recomputes and stores baseline', async () => {
-    // Seed 55 clean observations for App A
+    // Seed 55 clean observations for App A spanning > 1 hour
     const now = Date.now();
     for (let i = 0; i < 55; i++) {
       await prisma.securityObservation.create({
@@ -289,7 +289,7 @@ describe('Stage 4B: Behavioral Features & Baselines REST APIs', () => {
           observationType: 'GATEWAY_REQUEST',
           evidenceProvenance: 'GATEWAY_REVERSE_PROXY',
           correlationId: `corr-calib-${i}`,
-          observedAt: new Date(now - i * 60000),
+          observedAt: new Date(now - i * 70000), // Spans ~3850s (> 3600s threshold)
           sanitizedStructuredEvidence: {
             method: 'GET',
             normalizedRoute: '/api/v1/accounts/summary',
