@@ -1,5 +1,5 @@
 /**
- * Telemetry and Evidence Recorder Service.
+ * Telemetry and Evidence Recorder Service (Hardened & Reliability-Instrumented)
  *
  * Implements:
  * 1. Explicit telemetry persistence outcomes:
@@ -9,9 +9,11 @@
  *    - NOT_RECORDED: Telemetry unrecorded (e.g. unknown domain rejection without tenant context).
  * 2. Independent tracking of forwarding outcomes vs telemetry persistence.
  * 3. Bounded queue (MAX_QUEUE_SIZE = 1000) to prevent unbounded memory growth during API outages.
- * 4. Deduplication preservation via correlation IDs.
- * 5. Strict omission and redaction of sensitive credentials, cookies, and payload bodies.
- * 6. Explicit truthfulness: no fabrication of execution evidence on successful HTTP responses.
+ * 4. Explicit telemetry-loss signaling when queue capacity is exceeded (never silently discards).
+ * 5. Diagnostic metrics: queue depth, capacity, dropped events, failures, duplicates.
+ * 6. Deduplication preservation via correlation IDs.
+ * 7. Strict omission and redaction of sensitive credentials, cookies, and payload bodies.
+ * 8. Explicit truthfulness: no fabrication of execution evidence on successful HTTP responses.
  */
 
 import { logger } from '../utils/logger.js';
@@ -40,16 +42,67 @@ export class TelemetryRecorderService {
     this.maxQueueSize = options.maxQueueSize || MAX_QUEUE_SIZE;
     this.pendingQueue = [];
     this.isFlushing = false;
+
+    // Reliability & Data Loss Instrumentation
+    this.totalIngested = 0;
+    this.totalPersisted = 0;
+    this.persistenceFailures = 0;
+    this.droppedEventCount = 0;
+    this.duplicateEventCount = 0;
+    this.retryCount = 0;
+    this.dataLossEvents = [];
   }
 
   /**
-   * Returns telemetry queue diagnostic metrics.
+   * Returns comprehensive telemetry queue and reliability diagnostic metrics.
    */
   getQueueMetrics() {
     return {
-      pendingCount: this.pendingQueue.length,
-      maxQueueSize: this.maxQueueSize
+      queueDepth: this.pendingQueue.length,
+      queueCapacity: this.maxQueueSize,
+      totalIngested: this.totalIngested,
+      totalPersisted: this.totalPersisted,
+      persistenceFailures: this.persistenceFailures,
+      droppedEventCount: this.droppedEventCount,
+      duplicateEventCount: this.duplicateEventCount,
+      retryCount: this.retryCount,
+      hasDataLoss: this.droppedEventCount > 0
     };
+  }
+
+  /**
+   * Returns summary of telemetry data loss events.
+   */
+  getDataLossSummary() {
+    return {
+      hasDataLoss: this.droppedEventCount > 0,
+      droppedEventCount: this.droppedEventCount,
+      recentLossEvents: this.dataLossEvents.slice(-20)
+    };
+  }
+
+  /**
+   * Emits an explicit telemetry loss signal when records must be dropped.
+   *
+   * @param {object} droppedRecord
+   */
+  emitDataLossSignal(droppedRecord) {
+    this.droppedEventCount++;
+    const lossRecord = {
+      droppedCorrelationId: droppedRecord.correlationId,
+      tenantId: droppedRecord.tenantId,
+      timestamp: new Date().toISOString(),
+      queueDepth: this.pendingQueue.length,
+      maxQueueSize: this.maxQueueSize,
+      reason: 'QUEUE_CAPACITY_EXCEEDED'
+    };
+
+    this.dataLossEvents.push(lossRecord);
+    if (this.dataLossEvents.length > 100) {
+      this.dataLossEvents.shift();
+    }
+
+    logger.warn('TELEMETRY_DATA_LOSS: Queue capacity exceeded; dropping oldest record to prevent memory exhaustion', lossRecord);
   }
 
   /**
@@ -69,6 +122,7 @@ export class TelemetryRecorderService {
       clientIp: record.clientIp || 'UNKNOWN',
       validationOutcome: record.validationOutcome || 'UNKNOWN',
       forwardingResult: record.forwardingResult || 'NOT_ATTEMPTED',
+      sessionReference: record.sessionReference || null,
       routingDecision: record.routingDecision
         ? {
             intendedAction: record.routingDecision.intendedAction,
@@ -111,15 +165,27 @@ export class TelemetryRecorderService {
       });
 
       if (response.ok) {
+        let respData = null;
+        try {
+          respData = await response.json();
+        } catch {}
+
+        if (respData?.duplicate) {
+          this.duplicateEventCount++;
+        }
+
+        this.totalPersisted++;
         return TELEMETRY_OUTCOMES.PERSISTED;
       }
 
+      this.persistenceFailures++;
       logger.warn('Management backend telemetry endpoint returned non-OK', {
         status: response.status,
         correlationId: payload.correlationId
       });
       return TELEMETRY_OUTCOMES.FAILED;
     } catch (err) {
+      this.persistenceFailures++;
       logger.warn('Management backend telemetry endpoint unreachable', {
         correlationId: payload.correlationId,
         error: err.message
@@ -139,6 +205,7 @@ export class TelemetryRecorderService {
    * }>}
    */
   async recordTelemetry(record) {
+    this.totalIngested++;
     const payload = this.sanitizeTelemetryPayload(record);
 
     // If unresolved tenant, resolve immediately as NOT_RECORDED
@@ -151,13 +218,10 @@ export class TelemetryRecorderService {
       };
     }
 
-    // Bounded queue enforcement
+    // Bounded queue enforcement with explicit data loss signal
     if (this.pendingQueue.length >= this.maxQueueSize) {
       const dropped = this.pendingQueue.shift();
-      logger.warn('Telemetry queue full; dropping oldest record to prevent memory exhaustion', {
-        droppedCorrelationId: dropped.correlationId,
-        maxQueueSize: this.maxQueueSize
-      });
+      this.emitDataLossSignal(dropped);
     }
 
     // Attempt direct dispatch

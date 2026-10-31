@@ -15,6 +15,7 @@
 import crypto from 'node:crypto';
 import { getPrismaClient } from '../db/client.js';
 import { logger } from '../utils/logger.js';
+import { BehavioralTelemetryPipelineService } from '../services/behavioral-telemetry-pipeline.service.js';
 
 /**
  * Resolves a protected application and its parent tenant by domain.
@@ -146,72 +147,32 @@ export async function recordTelemetry(req, res, next) {
       });
     }
 
-    // Deduplication check: if observation already exists with this correlationId
-    const existingObservation = await prisma.securityObservation.findFirst({
-      where: { tenantId, correlationId }
+    // Process through behavioral telemetry pipeline
+    const pipeline = new BehavioralTelemetryPipelineService({ prisma });
+    const result = await pipeline.processTelemetryEvent(req.body, {
+      expectedTenantId: tenantId
     });
 
-    if (existingObservation) {
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_TELEMETRY_PAYLOAD',
+          message: 'The telemetry record failed canonical schema validation.',
+          details: result.errors
+        }
+      });
+    }
+
+    if (result.duplicate) {
       return res.status(200).json({
         success: true,
         duplicate: true,
         persistenceStatus: 'TELEMETRY_PERSISTED',
         data: {
-          observationId: existingObservation.id,
-          observationIdentifier: existingObservation.observationIdentifier,
-          correlationId
-        }
-      });
-    }
-
-    // Create SecurityObservation record
-    const observationIdentifier = `obs-gw-${crypto.randomUUID().slice(0, 8)}`;
-    const observation = await prisma.securityObservation.create({
-      data: {
-        tenantId,
-        applicationId: applicationId || null,
-        observationIdentifier,
-        observationType,
-        evidenceProvenance: 'GATEWAY_REVERSE_PROXY',
-        correlationId,
-        evidenceStatus: 'OBSERVED',
-        sanitizedStructuredEvidence: {
-          method: method || 'UNKNOWN',
-          normalizedRoute: normalizedRoute || '/',
-          responseStatus: Number(responseStatus) || 0,
-          durationMs: Number(durationMs) || 0,
-          requestSizeBytes: Number(requestSizeBytes) || 0,
-          responseSizeBytes: Number(responseSizeBytes) || 0,
-          clientIp: clientIp || 'UNKNOWN',
-          validationOutcome: validationOutcome || 'UNKNOWN',
-          forwardingResult: forwardingResult || 'NOT_ATTEMPTED',
-          recordedAt: new Date().toISOString()
-        }
-      }
-    });
-
-    let recordedRoutingDecisionId = null;
-
-    // Record RoutingDecision and RoutingOutcome if provided
-    if (decisionPayload && typeof decisionPayload === 'object') {
-      const routingDecision = await prisma.routingDecision.create({
-        data: {
-          tenantId,
-          targetApplicationId: applicationId || null,
-          intendedAction: decisionPayload.intendedAction || 'NORMAL_ROUTING',
-          correlationId,
-          decisionStatus: 'DECIDED'
-        }
-      });
-      recordedRoutingDecisionId = routingDecision.id;
-
-      await prisma.routingOutcome.create({
-        data: {
-          tenantId,
-          routingDecisionId: routingDecision.id,
-          outcomeStatus: decisionPayload.outcomeStatus || 'FORWARDED_TO_ORIGIN',
-          outcomeSource: 'GATEWAY_REVERSE_PROXY',
-          failureOrDiscrepancyDetails: decisionPayload.failureDetails || null
+          observationId: result.observationId,
+          observationIdentifier: result.observationIdentifier,
+          correlationId: result.canonicalEvent.correlationId
         }
       });
     }
@@ -220,10 +181,12 @@ export async function recordTelemetry(req, res, next) {
       success: true,
       persistenceStatus: 'TELEMETRY_PERSISTED',
       data: {
-        observationId: observation.id,
-        observationIdentifier: observation.observationIdentifier,
-        routingDecisionId: recordedRoutingDecisionId,
-        correlationId
+        observationId: result.observationId,
+        observationIdentifier: result.observationIdentifier,
+        routingDecisionId: result.routingDecisionId,
+        correlationId: result.canonicalEvent.correlationId,
+        sessionRef: result.correlation?.sessionRef || null,
+        featureSetsExtracted: result.featureSets ? result.featureSets.length : 0
       }
     });
   } catch (err) {

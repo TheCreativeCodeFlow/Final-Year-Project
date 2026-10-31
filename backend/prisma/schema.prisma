@@ -41,6 +41,8 @@ model Tenant {
   graphTransitions       DeceptionGraphTransition[]
   auditEvents            AuditEvent[]
   memberships            TenantMembership[]
+  behavioralFeatureSets  BehavioralFeatureSet[]
+  behavioralBaselines    BehavioralBaseline[]
 
   @@map("tenants")
 }
@@ -60,9 +62,11 @@ model ProtectedApplication {
   updatedAt             DateTime @updatedAt
 
   tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  investigations   Investigation[]
-  observations     SecurityObservation[]
-  routingDecisions RoutingDecision[]
+  investigations        Investigation[]
+  observations          SecurityObservation[]
+  routingDecisions      RoutingDecision[]
+  behavioralFeatureSets BehavioralFeatureSet[]
+  behavioralBaselines   BehavioralBaseline[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, applicationIdentifier])
@@ -520,4 +524,58 @@ model Session {
   @@index([sessionToken])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+// ------------------------------------------------------------------------------
+// K. Behavioral Features and Time-Windowed Aggregates (Stage 4B)
+// ------------------------------------------------------------------------------
+
+model BehavioralFeatureSet {
+  id                    String   @id @default(uuid())
+  tenantId              String
+  applicationId         String?
+  sessionRef            String   // Ephemeral pseudonymous or trusted session identifier
+  windowLabel           String   // e.g. "30s", "5m", "15m"
+  windowDurationSeconds Int      // 30, 300, 900
+  windowStart           DateTime
+  windowEnd             DateTime
+  observationCount      Int      // Number of raw observations contributing to features
+  features              Json     // Structured dictionary of normalized behavioral features
+  schemaVersion         String   @default("1.0.0")
+  extractionVersion     String   @default("1.0.0")
+  qualityMetadata       Json     // Completeness, missing data counts, persistence breakdown
+  sourceObservationIds  Json     // Array of source SecurityObservation UUIDs
+  createdAt             DateTime @default(now())
+
+  tenant      Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application ProtectedApplication? @relation(fields: [applicationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, applicationId, sessionRef, windowLabel, windowEnd])
+  @@index([tenantId])
+  @@index([applicationId])
+  @@index([sessionRef])
+  @@index([windowEnd])
+  @@map("behavioral_feature_sets")
+}
+
+model BehavioralBaseline {
+  id                String    @id @default(uuid())
+  tenantId          String
+  applicationId     String?
+  baselineVersion   String    @default("1.0.0")
+  status            String    @default("CALIBRATING") // CALIBRATING, ESTABLISHED, SUPERSEDED
+  observationCount  Int       @default(0)
+  sampleWindowHours Int       @default(24)
+  metrics           Json      // Statistical baseline values (request rate, diversity, failure ratios, intervals)
+  establishedAt     DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tenant      Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application ProtectedApplication? @relation(fields: [applicationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, applicationId, baselineVersion])
+  @@index([tenantId])
+  @@index([applicationId])
+  @@map("behavioral_baselines")
 }
