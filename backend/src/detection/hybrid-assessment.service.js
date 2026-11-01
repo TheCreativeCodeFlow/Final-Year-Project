@@ -260,6 +260,12 @@ export class HybridAssessmentService {
       }
     }
 
+    // Apply correlation confidence discount
+    if (sessionContext?.correlationConfidence !== undefined && sessionContext.correlationConfidence < 0.70) {
+      confidenceScore = Math.min(confidenceScore, sessionContext.correlationConfidence);
+      uncertaintyNotes.push(`Low session correlation confidence (${sessionContext.correlationConfidence}); deception diversion suppressed.`);
+    }
+
     // Apply rule missing-data discount
     if (ruleResult?.hasMissingTelemetry === true) {
       uncertaintyNotes.push('Telemetry fields were missing during rule evaluation; findings are qualified with reduced confidence.');
@@ -273,13 +279,18 @@ export class HybridAssessmentService {
     }
 
     // Decision-Safety Gate: Determine deception diversion eligibility
-    // In accordance with Stage 4C.2 Decision Safety:
+    // In accordance with Stage 4C.3 Decision Safety:
     // - Unsupervised ML anomaly alone is NEVER eligible for deception diversion
     // - High collision risk (NAT/proxy) suppresses deception to protect co-located benign users
     // - Degraded telemetry / INSUFFICIENT_EVIDENCE suppresses deception
     // - NORMAL traffic is never eligible
+    // - Low correlation confidence (< 0.70) suppresses deception
+    // - Ground truth / pattern ambiguity suppresses deception
+    // - Solitary MEDIUM rules (e.g. repeated 404 dead link probe) do not authorize deception
+    const hasHighOrCriticalRule = hasCriticalRule || highRulesCount >= 1;
     const isCorroboratedAdversarial = (
-      (assessmentLabel === ASSESSMENT_LABELS.HIGHLY_SUSPICIOUS || assessmentLabel === ASSESSMENT_LABELS.SUSPICIOUS) &&
+      (assessmentLabel === ASSESSMENT_LABELS.HIGHLY_SUSPICIOUS ||
+       (assessmentLabel === ASSESSMENT_LABELS.SUSPICIOUS && hasHighOrCriticalRule)) &&
       (ruleResult?.triggeredCount || 0) > 0 &&
       classification !== 'UNSUPERVISED_BEHAVIORAL_ANOMALY' &&
       !classification.includes('UNVERIFIED') &&
@@ -291,6 +302,7 @@ export class HybridAssessmentService {
       !telemetryLossDetected &&
       assessmentLabel !== ASSESSMENT_LABELS.INSUFFICIENT_EVIDENCE &&
       sessionContext?.collisionRisk?.level !== 'HIGH' &&
+      (sessionContext?.correlationConfidence === undefined || sessionContext.correlationConfidence >= 0.70) &&
       confidenceScore >= 0.70
     );
 

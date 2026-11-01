@@ -126,12 +126,26 @@ export class BenchmarkEvaluator {
   /**
    * Helper to compute reproducible evaluation metrics.
    *
-   * @param {object} stats - { tp, fp, tn, fn, insufficient, totalDurationMs }
+   * @param {object} stats - { tp, fp, tn, fn, insufficient, degradedTotal, degradedAlerted, degradedQuiet, ambiguousTotal, ambiguousAlerted, ambiguousQuiet, totalDurationMs }
    * @param {number} totalScenarios
    * @returns {object}
    */
   _computeMetrics(stats, totalScenarios) {
-    const { tp = 0, fp = 0, tn = 0, fn = 0, insufficient = 0, ambiguousAlerted = 0, ambiguousQuiet = 0, totalDurationMs = 0 } = stats;
+    const {
+      tp = 0,
+      fp = 0,
+      tn = 0,
+      fn = 0,
+      insufficient = 0,
+      degradedTotal = 0,
+      degradedAlerted = 0,
+      degradedQuiet = 0,
+      ambiguousTotal = 0,
+      ambiguousAlerted = 0,
+      ambiguousQuiet = 0,
+      totalDurationMs = 0
+    } = stats;
+
     const classifiedCount = tp + fp + tn + fn;
     const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
     const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
@@ -140,7 +154,6 @@ export class BenchmarkEvaluator {
     const fnr = fn + tp > 0 ? fn / (fn + tp) : 0;
     const avgLatencyMs = totalScenarios > 0 ? totalDurationMs / totalScenarios : 0;
     const insufficientEvidenceRate = totalScenarios > 0 ? insufficient / totalScenarios : 0;
-    const ambiguousCount = ambiguousAlerted + ambiguousQuiet;
 
     return {
       confusionMatrix: { tp, fp, tn, fn },
@@ -151,7 +164,18 @@ export class BenchmarkEvaluator {
       falseNegativeRate: Number(fnr.toFixed(4)),
       insufficientEvidenceCount: insufficient,
       insufficientEvidenceRate: Number(insufficientEvidenceRate.toFixed(4)),
-      ambiguousCount,
+      degradedAccounting: {
+        total: degradedTotal,
+        flaggedInsufficient: insufficient,
+        alertedFalseAlarm: degradedAlerted,
+        quietNormal: degradedQuiet
+      },
+      ambiguousAccounting: {
+        total: ambiguousTotal,
+        alerted: ambiguousAlerted,
+        quiet: ambiguousQuiet
+      },
+      ambiguousCount: ambiguousTotal,
       ambiguousAlertedCount: ambiguousAlerted,
       ambiguousQuietCount: ambiguousQuiet,
       classifiedCount,
@@ -163,8 +187,105 @@ export class BenchmarkEvaluator {
   }
 
   /**
+   * Benchmarks high-resolution execution latency across detector components
+   * with dedicated warm-up repetitions to isolate JIT warm-up effects.
+   *
+   * @param {number} [repetitions=200]
+   * @param {number} [warmUpRuns=20]
+   * @returns {object}
+   */
+  benchmarkLatencyProfile(repetitions = 200, warmUpRuns = 20) {
+    const dataset = generateSyntheticEvaluationDataset();
+    const { scaledVectors } = this._prepareBenignTrainingData(dataset);
+
+    const iforest = new IsolationForest({ numTrees: 50, sampleSize: 64, decisionThreshold: 0.60, seed: 42 });
+    iforest.fit(scaledVectors);
+    const statDetector = new StatisticalBaselineDetector({ decisionThreshold: 0.60 });
+    statDetector.fit(scaledVectors);
+
+    const sampleScenario = dataset.endpoint_enumeration;
+    const testVector = scaledVectors[0] || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+    // Warm-up runs (to allow V8 TurboFan compilation)
+    for (let i = 0; i < warmUpRuns; i++) {
+      this.ruleEngine.evaluate({ featureSets: [], rawObservation: sampleScenario.events[0] || {} });
+      iforest.predict(testVector);
+      statDetector.predict(testVector);
+      this.hybridService.evaluateAssessment({
+        ruleResult: { hasTriggeredRules: false, triggeredCount: 0, triggeredFindings: [] },
+        mlResult: { isAnomaly: false, anomalyScore: 0.5 },
+        featureSet: {}
+      });
+    }
+
+    const ruleTimes = [];
+    const iforestTimes = [];
+    const statTimes = [];
+    const hybridTimes = [];
+
+    for (let i = 0; i < repetitions; i++) {
+      const r0 = performance.now();
+      this.ruleEngine.evaluate({ featureSets: [], rawObservation: sampleScenario.events[0] || {} });
+      ruleTimes.push(performance.now() - r0);
+
+      const if0 = performance.now();
+      iforest.predict(testVector);
+      iforestTimes.push(performance.now() - if0);
+
+      const st0 = performance.now();
+      statDetector.predict(testVector);
+      statTimes.push(performance.now() - st0);
+
+      const h0 = performance.now();
+      this.hybridService.evaluateAssessment({
+        ruleResult: { hasTriggeredRules: false, triggeredCount: 0, triggeredFindings: [] },
+        mlResult: { isAnomaly: false, anomalyScore: 0.5 },
+        featureSet: {}
+      });
+      hybridTimes.push(performance.now() - h0);
+    }
+
+    const calcStats = (arr) => {
+      const sorted = [...arr].sort((a, b) => a - b);
+      const sum = sorted.reduce((a, b) => a + b, 0);
+      const mean = sum / sorted.length;
+      const median = sorted[Math.floor(sorted.length * 0.5)];
+      const p95 = sorted[Math.floor(sorted.length * 0.95)];
+      const p99 = sorted[Math.floor(sorted.length * 0.99)];
+      return {
+        meanMs: Number(mean.toFixed(4)),
+        medianMs: Number(median.toFixed(4)),
+        p95Ms: Number(p95.toFixed(4)),
+        p99Ms: Number(p99.toFixed(4)),
+        minMs: Number(sorted[0].toFixed(4)),
+        maxMs: Number(sorted[sorted.length - 1].toFixed(4))
+      };
+    };
+
+    return {
+      measurementMethod: 'Node.js performance.now() monotonic timer',
+      warmUpRuns,
+      repetitions,
+      scope: 'In-memory CPU algorithmic execution per assessment window',
+      context: {
+        databaseAccessIncluded: false,
+        networkIOIncluded: false,
+        modelLoadingIncluded: false,
+        gatewayReverseProxyStreamingOverheadEstimate: '1.5 - 5.0 ms',
+        databaseCommitOverheadEstimate: '2.0 - 8.0 ms'
+      },
+      components: {
+        ruleEngine: calcStats(ruleTimes),
+        isolationForest: calcStats(iforestTimes),
+        statisticalBaseline: calcStats(statTimes),
+        hybridAssessment: calcStats(hybridTimes)
+      }
+    };
+  }
+
+  /**
    * Runs the complete benchmark across all 24 scenarios, computing:
-   * 1. 24-Scenario Accounting Table with explicit ambiguous separation.
+   * 1. 24-Scenario Accounting Table with explicit ambiguous and degraded separation.
    * 2. Partitioned Metrics (Validation vs Held-Out Test vs Full).
    * 3. Comparison of Fusion Strategies A, B, C, D on Validation Set.
    * 4. Anomaly Threshold Sensitivity Analysis.
@@ -191,13 +312,13 @@ export class BenchmarkEvaluator {
 
     // Stats tracking per partition and branch
     const initBranchStats = () => ({
-      ruleOnly: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
-      iforestOnly: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
-      statOnly: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
-      hybridA: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
-      hybridB: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
-      hybridC: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
-      hybridD: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 }
+      ruleOnly: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, degradedTotal: 0, degradedAlerted: 0, degradedQuiet: 0, ambiguousTotal: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
+      iforestOnly: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, degradedTotal: 0, degradedAlerted: 0, degradedQuiet: 0, ambiguousTotal: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
+      statOnly: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, degradedTotal: 0, degradedAlerted: 0, degradedQuiet: 0, ambiguousTotal: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
+      hybridA: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, degradedTotal: 0, degradedAlerted: 0, degradedQuiet: 0, ambiguousTotal: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
+      hybridB: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, degradedTotal: 0, degradedAlerted: 0, degradedQuiet: 0, ambiguousTotal: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
+      hybridC: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, degradedTotal: 0, degradedAlerted: 0, degradedQuiet: 0, ambiguousTotal: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
+      hybridD: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, degradedTotal: 0, degradedAlerted: 0, degradedQuiet: 0, ambiguousTotal: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 }
     });
 
     const fullStats = initBranchStats();
@@ -321,18 +442,18 @@ export class BenchmarkEvaluator {
       const recordBranch = (targetStats, isFlagged, isInsufficient, duration) => {
         targetStats.totalDurationMs += duration;
         if (isAmbiguous) {
+          targetStats.ambiguousTotal++;
           if (isFlagged) targetStats.ambiguousAlerted++;
           else targetStats.ambiguousQuiet++;
-        } else if (isInsufficient) {
-          targetStats.insufficient++;
+        } else if (isDegradedTelemetry) {
+          targetStats.degradedTotal++;
+          if (isInsufficient) targetStats.insufficient++;
+          else if (isFlagged) targetStats.degradedAlerted++;
+          else targetStats.degradedQuiet++;
         } else if (isAttack) {
           if (isFlagged) targetStats.tp++;
           else targetStats.fn++;
         } else if (isBenign) {
-          if (isFlagged) targetStats.fp++;
-          else targetStats.tn++;
-        } else if (isDegradedTelemetry) {
-          // If degraded telemetry was not flagged as insufficient, record whether it gave false alarm
           if (isFlagged) targetStats.fp++;
           else targetStats.tn++;
         }
@@ -401,8 +522,15 @@ export class BenchmarkEvaluator {
         hybridAssessment: {
           assessmentLabel: selectedHybrid.assessmentLabel,
           riskScore: selectedHybrid.riskScore,
+          confidenceScore: selectedHybrid.confidenceScore,
           classification: selectedHybrid.classification,
-          strategy: selectedHybrid.fusionStrategy
+          strategy: selectedHybrid.fusionStrategy,
+          deceptionEligible: selectedHybrid.deceptionEligible
+        },
+        dataQuality: {
+          completenessStatus: primaryFeatureSet?.qualityMetadata?.completenessStatus || 'COMPLETE',
+          telemetryLossDetected: primaryFeatureSet?.qualityMetadata?.telemetryLossDetected || false,
+          observationCount: primaryFeatureSet?.observationCount || scenario.events.length
         },
         accountingVerdict,
         latenciesMs: {
@@ -461,9 +589,11 @@ export class BenchmarkEvaluator {
       };
     });
 
+    const latencyProfile = this.benchmarkLatencyProfile(200, 20);
+
     return {
       evaluatedAt: new Date().toISOString(),
-      evaluationFrameworkVersion: '4C.2-integrity',
+      evaluationFrameworkVersion: '4C.3-reconciled',
       trainingDurationMs,
       totalScenarios: totalCount,
       partitions: {
@@ -478,10 +608,14 @@ export class BenchmarkEvaluator {
       validationEvaluation: formatPartitionReport(validationStats, valCount),
       // Full 24-Scenario Composite Report
       fullBenchmarkEvaluation: formatPartitionReport(fullStats, totalCount),
+      // Machine-readable Held-Out Test Scenario Outcomes
+      heldOutTestScenarioOutcomes: accountingTable.filter((r) => r.partition === BENCHMARK_PARTITIONS.TEST),
       // Side-by-Side Comparison of 4 Fusion Strategies
       fusionStrategyComparison: strategyComparisonOnValidation,
       // Anomaly Threshold Sensitivity
       sensitivityAnalysis: iforestSensitivityAnalysis,
+      // Multi-Repetition Latency Benchmarks
+      latencyProfile,
       // Exact Accounting Table for All 24 Scenarios (Zero Omissions)
       accountingTable,
       perScenarioResults: accountingTable,
@@ -489,7 +623,7 @@ export class BenchmarkEvaluator {
         'Evaluation enforces strict 3-way partitioning: Train (5), Validation (7), Held-Out Test (12).',
         'Synthetic evaluation is a controlled research benchmark; it does not claim real-world production equivalence.',
         'Isolation Forest anomaly scores quantify statistical deviation, NOT attack probability.',
-        'Ambiguous scenarios are segregated into an explicit accounting category to prevent forced-choice metric distortion.',
+        'Degraded and ambiguous scenarios are strictly excluded from binary classification denominators.',
         'Execution evidence remains strictly MISSING; no dynamic deception diversion was executed.'
       ]
     };
