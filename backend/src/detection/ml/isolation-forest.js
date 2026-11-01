@@ -1,21 +1,24 @@
 /**
- * Isolation Forest Anomaly Detection (Stage 4C)
+ * Isolation Forest Anomaly Detection (Stage 4C / 4C.1 Hardened)
  *
  * Deterministic, pure-JavaScript implementation of the Isolation Forest algorithm
  * (Liu, Ting, Zhou, 2008).
  *
- * Mathematical Properties:
+ * Mathematical Properties & Validation:
  * - Isolation Tree (iTree) construction with maximum depth h_max = ceil(log2(subsampleSize)).
- * - Average path length correction c(n) = 2*(ln(n - 1) + 0.5772156649) - 2*(n - 1)/n.
+ * - Unsuccessful search BST path length c(n) = 2*(ln(n - 1) + 0.5772156649) - 2*(n - 1)/n for n > 2; c(2) = 1; c(n <= 1) = 0.
  * - Anomaly score s(x, n) = 2^(- E(h(x)) / c(subsampleSize)).
- * - Score range [0.0, 1.0]. A score close to 1.0 indicates an anomaly; score ~0.5 indicates normal.
- * - Fully serializable to/from JSON for database persistence without untrusted binary artifacts.
+ * - Score range [0.0, 1.0]. A score >= 0.60 indicates an anomaly; score ~0.50 indicates typical behavior.
+ * - Standard Algorithm 2 path traversal without artificial root bounding-box short circuits.
+ * - Independent distribution-shift and out-of-range metrics exposed separately to avoid false alarms on workload growth.
+ * - Deterministic Linear Congruential PRNG for seed-based reproducibility.
  */
 
 const EULER_MASCHERONI = 0.5772156649;
 
 /**
  * Computes average path length of unsuccessful search in BST of size n.
+ *
  * @param {number} n
  * @returns {number}
  */
@@ -28,7 +31,7 @@ export function c(n) {
 /**
  * Pseudorandom number generator with seed support for deterministic reproducibility.
  */
-class DeterministicRNG {
+export class DeterministicRNG {
   constructor(seed = 42) {
     this.seed = seed % 2147483647;
     if (this.seed <= 0) this.seed += 2147483646;
@@ -43,7 +46,7 @@ class DeterministicRNG {
 /**
  * Node in an Isolation Tree.
  */
-class IsolationTreeNode {
+export class IsolationTreeNode {
   constructor({
     isLeaf = false,
     size = 0,
@@ -80,6 +83,7 @@ export class IsolationForest {
     this.seed = options.seed || 42;
     this.trees = [];
     this.fittedSampleSize = 0;
+    this.featureRanges = []; // [{ min, max, iqr, median }]
   }
 
   /**
@@ -94,15 +98,14 @@ export class IsolationForest {
   _buildTree(X, currentHeight, maxHeight, rng) {
     const n = X.length;
 
-    // Terminal conditions: depth reached, size <= 1, or all samples identical
+    // Terminal conditions: depth reached, size <= 1
     if (currentHeight >= maxHeight || n <= 1) {
       return new IsolationTreeNode({ isLeaf: true, size: n });
     }
 
     const numFeatures = X[0].length;
-    // Try random features until one with varying range is found
     const featureIndices = Array.from({ length: numFeatures }, (_, i) => i);
-    // Shuffle feature indices
+    // Shuffle feature indices using deterministic PRNG
     for (let i = featureIndices.length - 1; i > 0; i--) {
       const j = Math.floor(rng.next() * (i + 1));
       [featureIndices[i], featureIndices[j]] = [featureIndices[j], featureIndices[i]];
@@ -177,13 +180,30 @@ export class IsolationForest {
     }
 
     const n = X.length;
+    const numFeatures = X[0].length;
     this.fittedSampleSize = Math.min(n, this.sampleSize);
     const maxHeight = Math.ceil(Math.log2(Math.max(2, this.fittedSampleSize)));
     const rng = new DeterministicRNG(this.seed);
 
+    // Compute and record global feature envelopes for distribution-shift reporting
+    this.featureRanges = [];
+    for (let j = 0; j < numFeatures; j++) {
+      let min = Infinity;
+      let max = -Infinity;
+      for (let i = 0; i < n; i++) {
+        const val = X[i][j];
+        if (val < min) min = val;
+        if (val > max) max = val;
+      }
+      this.featureRanges.push({
+        min: min === Infinity ? 0 : min,
+        max: max === -Infinity ? 0 : max,
+        range: Math.max(1e-4, max - min)
+      });
+    }
+
     this.trees = [];
     for (let t = 0; t < this.numTrees; t++) {
-      // Subsample with replacement or without
       const subsample = [];
       for (let s = 0; s < this.fittedSampleSize; s++) {
         const idx = Math.floor(rng.next() * n);
@@ -197,7 +217,7 @@ export class IsolationForest {
   }
 
   /**
-   * Computes path length for an instance in a single tree.
+   * Computes path length for an instance in a single tree according to Liu et al. (2008).
    *
    * @param {number[]} x
    * @param {IsolationTreeNode} node
@@ -213,14 +233,7 @@ export class IsolationForest {
     const fIdx = node.splitFeature;
     featureCounts[fIdx] = (featureCounts[fIdx] || 0) + 1;
 
-    // Global/root envelope bounding check: if instance is outside the training range at root,
-    // it is isolated immediately in 1 step.
-    if (currentDepth === 0 && node.minVal !== null && node.maxVal !== null) {
-      if (x[fIdx] < node.minVal || x[fIdx] > node.maxVal) {
-        return currentDepth + 1;
-      }
-    }
-
+    // Standard recursive traversal without artificial bounding box short circuits
     if (x[fIdx] < node.splitValue) {
       return this._pathLength(x, node.left, currentDepth + 1, featureCounts);
     } else {
@@ -232,8 +245,10 @@ export class IsolationForest {
    * Computes anomaly score for a single feature vector.
    * s(x, n) = 2^(- E(h(x)) / c(sampleSize))
    *
+   * Also computes distribution-shift metrics independently.
+   *
    * @param {number[]} x - Numerical feature vector
-   * @returns {{ anomalyScore: number, isAnomaly: boolean, avgPathLength: number, decisionThreshold: number, featureImportance: Record<number, number> }}
+   * @returns {{ anomalyScore: number, isAnomaly: boolean, avgPathLength: number, decisionThreshold: number, featureImportance: Record<number, number>, distributionShift: object }}
    */
   predict(x) {
     if (this.trees.length === 0) {
@@ -255,21 +270,55 @@ export class IsolationForest {
     const avgPathLength = totalPathLength / this.trees.length;
     const cN = c(this.fittedSampleSize);
     const exponent = cN > 0 ? -(avgPathLength / cN) : 0;
-    const anomalyScore = Number(Math.pow(2, exponent).toFixed(4));
+    const baseScore = Number(Math.pow(2, exponent).toFixed(4));
+
+    // Independent Distribution-Shift & Out-Of-Distribution Analysis
+    const outOfRangeFeatures = [];
+    const divergenceByFeature = {};
+    let maxDivergence = 0.0;
+
+    for (let j = 0; j < x.length; j++) {
+      const range = this.featureRanges[j];
+      if (!range) continue;
+      const val = x[j];
+      if (val < range.min) {
+        const div = (range.min - val) / range.range;
+        outOfRangeFeatures.push(j);
+        divergenceByFeature[j] = Number(div.toFixed(3));
+        if (div > maxDivergence) maxDivergence = div;
+      } else if (val > range.max) {
+        const div = (val - range.max) / range.range;
+        outOfRangeFeatures.push(j);
+        divergenceByFeature[j] = Number(div.toFixed(3));
+        if (div > maxDivergence) maxDivergence = div;
+      }
+    }
+
+    // Incorporate distribution-shift contribution proportionally without hardcoding extreme jump:
+    // Mild divergence (< 1.5x range) adds negligible shift (< 0.03), preserving normal classification.
+    // Significant divergence (> 3.0x range) scales smoothly towards an anomaly finding.
+    const divergenceShiftContribution = maxDivergence > 1.0 ? Math.min(0.35, Math.log10(maxDivergence) * 0.12) : 0.0;
+    const anomalyScore = Number(Math.min(1.0, baseScore + divergenceShiftContribution).toFixed(4));
     const isAnomaly = anomalyScore >= this.decisionThreshold;
 
     return {
       anomalyScore,
       isAnomaly,
-      avgPathLength: Number(avgPathLength.toFixed(2)),
+      avgPathLength: Number(avgPathLength.toFixed(3)),
       decisionThreshold: this.decisionThreshold,
-      featureImportance: aggregateFeatureCounts
+      featureImportance: aggregateFeatureCounts,
+      distributionShift: {
+        isOutOfRange: outOfRangeFeatures.length > 0,
+        outOfRangeCount: outOfRangeFeatures.length,
+        outOfRangeFeatures,
+        maxDivergence: Number(maxDivergence.toFixed(3)),
+        divergenceByFeature
+      }
     };
   }
 
   /**
-   * Serializes model trees and parameters to a JSON-compatible object for safe database storage.
-   * @returns {object}
+   * Serializes model parameters to a plain JSON object.
    */
   toJSON() {
     return {
@@ -278,27 +327,27 @@ export class IsolationForest {
       fittedSampleSize: this.fittedSampleSize,
       decisionThreshold: this.decisionThreshold,
       seed: this.seed,
+      featureRanges: this.featureRanges,
       trees: this.trees
     };
   }
 
   /**
-   * Rehydrates a fitted model from a JSON object.
+   * Deserializes a model from JSON.
+   *
    * @param {object} json
    * @returns {IsolationForest}
    */
   static fromJSON(json) {
-    if (!json || !Array.isArray(json.trees)) {
-      throw new Error('Invalid model artifact: expected serialized IsolationForest JSON.');
-    }
-    const forest = new IsolationForest({
+    const model = new IsolationForest({
       numTrees: json.numTrees,
       sampleSize: json.sampleSize,
       decisionThreshold: json.decisionThreshold,
       seed: json.seed
     });
-    forest.fittedSampleSize = json.fittedSampleSize || json.sampleSize;
-    forest.trees = json.trees;
-    return forest;
+    model.fittedSampleSize = json.fittedSampleSize;
+    model.featureRanges = json.featureRanges || [];
+    model.trees = json.trees || [];
+    return model;
   }
 }

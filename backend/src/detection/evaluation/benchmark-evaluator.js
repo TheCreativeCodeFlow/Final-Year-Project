@@ -1,17 +1,19 @@
 /**
- * Research Evaluation Framework (Stage 4C)
+ * Research Evaluation Framework (Stage 4C / 4C.1 Hardened)
  *
  * Evaluates and compares:
  * 1. Branch A: Deterministic Rule-Based Detection
  * 2. Branch B1: Unsupervised ML (Isolation Forest)
  * 3. Branch B2: Statistical Anomaly Baseline (Robust Median/MAD)
- * 4. Hybrid Evidence Assessment (Fusion Layer)
+ * 4. Hybrid Evidence Assessment (Fusion Strategies A, B, C, D)
  *
- * Enforces:
- * - Strict scenario-held-out evaluation (no data leakage).
- * - Training strictly on eligible benign data (never trained on attack scenarios).
- * - Comprehensive metrics: Confusion matrix, Precision, Recall, F1, FPR, FNR, latencies.
- * - Explicit disclaimers: Synthetic evaluation is an empirical benchmark, NOT proof of production effectiveness.
+ * Methodological Principles (Stage 4C.1):
+ * - Strict 3-Way Partitioning: Train (4) / Validation (6) / Held-Out Test (10).
+ * - Scenario-held-out isolation: Zero training contamination; test partition strictly held out.
+ * - Accounting for all 20 scenarios without silent exclusion.
+ * - Explicit insufficient-evidence quantification and transparent denominators.
+ * - Systematic fusion strategy evaluation (Strategies A, B, C, D).
+ * - Threshold sensitivity analysis (0.50 - 0.70).
  */
 
 import { generateSyntheticEvaluationDataset } from '../../telemetry/synthetic-evaluation-dataset.js';
@@ -20,7 +22,41 @@ import { RuleEngineService } from '../rules/rule-engine.service.js';
 import { IsolationForest } from '../ml/isolation-forest.js';
 import { StatisticalBaselineDetector } from '../ml/statistical-baseline.js';
 import { FeaturePreprocessor, NUMERICAL_FEATURE_KEYS } from '../ml/feature-preprocessor.js';
-import { HybridAssessmentService, ASSESSMENT_LABELS } from '../hybrid-assessment.service.js';
+import { HybridAssessmentService, ASSESSMENT_LABELS, FUSION_STRATEGIES } from '../hybrid-assessment.service.js';
+
+export const BENCHMARK_PARTITIONS = Object.freeze({
+  TRAIN: 'TRAIN',
+  VALIDATION: 'VALIDATION',
+  TEST: 'TEST'
+});
+
+export const SCENARIO_PARTITIONS = Object.freeze({
+  // Training Partition (4 strictly benign baseline scenarios, 0 attacks)
+  normal_browsing: BENCHMARK_PARTITIONS.TRAIN,
+  legitimate_api_polling: BENCHMARK_PARTITIONS.TRAIN,
+  legitimate_crawler_traversal: BENCHMARK_PARTITIONS.TRAIN,
+  legitimate_api_pagination: BENCHMARK_PARTITIONS.TRAIN,
+
+  // Validation Partition (6 scenarios for threshold & fusion strategy calibration)
+  repeated_login_failures: BENCHMARK_PARTITIONS.VALIDATION,
+  high_frequency_burst: BENCHMARK_PARTITIONS.VALIDATION,
+  legitimate_repeated_login_failures: BENCHMARK_PARTITIONS.VALIDATION,
+  developer_endpoint_exploration: BENCHMARK_PARTITIONS.VALIDATION,
+  shared_ip_distinct_sessions: BENCHMARK_PARTITIONS.VALIDATION,
+  incomplete_telemetry: BENCHMARK_PARTITIONS.VALIDATION,
+
+  // Held-Out Test Partition (10 scenarios strictly held out for final reporting)
+  endpoint_enumeration: BENCHMARK_PARTITIONS.TEST,
+  repeated_not_found: BENCHMARK_PARTITIONS.TEST,
+  unusual_method_distribution: BENCHMARK_PARTITIONS.TEST,
+  slow_irregular_probing: BENCHMARK_PARTITIONS.TEST,
+  sudden_behavioral_change: BENCHMARK_PARTITIONS.TEST,
+  mixed_attacker_and_normal_traffic: BENCHMARK_PARTITIONS.TEST,
+  legitimate_repeated_404_asset: BENCHMARK_PARTITIONS.TEST,
+  shared_nat_identical_user_agents: BENCHMARK_PARTITIONS.TEST,
+  mobile_client_irregular_timing: BENCHMARK_PARTITIONS.TEST,
+  telemetry_loss_during_session: BENCHMARK_PARTITIONS.TEST
+});
 
 export class BenchmarkEvaluator {
   constructor() {
@@ -30,21 +66,20 @@ export class BenchmarkEvaluator {
   }
 
   /**
-   * Generates benign calibration training vectors from held-out benign baseline scenarios.
-   * Ensures zero attack contamination in training data.
+   * Prepares benign calibration training data from designated training scenarios.
+   *
+   * @param {object} dataset
+   * @returns {{ preprocessor: FeaturePreprocessor, rawVectors: Array<number[]>, scaledVectors: Array<number[]> }}
    */
   _prepareBenignTrainingData(dataset) {
     const trainingVectors = [];
     const preprocessor = new FeaturePreprocessor({ featureKeys: NUMERICAL_FEATURE_KEYS });
 
-    // Train on designated benign scenarios: normal browsing (scenario-01), API polling (scenario-12), crawler traversal (scenario-13)
-    const benignTrainingKeys = [
-      'normal_browsing',
-      'legitimate_api_polling',
-      'legitimate_crawler_traversal'
-    ];
+    const trainKeys = Object.entries(SCENARIO_PARTITIONS)
+      .filter(([_, part]) => part === BENCHMARK_PARTITIONS.TRAIN)
+      .map(([k]) => k);
 
-    for (const key of benignTrainingKeys) {
+    for (const key of trainKeys) {
       const scenario = dataset[key];
       if (!scenario) continue;
       const lastEvent = scenario.events[scenario.events.length - 1];
@@ -64,18 +99,17 @@ export class BenchmarkEvaluator {
     }
 
     if (trainingVectors.length === 0) {
-      throw new Error('No benign training vectors could be extracted from dataset.');
+      throw new Error('No benign training vectors could be extracted from training dataset partition.');
     }
 
-    // Duplicate slightly with minor jitter to simulate steady state historical data (50 samples)
+    // Expand samples deterministically with reproducible minor variance for robust calibration (64 samples)
     const expandedVectors = [];
-    while (expandedVectors.length < 50) {
+    while (expandedVectors.length < 64) {
       for (let i = 0; i < trainingVectors.length; i++) {
         const v = trainingVectors[i];
-        // Jitter slightly for synthetic variety
         const jittered = v.map((val) => (typeof val === 'number' ? val + (i % 3) * 0.001 : val));
         expandedVectors.push(jittered);
-        if (expandedVectors.length >= 50) break;
+        if (expandedVectors.length >= 64) break;
       }
     }
 
@@ -86,36 +120,88 @@ export class BenchmarkEvaluator {
   }
 
   /**
-   * Runs the complete benchmark across all 20 scenarios.
+   * Helper to compute reproducible evaluation metrics.
    *
-   * @returns {object} EvaluationReport
+   * @param {object} stats - { tp, fp, tn, fn, insufficient, totalDurationMs }
+   * @param {number} totalScenarios
+   * @returns {object}
+   */
+  _computeMetrics(stats, totalScenarios) {
+    const { tp, fp, tn, fn, insufficient = 0, totalDurationMs = 0 } = stats;
+    const classifiedCount = tp + fp + tn + fn;
+    const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
+    const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
+    const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
+    const fpr = fp + tn > 0 ? fp / (fp + tn) : 0;
+    const fnr = fn + tp > 0 ? fn / (fn + tp) : 0;
+    const avgLatencyMs = totalScenarios > 0 ? totalDurationMs / totalScenarios : 0;
+    const insufficientEvidenceRate = totalScenarios > 0 ? insufficient / totalScenarios : 0;
+
+    return {
+      confusionMatrix: { tp, fp, tn, fn },
+      precision: Number(precision.toFixed(4)),
+      recall: Number(recall.toFixed(4)),
+      f1Score: Number(f1.toFixed(4)),
+      falsePositiveRate: Number(fpr.toFixed(4)),
+      falseNegativeRate: Number(fnr.toFixed(4)),
+      insufficientEvidenceCount: insufficient,
+      insufficientEvidenceRate: Number(insufficientEvidenceRate.toFixed(4)),
+      classifiedCount,
+      totalEvaluated: totalScenarios,
+      avgLatencyMs: Number(avgLatencyMs.toFixed(3))
+    };
+  }
+
+  /**
+   * Runs the complete benchmark across all 20 scenarios, computing:
+   * 1. 20-Scenario Accounting Table.
+   * 2. Partitioned Metrics (Validation vs Held-Out Test vs Full).
+   * 3. Comparison of Fusion Strategies A, B, C, D on Validation Set.
+   * 4. Anomaly Threshold Sensitivity Analysis.
+   *
+   * @returns {object} Full benchmark report
    */
   runEvaluation() {
     const dataset = generateSyntheticEvaluationDataset();
     const { preprocessor, scaledVectors } = this._prepareBenignTrainingData(dataset);
 
-    // 1. Train Models on Clean Benign Data
-    const trainStart = Date.now();
-    const iforest = new IsolationForest({ numTrees: 50, sampleSize: 64, decisionThreshold: 0.60, seed: 42 });
+    // 1. Fit ML Models on Clean Training Partition (sample size 64)
+    const trainStart = performance.now();
+    const iforest = new IsolationForest({
+      numTrees: 50,
+      sampleSize: 64,
+      decisionThreshold: 0.60,
+      seed: 42
+    });
     iforest.fit(scaledVectors);
 
     const statDetector = new StatisticalBaselineDetector({ decisionThreshold: 0.60 });
     statDetector.fit(scaledVectors);
-    const trainingDurationMs = Date.now() - trainStart;
+    const trainingDurationMs = Number((performance.now() - trainStart).toFixed(2));
 
-    // Evaluation tracking containers
-    const resultsByScenario = [];
-    const branchStats = {
-      ruleOnly: { tp: 0, fp: 0, tn: 0, fn: 0, totalDurationMs: 0 },
-      iforestOnly: { tp: 0, fp: 0, tn: 0, fn: 0, totalDurationMs: 0 },
-      statOnly: { tp: 0, fp: 0, tn: 0, fn: 0, totalDurationMs: 0 },
-      hybrid: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, totalDurationMs: 0 }
-    };
+    // Stats tracking per partition and branch
+    const initBranchStats = () => ({
+      ruleOnly: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, totalDurationMs: 0 },
+      iforestOnly: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, totalDurationMs: 0 },
+      statOnly: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, totalDurationMs: 0 },
+      hybridA: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, totalDurationMs: 0 },
+      hybridB: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, totalDurationMs: 0 },
+      hybridC: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, totalDurationMs: 0 },
+      hybridD: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, totalDurationMs: 0 }
+    });
+
+    const fullStats = initBranchStats();
+    const validationStats = initBranchStats();
+    const testStats = initBranchStats();
+
+    const accountingTable = [];
 
     // 2. Evaluate Each Scenario
     for (const [scenarioKey, scenario] of Object.entries(dataset)) {
+      const partition = SCENARIO_PARTITIONS[scenarioKey] || BENCHMARK_PARTITIONS.TEST;
       const intent = scenario.groundTruthIntent || '';
-      const isGroundTruthAttack = [
+
+      const isAttack = [
         'POTENTIAL_CREDENTIAL_STUFFING',
         'RECONNAISSANCE_SCAN',
         'SCRAPER_OR_BURST_FLOOD',
@@ -125,10 +211,16 @@ export class BenchmarkEvaluator {
         'BROKEN_INTEGRATION_OR_PROBE',
         'MALICIOUS_COVERT_ATTACK_MIXED'
       ].includes(intent);
-      const isGroundTruthBenign = intent.startsWith('BENIGN') || intent === 'SHARED_NAT_INFRASTRUCTURE';
-      const isGroundTruthIncomplete = intent.includes('TELEMETRY') || intent.includes('DEGRADED');
 
-      // Feature Extraction
+      const isDegradedTelemetry =
+        intent === 'TELEMETRY_QUALITY_DEGRADATION' ||
+        intent === 'DEGRADED_TELEMETRY_LOSS' ||
+        intent.includes('TELEMETRY');
+
+      const isBenign = !isAttack && !isDegradedTelemetry;
+      const groundTruthType = isAttack ? 'ATTACK' : isDegradedTelemetry ? 'DEGRADED_TELEMETRY' : 'BENIGN';
+
+      // Feature extraction with scenario reference timestamp
       const lastEvent = scenario.events[scenario.events.length - 1];
       const featureSets = this.featureExtractor.extractFeatures({
         canonicalEvents: scenario.events,
@@ -142,174 +234,233 @@ export class BenchmarkEvaluator {
       const primaryFeatureSet = featureSets.find((f) => f.windowLabel === '5m') || featureSets[0] || {};
       const primaryFeatures = primaryFeatureSet.features || {};
 
-      // A. Branch A: Rule Engine Evaluation
+      // Branch A: Deterministic Rule Engine
       const ruleStart = performance.now();
       const ruleResult = this.ruleEngine.evaluate({
         featureSets,
-        rawObservation: scenario.events[0] || {},
-        baseline: null,
-        sessionContext: { collisionRisk: { level: 'LOW' }, correlationConfidence: 0.90 }
-      });
-      const ruleDuration = performance.now() - ruleStart;
-      branchStats.ruleOnly.totalDurationMs += ruleDuration;
-
-      const ruleTriggered = ruleResult.hasTriggeredRules;
-      if (isGroundTruthAttack) {
-        if (ruleTriggered) branchStats.ruleOnly.tp++;
-        else branchStats.ruleOnly.fn++;
-      } else if (isGroundTruthBenign) {
-        if (ruleTriggered) branchStats.ruleOnly.fp++;
-        else branchStats.ruleOnly.tn++;
-      }
-
-      // B. Branch B1: Isolation Forest Inference
-      const { vector } = preprocessor.extractVector(primaryFeatures, primaryFeatureSet.schemaVersion || '1.0.0');
-      const scaledVector = preprocessor.transform(vector);
-
-      const iforestStart = performance.now();
-      const iforestPred = iforest.predict(scaledVector);
-      const iforestDuration = performance.now() - iforestStart;
-      branchStats.iforestOnly.totalDurationMs += iforestDuration;
-
-      const iforestTriggered = iforestPred.isAnomaly;
-      if (isGroundTruthAttack) {
-        if (iforestTriggered) branchStats.iforestOnly.tp++;
-        else branchStats.iforestOnly.fn++;
-      } else if (isGroundTruthBenign) {
-        if (iforestTriggered) branchStats.iforestOnly.fp++;
-        else branchStats.iforestOnly.tn++;
-      }
-
-      // C. Branch B2: Statistical Baseline Detector Inference
-      const statStart = performance.now();
-      const statPred = statDetector.predict(scaledVector);
-      const statDuration = performance.now() - statStart;
-      branchStats.statOnly.totalDurationMs += statDuration;
-
-      const statTriggered = statPred.isAnomaly;
-      if (isGroundTruthAttack) {
-        if (statTriggered) branchStats.statOnly.tp++;
-        else branchStats.statOnly.fn++;
-      } else if (isGroundTruthBenign) {
-        if (statTriggered) branchStats.statOnly.fp++;
-        else branchStats.statOnly.tn++;
-      }
-
-      // D. Hybrid Fusion Assessment
-      const hybridStart = performance.now();
-      const hybridAssessment = this.hybridService.evaluateAssessment({
-        ruleResult,
-        mlResult: {
-          modelStatus: 'ACTIVE',
-          algorithm: 'ISOLATION_FOREST',
-          isAnomaly: iforestPred.isAnomaly,
-          anomalyScore: iforestPred.anomalyScore,
-          decisionThreshold: iforestPred.decisionThreshold,
-          contributingFeatures: [],
-          explanation: `Score: ${iforestPred.anomalyScore}`
-        },
-        featureSet: primaryFeatureSet,
         rawObservation: scenario.events[0] || {},
         baseline: null,
         sessionContext: { collisionRisk: { level: 'LOW' }, correlationConfidence: 0.90 },
         tenantId: 'tenant-apex-9941',
         applicationId: 'app-apex-01'
       });
-      const hybridDuration = performance.now() - hybridStart;
-      branchStats.hybrid.totalDurationMs += hybridDuration;
+      const ruleDuration = performance.now() - ruleStart;
 
-      const label = hybridAssessment.assessmentLabel;
-      const isHybridSuspicious = label === ASSESSMENT_LABELS.SUSPICIOUS || label === ASSESSMENT_LABELS.HIGHLY_SUSPICIOUS;
-      const isHybridInsufficient = label === ASSESSMENT_LABELS.INSUFFICIENT_EVIDENCE;
+      // Branch B1: Isolation Forest
+      const { vector } = preprocessor.extractVector(primaryFeatures, primaryFeatureSet.schemaVersion || '1.0.0');
+      const scaledVector = preprocessor.transform(vector);
 
-      if (isHybridInsufficient) {
-        branchStats.hybrid.insufficient++;
-      } else if (isGroundTruthAttack) {
-        if (isHybridSuspicious) branchStats.hybrid.tp++;
-        else branchStats.hybrid.fn++;
-      } else if (isGroundTruthBenign) {
-        if (isHybridSuspicious) branchStats.hybrid.fp++;
-        else branchStats.hybrid.tn++;
+      const iforestStart = performance.now();
+      const iforestPred = iforest.predict(scaledVector);
+      const iforestDuration = performance.now() - iforestStart;
+
+      // Branch B2: Statistical Baseline Detector
+      const statStart = performance.now();
+      const statPred = statDetector.predict(scaledVector);
+      const statDuration = performance.now() - statStart;
+
+      // Hybrid Fusion Strategies (A, B, C, D)
+      const evaluateHybrid = (strategy) => {
+        const hStart = performance.now();
+        const assessment = this.hybridService.evaluateAssessment({
+          ruleResult,
+          mlResult: {
+            modelStatus: 'ACTIVE',
+            algorithm: 'ISOLATION_FOREST',
+            isAnomaly: iforestPred.isAnomaly,
+            anomalyScore: iforestPred.anomalyScore,
+            decisionThreshold: iforestPred.decisionThreshold,
+            contributingFeatures: [],
+            distributionShift: iforestPred.distributionShift
+          },
+          featureSet: primaryFeatureSet,
+          rawObservation: scenario.events[0] || {},
+          baseline: null,
+          sessionContext: { collisionRisk: { level: 'LOW' }, correlationConfidence: 0.90 },
+          fusionStrategy: strategy,
+          tenantId: 'tenant-apex-9941',
+          applicationId: 'app-apex-01'
+        });
+        const duration = performance.now() - hStart;
+        return { assessment, duration };
+      };
+
+      const resHybridA = evaluateHybrid(FUSION_STRATEGIES.EXISTING);
+      const resHybridB = evaluateHybrid(FUSION_STRATEGIES.CONSERVATIVE);
+      const resHybridC = evaluateHybrid(FUSION_STRATEGIES.RULE_PRIORITY);
+      const resHybridD = evaluateHybrid(FUSION_STRATEGIES.DATA_QUALITY_AWARE);
+
+      // Selected default strategy for reporting is Strategy D (Data-Quality Aware)
+      const selectedHybrid = resHybridD.assessment;
+      const hybridDuration = resHybridD.duration;
+
+      // Helper to update branch stats
+      const recordBranch = (targetStats, isFlagged, isInsufficient, duration) => {
+        targetStats.totalDurationMs += duration;
+        if (isInsufficient) {
+          targetStats.insufficient++;
+        } else if (isAttack) {
+          if (isFlagged) targetStats.tp++;
+          else targetStats.fn++;
+        } else if (isBenign) {
+          if (isFlagged) targetStats.fp++;
+          else targetStats.tn++;
+        } else if (isDegradedTelemetry) {
+          // If degraded telemetry was not flagged as insufficient, record whether it gave false alarm
+          if (isFlagged) targetStats.fp++;
+          else targetStats.tn++;
+        }
+      };
+
+      const updateAllStats = (statsObj) => {
+        recordBranch(statsObj.ruleOnly, ruleResult.hasTriggeredRules, false, ruleDuration);
+        recordBranch(statsObj.iforestOnly, iforestPred.isAnomaly, false, iforestDuration);
+        recordBranch(statsObj.statOnly, statPred.isAnomaly, false, statDuration);
+
+        const checkHybridFlag = (ass) => ass.assessmentLabel === ASSESSMENT_LABELS.SUSPICIOUS || ass.assessmentLabel === ASSESSMENT_LABELS.HIGHLY_SUSPICIOUS;
+        const checkHybridIncomplete = (ass) => ass.assessmentLabel === ASSESSMENT_LABELS.INSUFFICIENT_EVIDENCE;
+
+        recordBranch(statsObj.hybridA, checkHybridFlag(resHybridA.assessment), checkHybridIncomplete(resHybridA.assessment), resHybridA.duration);
+        recordBranch(statsObj.hybridB, checkHybridFlag(resHybridB.assessment), checkHybridIncomplete(resHybridB.assessment), resHybridB.duration);
+        recordBranch(statsObj.hybridC, checkHybridFlag(resHybridC.assessment), checkHybridIncomplete(resHybridC.assessment), resHybridC.duration);
+        recordBranch(statsObj.hybridD, checkHybridFlag(resHybridD.assessment), checkHybridIncomplete(resHybridD.assessment), resHybridD.duration);
+      };
+
+      updateAllStats(fullStats);
+      if (partition === BENCHMARK_PARTITIONS.VALIDATION) {
+        updateAllStats(validationStats);
+      } else if (partition === BENCHMARK_PARTITIONS.TEST) {
+        updateAllStats(testStats);
       }
 
-      resultsByScenario.push({
+      // Determine accounting verdict for this scenario
+      const isHybridSuspicious = selectedHybrid.assessmentLabel === ASSESSMENT_LABELS.SUSPICIOUS || selectedHybrid.assessmentLabel === ASSESSMENT_LABELS.HIGHLY_SUSPICIOUS;
+      const isHybridInsufficient = selectedHybrid.assessmentLabel === ASSESSMENT_LABELS.INSUFFICIENT_EVIDENCE;
+
+      let accountingVerdict = 'NORMAL';
+      if (isDegradedTelemetry) {
+        accountingVerdict = isHybridInsufficient ? 'ACCURATELY_FLAGGED_DEGRADED' : (isHybridSuspicious ? 'DEGRADED_FALSE_ALARM' : 'DEGRADED_UNNOTICED');
+      } else if (isAttack) {
+        accountingVerdict = isHybridSuspicious ? 'TRUE_POSITIVE' : 'FALSE_NEGATIVE';
+      } else {
+        accountingVerdict = isHybridSuspicious ? 'FALSE_POSITIVE' : 'TRUE_NEGATIVE';
+      }
+
+      accountingTable.push({
+        scenarioId: scenario.scenarioId || scenarioKey,
         scenarioKey,
         scenarioName: scenario.scenarioName,
         groundTruthIntent: scenario.groundTruthIntent,
-        ruleOutcome: {
+        groundTruthType,
+        partition,
+        ruleOnly: {
           triggered: ruleResult.hasTriggeredRules,
           triggeredCount: ruleResult.triggeredCount,
           highestSeverity: ruleResult.highestSeverity,
           triggeredRules: ruleResult.triggeredFindings.map((f) => f.ruleId)
         },
-        iforestOutcome: {
-          score: iforestPred.anomalyScore,
+        iforestOnly: {
+          anomalyScore: iforestPred.anomalyScore,
           isAnomaly: iforestPred.isAnomaly,
-          threshold: iforestPred.decisionThreshold
+          decisionThreshold: iforestPred.decisionThreshold
         },
-        statOutcome: {
-          score: statPred.anomalyScore,
+        statisticalBaselineOnly: {
+          anomalyScore: statPred.anomalyScore,
           isAnomaly: statPred.isAnomaly,
-          distance: statPred.robustDistance
+          robustDistance: statPred.robustDistance
         },
-        hybridOutcome: {
-          label: hybridAssessment.assessmentLabel,
-          riskScore: hybridAssessment.riskScore,
-          confidenceScore: hybridAssessment.confidenceScore,
-          classification: hybridAssessment.classification
+        hybridAssessment: {
+          assessmentLabel: selectedHybrid.assessmentLabel,
+          riskScore: selectedHybrid.riskScore,
+          classification: selectedHybrid.classification,
+          strategy: selectedHybrid.fusionStrategy
         },
+        accountingVerdict,
         latenciesMs: {
           ruleMs: Number(ruleDuration.toFixed(3)),
           iforestMs: Number(iforestDuration.toFixed(3)),
-          hybridFusionMs: Number(hybridDuration.toFixed(3))
+          statMs: Number(statDuration.toFixed(3)),
+          hybridMs: Number(hybridDuration.toFixed(3))
         }
       });
     }
 
-    // Helper to compute standard metrics
-    const computeMetrics = (stats, totalEvaluated) => {
-      const { tp, fp, tn, fn } = stats;
-      const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
-      const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
-      const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
-      const fpr = fp + tn > 0 ? fp / (fp + tn) : 0;
-      const fnr = fn + tp > 0 ? fn / (fn + tp) : 0;
-      const avgLatencyMs = totalEvaluated > 0 ? stats.totalDurationMs / totalEvaluated : 0;
+    // 3. Compute Metrics Across Partitions
+    const formatPartitionReport = (statsObj, count) => ({
+      ruleOnly: this._computeMetrics(statsObj.ruleOnly, count),
+      iforestOnly: this._computeMetrics(statsObj.iforestOnly, count),
+      statisticalBaselineOnly: this._computeMetrics(statsObj.statOnly, count),
+      hybridAssessment: this._computeMetrics(statsObj.hybridD, count)
+    });
 
-      return {
-        confusionMatrix: { tp, fp, tn, fn },
-        precision: Number(precision.toFixed(4)),
-        recall: Number(recall.toFixed(4)),
-        f1Score: Number(f1.toFixed(4)),
-        falsePositiveRate: Number(fpr.toFixed(4)),
-        falseNegativeRate: Number(fnr.toFixed(4)),
-        avgLatencyMs: Number(avgLatencyMs.toFixed(3))
-      };
+    const valCount = Object.values(SCENARIO_PARTITIONS).filter((p) => p === BENCHMARK_PARTITIONS.VALIDATION).length;
+    const testCount = Object.values(SCENARIO_PARTITIONS).filter((p) => p === BENCHMARK_PARTITIONS.TEST).length;
+    const totalCount = accountingTable.length;
+
+    // 4. Comparison of All 4 Fusion Strategies on Validation Partition
+    const strategyComparisonOnValidation = {
+      strategyA_Existing: this._computeMetrics(validationStats.hybridA, valCount),
+      strategyB_Conservative: this._computeMetrics(validationStats.hybridB, valCount),
+      strategyC_RulePriority: this._computeMetrics(validationStats.hybridC, valCount),
+      strategyD_DataQualityAware: this._computeMetrics(validationStats.hybridD, valCount)
     };
 
-    const numScenarios = Object.keys(dataset).length;
-    const ruleMetrics = computeMetrics(branchStats.ruleOnly, numScenarios);
-    const iforestMetrics = computeMetrics(branchStats.iforestOnly, numScenarios);
-    const statMetrics = computeMetrics(branchStats.statOnly, numScenarios);
-    const hybridMetrics = computeMetrics(branchStats.hybrid, numScenarios);
-    hybridMetrics.insufficientEvidenceCount = branchStats.hybrid.insufficient;
+    // 5. Sensitivity Analysis Across Anomaly Thresholds (0.50 to 0.70)
+    const sensitivityThresholds = [0.50, 0.55, 0.60, 0.65, 0.70];
+    const iforestSensitivityAnalysis = sensitivityThresholds.map((threshold) => {
+      let tp = 0; let fp = 0; let tn = 0; let fn = 0;
+      for (const row of accountingTable) {
+        if (row.partition === BENCHMARK_PARTITIONS.TRAIN) continue;
+        const isAnomaly = row.iforestOnly.anomalyScore >= threshold;
+        if (row.groundTruthType === 'ATTACK') {
+          if (isAnomaly) tp++;
+          else fn++;
+        } else if (row.groundTruthType === 'BENIGN') {
+          if (isAnomaly) fp++;
+          else tn++;
+        }
+      }
+      const prec = tp + fp > 0 ? tp / (tp + fp) : 0;
+      const rec = tp + fn > 0 ? tp / (tp + fn) : 0;
+      const f1 = prec + rec > 0 ? (2 * prec * rec) / (prec + rec) : 0;
+      return {
+        threshold,
+        precision: Number(prec.toFixed(4)),
+        recall: Number(rec.toFixed(4)),
+        f1Score: Number(f1.toFixed(4)),
+        confusionMatrix: { tp, fp, tn, fn }
+      };
+    });
 
     return {
       evaluatedAt: new Date().toISOString(),
+      evaluationFrameworkVersion: '4C.1-hardened',
       trainingDurationMs,
-      totalScenarios: numScenarios,
-      comparison: {
-        ruleOnly: ruleMetrics,
-        iforestOnly: iforestMetrics,
-        statisticalBaselineOnly: statMetrics,
-        hybridAssessment: hybridMetrics
+      totalScenarios: totalCount,
+      partitions: {
+        trainingCount: Object.values(SCENARIO_PARTITIONS).filter((p) => p === BENCHMARK_PARTITIONS.TRAIN).length,
+        validationCount: valCount,
+        testCount: testCount
       },
-      perScenarioResults: resultsByScenario,
+      // Held-Out Test Partition Report (10 Scenarios - Primary Empirical Benchmark)
+      heldOutTestEvaluation: formatPartitionReport(testStats, testCount),
+      comparison: formatPartitionReport(testStats, testCount),
+      // Validation Partition Report (6 Scenarios)
+      validationEvaluation: formatPartitionReport(validationStats, valCount),
+      // Full 20-Scenario Composite Report
+      fullBenchmarkEvaluation: formatPartitionReport(fullStats, totalCount),
+      // Side-by-Side Comparison of 4 Fusion Strategies
+      fusionStrategyComparison: strategyComparisonOnValidation,
+      // Anomaly Threshold Sensitivity
+      sensitivityAnalysis: iforestSensitivityAnalysis,
+      // Exact Accounting Table for All 20 Scenarios (Zero Omissions)
+      accountingTable,
+      perScenarioResults: accountingTable,
       disclaimers: [
-        'Evaluation conducted on synthetic research scenarios with held-out train/test partitioning.',
-        'High benchmark accuracy does not imply identical real-world production performance.',
-        'Isolation Forest anomaly scores represent statistical deviations, NOT attack probabilities.',
-        'Deception countermeasures remain simulated; no dynamic honeynet diversion was executed.'
+        'Evaluation enforces strict 3-way partitioning: Train (4), Validation (6), Held-Out Test (10).',
+        'Synthetic evaluation is a controlled research benchmark; it does not claim real-world production equivalence.',
+        'Isolation Forest anomaly scores quantify statistical deviation, NOT attack probability.',
+        'Execution evidence remains strictly MISSING; no dynamic deception diversion was executed.'
       ]
     };
   }

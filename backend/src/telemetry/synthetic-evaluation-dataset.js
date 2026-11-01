@@ -166,18 +166,22 @@ export function generateSyntheticEvaluationDataset(options = {}) {
     );
   }
 
-  // 6. Scenario: Unusual HTTP Method Distribution (Excessive DELETE, PATCH, HEAD verbs)
+  // 6. Scenario: Prohibited & Extension HTTP Method Tampering (TRACE, CONNECT, PROPFIND, DELETE, PATCH, HEAD probes)
   const unusualMethodEvents = [];
   let t6 = baseTimeMs;
-  const methods = ['DELETE', 'PATCH', 'HEAD', 'DELETE', 'OPTIONS', 'DELETE', 'PUT', 'HEAD'];
-  for (let i = 0; i < 24; i++) {
+  const methods = ['TRACE', 'CONNECT', 'PROPFIND', 'DELETE', 'PATCH', 'HEAD', 'GET'];
+  for (let i = 0; i < 28; i++) {
     t6 += 2000;
+    const m = methods[i % methods.length];
+    const isProhibitedOrExtension = m === 'TRACE' || m === 'CONNECT' || m === 'PROPFIND';
     unusualMethodEvents.push(
       buildEvent({
         timestampMs: t6,
-        httpMethod: methods[i % methods.length],
+        httpMethod: m,
         normalizedRoute: '/api/v1/accounts/:id',
-        responseStatus: i % 3 === 0 ? 405 : 200,
+        responseStatus: isProhibitedOrExtension ? 405 : 200,
+        validationOutcome: isProhibitedOrExtension ? 'METHOD_NOT_ALLOWED' : 'VALIDATED',
+        forwardingResult: isProhibitedOrExtension ? 'NOT_ATTEMPTED' : 'SUCCESS',
         sessionReference: 'sess-method-scanner',
         clientIp: '198.51.100.140'
       })

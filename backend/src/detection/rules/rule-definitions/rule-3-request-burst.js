@@ -1,5 +1,6 @@
 /**
  * Rule 3: Request Burst Pattern (RULE_REQUEST_BURST)
+ * Version: 2
  *
  * Detects high-frequency automated bursts, distinguishing benign static asset prefetching
  * (e.g. SPA bundle loading with clean 200s and diverse assets) from aggressive API hammering or brute-force floods.
@@ -10,7 +11,7 @@ import { createRuleFinding, RULE_SEVERITY } from '../rule-result.schema.js';
 export const RULE_REQUEST_BURST = Object.freeze({
   ruleId: 'RULE_REQUEST_BURST',
   name: 'Request Burst Pattern',
-  version: 1,
+  version: 2,
   description: 'Detects high-frequency request bursts, differentiating legitimate concurrent asset loads from automated API floods.',
   defaultSeverity: RULE_SEVERITY.HIGH,
   defaultThresholds: {
@@ -19,7 +20,7 @@ export const RULE_REQUEST_BURST = Object.freeze({
     minDiversityForStaticAssetException: 0.60
   },
 
-  evaluate({ features, timeWindow, thresholds = {}, sessionContext = {} }) {
+  evaluate({ features, timeWindow = '5m', thresholds = {}, sessionContext = {} }) {
     const config = { ...this.defaultThresholds, ...thresholds };
     const burst1s = features?.burst_frequency_max_1s?.value ?? 0;
     const requestRate = features?.request_rate_per_sec?.value ?? 0.0;
@@ -36,27 +37,27 @@ export const RULE_REQUEST_BURST = Object.freeze({
     }
 
     // Static Asset Burst Exception:
-    // If requests have high endpoint diversity (e.g. 15 distinct JS/CSS files), zero 4xx errors,
-    // and moderate overall request count, classify as benign asset loading.
+    // If requests have high endpoint diversity (e.g. distinct JS/CSS/image/font assets), zero client errors,
+    // and reasonable repeat ratio, classify as benign concurrent asset prefetching even for high concurrency bursts.
     const isCleanSuccessfulTraffic = http4xxRatio === 0.0;
     const isHighlyDiverseEndpoints = endpointDiversity >= config.minDiversityForStaticAssetException;
-    if (burst1s >= config.suspiciousBurst1s && burst1s < config.criticalBurst1s && isCleanSuccessfulTraffic && isHighlyDiverseEndpoints) {
+    if (burst1s >= config.suspiciousBurst1s && isCleanSuccessfulTraffic && isHighlyDiverseEndpoints) {
       return createRuleFinding({
         ruleId: this.ruleId,
         ruleName: this.name,
         version: this.version,
         triggered: false,
         severity: RULE_SEVERITY.LOW,
-        confidence: 0.88,
+        confidence: 0.90,
         timeWindow,
         matchedConditions: ['BENIGN_STATIC_ASSET_BURST_IDENTIFIED'],
-        evidence: { burst1s, endpointDiversity, http4xxRatio },
+        evidence: { burst1s, endpointDiversity, http4xxRatio, repeatedEndpointRatio },
         uncertaintyNotes,
-        explanation: `Sub-second burst of ${burst1s} req/s identified as benign concurrent asset prefetching (diversity: ${endpointDiversity.toFixed(2)}, zero errors).`
+        explanation: `Sub-second burst of ${burst1s} req/s identified as benign concurrent asset prefetching (diversity: ${endpointDiversity.toFixed(2)}, zero client errors).`
       });
     }
 
-    // Critical flood trigger (> 25 req/s)
+    // Critical flood trigger (> 25 req/s) with low diversity or elevated error rates
     if (burst1s >= config.criticalBurst1s) {
       matchedConditions.push(`BURST_1S_GTE_CRITICAL_${config.criticalBurst1s}`);
       return createRuleFinding({
@@ -68,13 +69,13 @@ export const RULE_REQUEST_BURST = Object.freeze({
         confidence: 0.95,
         timeWindow,
         matchedConditions,
-        evidence: { burst1s, requestRate, requestCount, endpointDiversity },
+        evidence: { burst1s, requestRate, requestCount, endpointDiversity, http4xxRatio },
         uncertaintyNotes,
-        explanation: `Extreme request burst detected: ${burst1s} requests in 1 second (rate: ${requestRate} req/s) indicating automated flood tool.`
+        explanation: `Extreme request burst detected: ${burst1s} requests in 1 second (rate: ${requestRate} req/s) targeting concentrated routes, indicating automated flood tool.`
       });
     }
 
-    // Suspicious burst trigger: >= 15 req/s with low diversity (focused route hammering) or elevated errors
+    // Suspicious burst trigger: >= 15 req/s with focused route hammering or elevated error rates
     if (burst1s >= config.suspiciousBurst1s && (repeatedEndpointRatio > 0.40 || http4xxRatio > 0.15)) {
       matchedConditions.push(`BURST_1S_GTE_${config.suspiciousBurst1s}`);
       if (repeatedEndpointRatio > 0.40) matchedConditions.push('BURST_FOCUSED_ON_SINGLE_ROUTE');
@@ -106,7 +107,7 @@ export const RULE_REQUEST_BURST = Object.freeze({
       matchedConditions: [],
       evidence: { burst1s, requestRate },
       uncertaintyNotes,
-      explanation: `Peak 1-second burst (${burst1s} req/s) within normal operational limits in ${timeWindow} window.`
+      explanation: `Request pacing within normal parameters (peak: ${burst1s} req/s) in ${timeWindow} window.`
     });
   }
 });

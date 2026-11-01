@@ -1,9 +1,12 @@
 /**
  * Rule 6: Behavioral Shift (RULE_BEHAVIORAL_SHIFT)
+ * Version: 2
  *
  * Evaluates behavioral transitions across short and long time windows (30s vs 5m vs 15m)
  * and deviations against established statistical baselines.
- * Does not assume a short burst is malicious; requires combined pacing acceleration and failure/diversity deviation.
+ *
+ * Excludes transient 503 Service Unavailable responses during application restarts,
+ * focusing strictly on client-driven error surges (4xx) and pacing changes.
  */
 
 import { createRuleFinding, RULE_SEVERITY } from '../rule-result.schema.js';
@@ -11,21 +14,15 @@ import { createRuleFinding, RULE_SEVERITY } from '../rule-result.schema.js';
 export const RULE_BEHAVIORAL_SHIFT = Object.freeze({
   ruleId: 'RULE_BEHAVIORAL_SHIFT',
   name: 'Behavioral Shift Pattern',
-  version: 1,
+  version: 2,
   description: 'Detects abrupt behavioral shifts between short and long windows, or significant divergence from established application baselines.',
   defaultSeverity: RULE_SEVERITY.MEDIUM,
   defaultThresholds: {
     minRateAcceleration: 3.0, // Short-window rate is 3x the long-window rate
-    minFailureDelta: 0.25,     // Failure ratio increased by >= 25%
+    minFailureDelta: 0.25,     // Client failure ratio increased by >= 25%
     minBaselineRateDelta: 5.0  // Rate exceeded baseline by >= 5.0 req/s
   },
 
-  /**
-   * @param {object} context
-   * @param {object} context.features - Features for primary evaluation window (usually 30s or 5m)
-   * @param {object} [context.multiWindowFeatures] - Map of windowLabel -> features ({ '30s': ..., '5m': ..., '15m': ... })
-   * @param {object} [context.baseline] - Established baseline object
-   */
   evaluate({ features, multiWindowFeatures = {}, baseline = null, timeWindow = '30s', thresholds = {}, sessionContext = {} }) {
     const config = { ...this.defaultThresholds, ...thresholds };
     const matchedConditions = [];
@@ -43,7 +40,6 @@ export const RULE_BEHAVIORAL_SHIFT = Object.freeze({
     }
 
     // Shift Test 1: Cross-Window Acceleration (30s burst vs 5m background)
-    let crossWindowShiftTriggered = false;
     let rateRatio = 1.0;
     if (f30 && f5m) {
       const rate30 = f30.request_rate_per_sec?.value ?? 0.0;
@@ -55,10 +51,9 @@ export const RULE_BEHAVIORAL_SHIFT = Object.freeze({
         rateRatio = rate30 / rate5m;
       }
 
-      // Check if sudden acceleration is accompanied by error surge (pivoting from normal to attack)
+      // Check if sudden acceleration is accompanied by client error surge (pivoting from normal to attack)
       const errorSurge = errorRatio30 - errorRatio5m;
-      if (rateRatio >= config.minRateAcceleration && errorSurge >= config.minFailureDelta && f30.request_count?.value >= 5) {
-        crossWindowShiftTriggered = true;
+      if (rateRatio >= config.minRateAcceleration && errorSurge >= config.minFailureDelta && (f30.request_count?.value ?? 0) >= 5) {
         matchedConditions.push(`RATE_ACCELERATION_GTE_${config.minRateAcceleration}X`);
         matchedConditions.push(`ERROR_SURGE_GTE_${(config.minFailureDelta * 100).toFixed(0)}%`);
 
@@ -100,9 +95,14 @@ export const RULE_BEHAVIORAL_SHIFT = Object.freeze({
           confidence: 0.85,
           timeWindow,
           matchedConditions,
-          evidence: { rateDelta, failureDelta, baselineVersion: baseline.baselineVersion },
+          evidence: {
+            rateDelta,
+            failureDelta,
+            minBaselineRateDelta: config.minBaselineRateDelta,
+            minFailureDelta: config.minFailureDelta
+          },
           uncertaintyNotes,
-          explanation: `Significant deviation from established baseline (v${baseline.baselineVersion}): Rate increased by ${rateDelta.toFixed(2)} req/s and failure ratio increased by ${(failureDelta * 100).toFixed(1)}%.`
+          explanation: `Statistically significant divergence from established application baseline: request rate increased by +${rateDelta.toFixed(1)} req/s and error ratio increased by +${(failureDelta * 100).toFixed(0)}%.`
         });
       }
     }
@@ -118,7 +118,7 @@ export const RULE_BEHAVIORAL_SHIFT = Object.freeze({
       matchedConditions: [],
       evidence: { rateRatio: Number(rateRatio.toFixed(2)), baselineStatus },
       uncertaintyNotes,
-      explanation: `Behavioral trajectory between short and long evaluation windows is consistent with benign workflow transitions.`
+      explanation: `No significant behavioral shift detected across evaluation windows or baseline comparison in ${timeWindow} window.`
     });
   }
 });

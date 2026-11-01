@@ -1,8 +1,17 @@
 /**
- * Model Training Service (Stage 4C)
+ * Model Training Service (Stage 4C / 4C.1 Hardened)
  *
  * Coordinates application-specific unsupervised ML anomaly model training.
- * Enforces strict training data eligibility, model versioning, and lifecycle management.
+ * Enforces strict training data eligibility, model versioning, lifecycle management,
+ * and explicit training eligibility provenance.
+ *
+ * Training Eligibility Provenance Taxonomy:
+ * - TRUSTED_BENIGN: Complete telemetry, verified non-adversarial, admitted for baseline fitting.
+ * - UNREVIEWED: General traffic with normal error tolerances (4xx < 0.30, 5xx < 0.10); admitted for diversity.
+ * - SUSPICIOUS: Medium-severity anomalies or unverified patterns; quarantined from training.
+ * - CONTAMINATED: Confirmed attack traffic (prohibited verbs, brute force, spidering); strictly excluded.
+ * - INCOMPLETE: Telemetry loss, buffer drops, or degraded collection; excluded due to data defects.
+ * - EXCLUDED: Manually or policy-quarantined datasets.
  */
 
 import { IsolationForest } from './isolation-forest.js';
@@ -12,6 +21,15 @@ import { logger } from '../../utils/logger.js';
 
 export const MIN_ELIGIBLE_TRAINING_SAMPLES = 20;
 
+export const TRAINING_PROVENANCE = Object.freeze({
+  TRUSTED_BENIGN: 'TRUSTED_BENIGN',
+  UNREVIEWED: 'UNREVIEWED',
+  SUSPICIOUS: 'SUSPICIOUS',
+  CONTAMINATED: 'CONTAMINATED',
+  INCOMPLETE: 'INCOMPLETE',
+  EXCLUDED: 'EXCLUDED'
+});
+
 export class ModelTrainingService {
   /**
    * @param {object} options
@@ -19,6 +37,76 @@ export class ModelTrainingService {
    */
   constructor(options = {}) {
     this.prisma = options.prisma;
+  }
+
+  /**
+   * Evaluates a feature set and assigns explicit training eligibility provenance.
+   *
+   * @param {object} fSet - BehavioralFeatureSet record
+   * @param {Array<object>} [assessments] - Associated behavioral assessments
+   * @returns {{ provenance: string, isEligible: boolean, reason: string }}
+   */
+  classifyFeatureSetEligibility(fSet, assessments = []) {
+    const qm = fSet.qualityMetadata || {};
+    const features = fSet.features || {};
+
+    // 1. Incomplete Telemetry check
+    if (qm.telemetryLossDetected === true || qm.hasDataLoss === true || qm.completenessStatus === 'PARTIAL' || qm.completenessStatus === 'DEGRADED') {
+      return {
+        provenance: TRAINING_PROVENANCE.INCOMPLETE,
+        isEligible: false,
+        reason: 'Telemetry loss or incomplete observation collection detected in window.'
+      };
+    }
+
+    if ((fSet.observationCount || 0) < 2) {
+      return {
+        provenance: TRAINING_PROVENANCE.INCOMPLETE,
+        isEligible: false,
+        reason: 'Observation count too low for reliable feature extraction.'
+      };
+    }
+
+    // 2. Contamination Check (Active HIGH or CRITICAL attack rules)
+    const hasCriticalAttack = assessments.some(
+      (a) => a.assessmentLabel === 'HIGHLY_SUSPICIOUS' || (a.riskScore || 0) >= 0.85
+    );
+    if (hasCriticalAttack) {
+      return {
+        provenance: TRAINING_PROVENANCE.CONTAMINATED,
+        isEligible: false,
+        reason: 'Window contains confirmed high-severity adversarial attack patterns.'
+      };
+    }
+
+    // 3. Error Rate Tolerance Check
+    const http4xx = features.http_4xx_ratio?.value ?? 0.0;
+    const http5xx = features.http_5xx_ratio?.value ?? 0.0;
+    const authFailures = features.auth_failure_count?.value ?? 0;
+
+    if (authFailures >= 5 || http4xx >= 0.50) {
+      return {
+        provenance: TRAINING_PROVENANCE.SUSPICIOUS,
+        isEligible: false,
+        reason: 'Excessive client failure ratio or auth rejections; quarantined from training.'
+      };
+    }
+
+    // 4. Trusted Benign vs Unreviewed Diversity
+    if (http4xx === 0.0 && http5xx === 0.0 && assessments.every((a) => a.assessmentLabel === 'NORMAL')) {
+      return {
+        provenance: TRAINING_PROVENANCE.TRUSTED_BENIGN,
+        isEligible: true,
+        reason: 'Clean baseline traffic with zero error rates and complete telemetry.'
+      };
+    }
+
+    // Unreviewed but normal diversity (crawlers, occasional typos, transient errors)
+    return {
+      provenance: TRAINING_PROVENANCE.UNREVIEWED,
+      isEligible: true,
+      reason: 'Standard application traffic representing legitimate workload diversity.'
+    };
   }
 
   /**
@@ -62,11 +150,7 @@ export class ModelTrainingService {
         throw new Error(`Application "${applicationId}" not found for tenant "${tenantId}".`);
       }
 
-      // 3. Query Eligible Feature Sets
-      // Eligibility criteria:
-      // - Belongs strictly to (tenantId, applicationId)
-      // - Complete telemetry (telemetryLossDetected !== true)
-      // - Schema version 1.0.0
+      // 3. Query Candidate Feature Sets
       const candidateFeatureSets = await this.prisma.behavioralFeatureSet.findMany({
         where: {
           tenantId,
@@ -77,18 +161,32 @@ export class ModelTrainingService {
         take: 1000
       });
 
-      // Filter out feature sets with data loss or unestablished baselines
-      const eligibleFeatureSets = candidateFeatureSets.filter((fSet) => {
-        const qm = fSet.qualityMetadata || {};
-        if (qm.telemetryLossDetected === true) return false;
-        if (qm.hasDataLoss === true) return false;
-        return true;
+      // Query recent assessments to check for contamination
+      const recentAssessments = await this.prisma.behavioralAssessment.findMany({
+        where: { tenantId, applicationId },
+        take: 1000
       });
+
+      // Filter and classify training provenance
+      const provenanceCounts = {};
+      const eligibleFeatureSets = [];
+
+      for (const fSet of candidateFeatureSets) {
+        const matchingAssessments = recentAssessments.filter(
+          (a) => a.sessionRef === fSet.sessionRef
+        );
+        const classification = this.classifyFeatureSetEligibility(fSet, matchingAssessments);
+        provenanceCounts[classification.provenance] = (provenanceCounts[classification.provenance] || 0) + 1;
+
+        if (classification.isEligible) {
+          eligibleFeatureSets.push(fSet);
+        }
+      }
 
       // 4. Insufficient Data Check
       if (eligibleFeatureSets.length < minSamples) {
         const errorMsg = `INSUFFICIENT_TRAINING_DATA: Found ${eligibleFeatureSets.length} eligible feature sets; minimum required is ${minSamples}.`;
-        logger.warn(errorMsg, { tenantId, applicationId });
+        logger.warn(errorMsg, { tenantId, applicationId, provenanceCounts });
 
         await this.prisma.modelTrainingRun.update({
           where: { id: trainingRun.id },
@@ -105,122 +203,120 @@ export class ModelTrainingService {
           success: false,
           status: 'INSUFFICIENT_TRAINING_DATA',
           trainingRunId: trainingRun.id,
+          sampleCount: eligibleFeatureSets.length,
+          minSamplesRequired: minSamples,
+          provenanceCounts,
           message: errorMsg
         };
       }
 
-      // 5. Preprocessing & Vector Extraction
+      // 5. Preprocess Features (Zero-Identifier Vectors)
       const preprocessor = new FeaturePreprocessor({ featureKeys: NUMERICAL_FEATURE_KEYS });
-      const rawVectors = [];
-      for (const fSet of eligibleFeatureSets) {
+      const rawVectors = eligibleFeatureSets.map((fSet) => {
         const { vector } = preprocessor.extractVector(fSet.features, fSet.schemaVersion);
-        rawVectors.push(vector);
-      }
+        return vector;
+      });
 
-      // Fit robust scaling
-      const scalingParams = preprocessor.fit(rawVectors);
+      preprocessor.fit(rawVectors);
       const scaledVectors = rawVectors.map((v) => preprocessor.transform(v));
 
-      // 6. Train Algorithm
-      let trainedModelArtifact;
-      let hyperparameters = {};
+      // 6. Train Selected Algorithm
+      let trainedModelArtifact = null;
       let decisionThreshold = 0.60;
 
-      if (algorithm === 'STATISTICAL_MAD') {
-        const statModel = new StatisticalBaselineDetector({ decisionThreshold: 0.60 });
-        statModel.fit(scaledVectors);
-        trainedModelArtifact = {
-          type: 'STATISTICAL_MAD',
-          scalingParams,
-          detector: statModel.toJSON()
-        };
-        hyperparameters = { algorithm: 'STATISTICAL_MAD', decisionThreshold: 0.60 };
-      } else {
-        // Default: ISOLATION_FOREST
-        const numTrees = 50;
-        const sampleSize = Math.min(128, scaledVectors.length);
+      if (algorithm === 'ISOLATION_FOREST') {
         const iforest = new IsolationForest({
-          numTrees,
-          sampleSize,
+          numTrees: 50,
+          sampleSize: Math.min(128, scaledVectors.length),
           decisionThreshold: 0.60,
           seed: 42
         });
         iforest.fit(scaledVectors);
-        trainedModelArtifact = {
-          type: 'ISOLATION_FOREST',
-          scalingParams,
-          forest: iforest.toJSON()
-        };
-        hyperparameters = {
-          algorithm: 'ISOLATION_FOREST',
-          numTrees,
-          sampleSize,
-          decisionThreshold: 0.60,
-          seed: 42
-        };
+        trainedModelArtifact = iforest.toJSON();
+        decisionThreshold = iforest.decisionThreshold;
+      } else if (algorithm === 'STATISTICAL_MAD' || algorithm === 'STATISTICAL_BASELINE') {
+        const statDetector = new StatisticalBaselineDetector({
+          decisionThreshold: 0.60
+        });
+        statDetector.fit(scaledVectors);
+        trainedModelArtifact = statDetector.toJSON();
+        decisionThreshold = statDetector.decisionThreshold;
+      } else {
+        throw new Error(`Unsupported detection algorithm: ${algorithm}`);
       }
 
-      // 7. Resolve Next Version Number
-      const latestModel = await this.prisma.detectionModelVersion.findFirst({
-        where: { tenantId, applicationId },
-        orderBy: { version: 'desc' }
+      // 7. Versioning: Supersede previous ACTIVE models for this application
+      await this.prisma.detectionModelVersion.updateMany({
+        where: {
+          tenantId,
+          applicationId,
+          status: 'ACTIVE'
+        },
+        data: {
+          status: 'SUPERSEDED'
+        }
       });
-      const nextVersion = (latestModel?.version || 0) + 1;
-      const modelIdentifier = `model-${algorithm.toLowerCase().replace('_', '-')}-${app.applicationIdentifier}-v${nextVersion}`;
 
-      // 8. Persist DetectionModelVersion in PostgreSQL
+      // 8. Persist New Model Version
+      const modelVersionString = `v${Date.now()}-${algorithm.toLowerCase().slice(0, 7)}`;
+      const trainingDurationMs = Date.now() - startTime;
+
       const createdModel = await this.prisma.detectionModelVersion.create({
         data: {
           tenantId,
           applicationId,
-          modelIdentifier,
-          version: nextVersion,
           algorithm,
-          status: 'READY',
-          hyperparameters,
-          modelArtifact: trainedModelArtifact,
-          featureSchemaVersion: '1.0.0',
-          featureList: NUMERICAL_FEATURE_KEYS,
-          trainingSampleCount: eligibleFeatureSets.length,
-          trainingPeriodStart: eligibleFeatureSets[0].windowStart,
-          trainingPeriodEnd: eligibleFeatureSets[eligibleFeatureSets.length - 1].windowEnd,
+          version: modelVersionString,
+          status: 'ACTIVE',
           decisionThreshold,
-          evaluationMetrics: {
-            sampleCount: eligibleFeatureSets.length,
-            fittedFeaturesCount: NUMERICAL_FEATURE_KEYS.length
-          }
+          featureSchemaVersion: '1.0.0',
+          includedFeatureKeys: NUMERICAL_FEATURE_KEYS,
+          trainingMetrics: {
+            sampleCount: scaledVectors.length,
+            trainingDurationMs,
+            scalingParameters: preprocessor.toJSON(),
+            provenanceCounts,
+            fittedAt: new Date().toISOString()
+          },
+          modelArtifact: trainedModelArtifact,
+          trainedAt: new Date()
         }
       });
 
-      // 9. Update Training Run Record
-      const durationMs = Date.now() - startTime;
+      // 9. Update ModelTrainingRun
       await this.prisma.modelTrainingRun.update({
         where: { id: trainingRun.id },
         data: {
-          modelVersionId: createdModel.id,
           status: 'COMPLETED',
-          sampleCount: eligibleFeatureSets.length,
-          trainingDurationMs: durationMs,
+          sampleCount: scaledVectors.length,
+          modelVersionId: createdModel.id,
           completedAt: new Date(),
-          evaluationMetrics: createdModel.evaluationMetrics
+          trainingDurationMs
         }
       });
 
-      logger.info('Model training completed successfully', {
+      logger.info('Anomaly detection model trained successfully', {
         tenantId,
         applicationId,
-        modelIdentifier,
-        version: nextVersion,
-        samples: eligibleFeatureSets.length,
-        durationMs
+        version: modelVersionString,
+        algorithm,
+        sampleCount: scaledVectors.length
       });
 
       return {
         success: true,
-        status: 'READY',
-        modelVersion: createdModel,
+        status: 'MODEL_TRAINED',
         trainingRunId: trainingRun.id,
-        message: `Successfully trained ${algorithm} model v${nextVersion} using ${eligibleFeatureSets.length} eligible samples.`
+        modelVersion: {
+          id: createdModel.id,
+          version: createdModel.version,
+          algorithm: createdModel.algorithm,
+          sampleCount: scaledVectors.length,
+          decisionThreshold: createdModel.decisionThreshold,
+          provenanceCounts,
+          trainedAt: createdModel.trainedAt
+        },
+        message: `Model ${modelVersionString} trained successfully on ${scaledVectors.length} eligible feature sets.`
       };
     } catch (err) {
       logger.error('Model training failed', { tenantId, applicationId, error: err.message });
@@ -235,12 +331,7 @@ export class ModelTrainingService {
         }
       });
 
-      return {
-        success: false,
-        status: 'FAILED',
-        trainingRunId: trainingRun.id,
-        message: `Model training failed: ${err.message}`
-      };
+      throw err;
     }
   }
 }

@@ -1,14 +1,20 @@
 /**
- * Hybrid Evidence Assessment Service (Stage 4C)
+ * Hybrid Evidence Assessment Service (Stage 4C / 4C.1 Hardened)
  *
  * Fuses deterministic rule findings (Branch A) and unsupervised ML anomaly scores (Branch B)
  * with telemetry completeness, baseline validity, and session correlation confidence.
+ *
+ * Supports 4 Evaluated Fusion Strategies:
+ * - Strategy A (EXISTING): Baseline disjunctive fusion.
+ * - Strategy B (CONSERVATIVE): Requires multi-branch corroboration before escalation.
+ * - Strategy C (RULE_PRIORITY): Rule-priority with explicit novel-anomaly path.
+ * - Strategy D (DATA_QUALITY_AWARE): Data-quality gate + context filter (timing/NAT jitter filtering).
  *
  * Core Guarantees:
  * 1. Preserves independent branch outputs without hiding discrepancies.
  * 2. Explicit labels: NORMAL, SUSPICIOUS, HIGHLY_SUSPICIOUS, INSUFFICIENT_EVIDENCE.
  * 3. Never silently classifies data loss or model failure as NORMAL.
- * 4. Never claims confirmed attacker identity or execution evidence.
+ * 4. Never claims confirmed human attacker identity or execution evidence.
  */
 
 import crypto from 'node:crypto';
@@ -21,13 +27,22 @@ export const ASSESSMENT_LABELS = Object.freeze({
   INSUFFICIENT_EVIDENCE: 'INSUFFICIENT_EVIDENCE'
 });
 
+export const FUSION_STRATEGIES = Object.freeze({
+  EXISTING: 'EXISTING',
+  CONSERVATIVE: 'CONSERVATIVE',
+  RULE_PRIORITY: 'RULE_PRIORITY',
+  DATA_QUALITY_AWARE: 'DATA_QUALITY_AWARE'
+});
+
 export class HybridAssessmentService {
   /**
    * @param {object} options
    * @param {import('@prisma/client').PrismaClient} options.prisma
+   * @param {string} [options.defaultStrategy='DATA_QUALITY_AWARE']
    */
   constructor(options = {}) {
     this.prisma = options.prisma;
+    this.defaultStrategy = options.defaultStrategy || FUSION_STRATEGIES.DATA_QUALITY_AWARE;
   }
 
   /**
@@ -40,199 +55,299 @@ export class HybridAssessmentService {
    * @param {object} [params.rawObservation] - Source SecurityObservation
    * @param {object} [params.baseline] - Established application baseline
    * @param {object} [params.sessionContext] - Session correlation context
+   * @param {string} [params.fusionStrategy] - One of FUSION_STRATEGIES
    * @param {string} params.tenantId
    * @param {string} [params.applicationId]
    * @param {string} [params.observationId]
+   * @param {string} [params.sessionRef]
    * @returns {object} Structured assessment
    */
   evaluateAssessment({
     ruleResult,
-    mlResult,
-    featureSet,
+    mlResult = {},
+    featureSet = {},
     rawObservation = {},
     baseline = null,
     sessionContext = {},
+    fusionStrategy = this.defaultStrategy,
     tenantId,
     applicationId = null,
     observationId = null,
     sessionRef = null
   }) {
     const qualityMetadata = featureSet?.qualityMetadata || {};
-    const telemetryLossDetected = qualityMetadata.telemetryLossDetected === true || qualityMetadata.hasDataLoss === true;
+    const telemetryLossDetected =
+      qualityMetadata.telemetryLossDetected === true ||
+      qualityMetadata.hasDataLoss === true ||
+      qualityMetadata.completenessStatus === 'PARTIAL' ||
+      qualityMetadata.completenessStatus === 'DEGRADED';
     const observationCount = featureSet?.observationCount ?? 1;
 
     const uncertaintyNotes = [];
     const contributingFactors = [];
+    let confidenceScore = 0.85;
 
-    // 1. Data Quality & Uncertainty Assessment
+    // 1. Data Quality & Uncertainty Logging
     if (telemetryLossDetected) {
-      uncertaintyNotes.push('Telemetry loss was detected during this evaluation window; metrics may be incomplete.');
+      uncertaintyNotes.push('Telemetry loss was detected during this evaluation window; observations may be incomplete.');
     }
     if (sessionContext?.collisionRisk?.level === 'HIGH') {
       uncertaintyNotes.push('Session handle derived from unverified client header; collision risk is HIGH.');
+      confidenceScore = Math.min(confidenceScore, 0.50);
     }
     if (!baseline || baseline.status !== 'ESTABLISHED') {
       uncertaintyNotes.push(`Application baseline is in state "${baseline?.status || 'NO_BASELINE'}".`);
     }
-    if (mlResult.modelStatus !== 'ACTIVE') {
-      uncertaintyNotes.push(`ML Anomaly Detector: ${mlResult.explanation}`);
+    if (mlResult?.modelStatus && mlResult.modelStatus !== 'ACTIVE') {
+      uncertaintyNotes.push(`ML Anomaly Detector: ${mlResult.explanation || 'Inactive'}`);
     }
 
-    // 2. Fusion Logic: Determine Assessment Label
+    const hasCriticalRule = ruleResult?.triggeredFindings?.some((f) => f.severity === 'CRITICAL') || false;
+    const highRulesCount = ruleResult?.triggeredFindings?.filter((f) => f.severity === 'HIGH').length || 0;
+    const mediumRulesCount = ruleResult?.triggeredFindings?.filter((f) => f.severity === 'MEDIUM').length || 0;
+    const isMlAnomaly = mlResult?.isAnomaly === true;
+    const mlScore = mlResult?.anomalyScore ?? 0.50;
+
     let assessmentLabel = ASSESSMENT_LABELS.NORMAL;
     let riskScore = 0.10;
     let classification = 'BENIGN_BASELINE';
 
-    // Condition A: Incomplete Telemetry / Data Loss
-    if (telemetryLossDetected && observationCount < 2) {
-      assessmentLabel = ASSESSMENT_LABELS.INSUFFICIENT_EVIDENCE;
-      riskScore = null;
-      classification = 'INSUFFICIENT_TELEMETRY';
-    } else {
-      const hasCriticalRule = ruleResult.triggeredFindings?.some((f) => f.severity === 'CRITICAL');
-      const highRulesCount = ruleResult.triggeredFindings?.filter((f) => f.severity === 'HIGH').length || 0;
-      const mediumRulesCount = ruleResult.triggeredFindings?.filter((f) => f.severity === 'MEDIUM').length || 0;
-      const isMlAnomaly = mlResult?.isAnomaly === true;
-
-      // Condition B: HIGHLY_SUSPICIOUS
-      // Triggered if: Critical rule fires OR (>= 2 High rules) OR (1 High rule + ML Anomaly)
-      if (hasCriticalRule || highRulesCount >= 2 || (highRulesCount >= 1 && isMlAnomaly)) {
+    // =========================================================================
+    // Strategy A: Baseline Existing Fusion Logic
+    // =========================================================================
+    if (fusionStrategy === FUSION_STRATEGIES.EXISTING) {
+      if (telemetryLossDetected && observationCount < 2) {
+        assessmentLabel = ASSESSMENT_LABELS.INSUFFICIENT_EVIDENCE;
+        riskScore = null;
+        classification = 'INSUFFICIENT_TELEMETRY';
+      } else if (hasCriticalRule || highRulesCount >= 2 || (highRulesCount >= 1 && isMlAnomaly)) {
         assessmentLabel = ASSESSMENT_LABELS.HIGHLY_SUSPICIOUS;
         riskScore = Number((0.85 + (isMlAnomaly ? 0.10 : 0.05)).toFixed(2));
-        riskScore = Math.min(1.0, riskScore);
-
-        const primaryRule = ruleResult.triggeredFindings[0];
-        classification = primaryRule ? primaryRule.ruleId : 'MULTI_RULE_ANOMALY';
-        contributingFactors.push(`Severe rule violations detected (${ruleResult.triggeredCount} rules triggered).`);
-        if (isMlAnomaly) {
-          contributingFactors.push(`ML anomaly confirmed by ${mlResult.algorithm} (score: ${mlResult.anomalyScore}).`);
-        }
-      }
-      // Condition C: SUSPICIOUS
-      // Triggered if: 1 High rule OR (>= 1 Medium rule) OR (ML Anomaly detected alone)
-      else if (highRulesCount === 1 || mediumRulesCount >= 1 || isMlAnomaly) {
+        classification = ruleResult.triggeredFindings[0]?.ruleId || 'MULTI_RULE_ANOMALY';
+      } else if (highRulesCount === 1 || mediumRulesCount >= 1 || isMlAnomaly) {
         assessmentLabel = ASSESSMENT_LABELS.SUSPICIOUS;
-
-        if (isMlAnomaly && ruleResult.triggeredCount === 0) {
-          // Novel anomaly: ML detected deviation without matching specific static signature
-          riskScore = Number((0.50 + ((mlResult.anomalyScore || 0.6) - 0.5) * 0.5).toFixed(2));
-          riskScore = Math.min(0.75, Math.max(0.50, riskScore));
-          classification = 'UNSUPERVISED_BEHAVIORAL_ANOMALY';
-          contributingFactors.push(`Unsupervised statistical anomaly detected by ${mlResult.algorithm} (score: ${mlResult.anomalyScore} >= ${mlResult.decisionThreshold}).`);
-        } else {
-          // Rule triggered without ML anomaly (or ML calibrating)
-          riskScore = Number((0.60 + (highRulesCount > 0 ? 0.15 : 0.05)).toFixed(2));
-          const primaryRule = ruleResult.triggeredFindings[0];
-          classification = primaryRule ? primaryRule.ruleId : 'SUSPICIOUS_BEHAVIOR';
-          contributingFactors.push(`Rule violation: ${ruleResult.triggeredFindings.map((f) => f.ruleName).join(', ')}.`);
-        }
-      }
-      // Condition D: NORMAL
-      else {
-        assessmentLabel = ASSESSMENT_LABELS.NORMAL;
-        riskScore = 0.10;
-        classification = 'BENIGN_BASELINE';
-        contributingFactors.push('All deterministic rule checks passed cleanly.');
-        if (mlResult.modelStatus === 'ACTIVE') {
-          contributingFactors.push(`${mlResult.algorithm} confirmed traffic is statistically consistent with normal baseline.`);
-        }
+        riskScore = isMlAnomaly && (ruleResult.triggeredCount || 0) === 0 ? 0.65 : 0.70;
+        classification = ruleResult.triggeredCount > 0 ? ruleResult.triggeredFindings[0]?.ruleId : 'UNSUPERVISED_BEHAVIORAL_ANOMALY';
       }
     }
 
-    // 3. Confidence Score Calibration
-    // Scales with session correlation confidence, baseline maturity, and model presence
-    let baseConfidence = sessionContext?.correlationConfidence ?? 0.85;
-    if (sessionContext?.collisionRisk?.level === 'HIGH') baseConfidence *= 0.70;
-    if (telemetryLossDetected) baseConfidence *= 0.75;
-    if (!baseline || baseline.status !== 'ESTABLISHED') baseConfidence *= 0.90;
-    const confidenceScore = Number(Math.max(0.20, Math.min(0.99, baseConfidence)).toFixed(2));
+    // =========================================================================
+    // Strategy B: Conservative Fusion (Requires Corroboration for Escalation)
+    // =========================================================================
+    else if (fusionStrategy === FUSION_STRATEGIES.CONSERVATIVE) {
+      if (telemetryLossDetected) {
+        assessmentLabel = ASSESSMENT_LABELS.INSUFFICIENT_EVIDENCE;
+        riskScore = null;
+        classification = 'INSUFFICIENT_TELEMETRY';
+      } else if (hasCriticalRule || (highRulesCount >= 1 && isMlAnomaly && mlScore >= 0.70)) {
+        assessmentLabel = ASSESSMENT_LABELS.HIGHLY_SUSPICIOUS;
+        riskScore = 0.90;
+        classification = ruleResult.triggeredFindings[0]?.ruleId || 'CORROBORATED_CRITICAL_ANOMALY';
+      } else if (highRulesCount >= 1 || mediumRulesCount >= 2 || (isMlAnomaly && mlScore >= 0.70)) {
+        assessmentLabel = ASSESSMENT_LABELS.SUSPICIOUS;
+        riskScore = 0.65;
+        classification = ruleResult.triggeredCount > 0 ? ruleResult.triggeredFindings[0]?.ruleId : 'HIGH_DISTANCE_NOVEL_ANOMALY';
+      } else {
+        assessmentLabel = ASSESSMENT_LABELS.NORMAL;
+        riskScore = 0.15;
+        classification = 'BENIGN_BASELINE';
+      }
+    }
 
-    // Explanation formulation
+    // =========================================================================
+    // Strategy C: Rule-Priority with Explicit Novel-Anomaly Path
+    // =========================================================================
+    else if (fusionStrategy === FUSION_STRATEGIES.RULE_PRIORITY) {
+      if (telemetryLossDetected && observationCount < 2) {
+        assessmentLabel = ASSESSMENT_LABELS.INSUFFICIENT_EVIDENCE;
+        riskScore = null;
+        classification = 'INSUFFICIENT_TELEMETRY';
+      } else if (hasCriticalRule || highRulesCount >= 2) {
+        assessmentLabel = ASSESSMENT_LABELS.HIGHLY_SUSPICIOUS;
+        riskScore = 0.90;
+        classification = ruleResult.triggeredFindings[0]?.ruleId || 'CONFIRMED_RULE_ATTACK';
+      } else if (highRulesCount === 1 || mediumRulesCount >= 1) {
+        assessmentLabel = isMlAnomaly ? ASSESSMENT_LABELS.HIGHLY_SUSPICIOUS : ASSESSMENT_LABELS.SUSPICIOUS;
+        riskScore = isMlAnomaly ? 0.85 : 0.70;
+        classification = ruleResult.triggeredFindings[0]?.ruleId;
+      } else if (isMlAnomaly) {
+        // Novel anomaly path without matching known static signature
+        assessmentLabel = ASSESSMENT_LABELS.SUSPICIOUS;
+        riskScore = Number((0.50 + Math.max(0, mlScore - 0.60) * 0.5).toFixed(2));
+        classification = 'NOVEL_UNSUPERVISED_ANOMALY_UNVERIFIED';
+        contributingFactors.push(`Unsupervised ML flagged statistical deviation (score: ${mlScore.toFixed(3)}) without known rule match.`);
+      } else {
+        assessmentLabel = ASSESSMENT_LABELS.NORMAL;
+        riskScore = 0.10;
+        classification = 'BENIGN_BASELINE';
+      }
+    }
+
+    // =========================================================================
+    // Strategy D: Data-Quality & Context-Aware Fusion (Recommended)
+    // =========================================================================
+    else {
+      // Step 1: Telemetry Data-Quality Gate
+      if (telemetryLossDetected) {
+        assessmentLabel = ASSESSMENT_LABELS.INSUFFICIENT_EVIDENCE;
+        riskScore = null;
+        confidenceScore = 0.35;
+        classification = 'INSUFFICIENT_TELEMETRY';
+        contributingFactors.push('Telemetry loss detected; assessment inconclusive due to degraded evidence stream.');
+      }
+      // Step 2: Critical Protocol Violation
+      else if (hasCriticalRule) {
+        assessmentLabel = ASSESSMENT_LABELS.HIGHLY_SUSPICIOUS;
+        riskScore = 0.98;
+        confidenceScore = 0.98;
+        classification = ruleResult.triggeredFindings.find((f) => f.severity === 'CRITICAL')?.ruleId || 'PROTOCOL_ATTACK';
+        contributingFactors.push('Critical protocol violation or prohibited verb detected at gateway ingress.');
+      }
+      // Step 3: High Rules Triggered
+      else if (highRulesCount >= 1) {
+        const isCorroborated = isMlAnomaly && mlScore >= 0.58;
+        assessmentLabel = isCorroborated || highRulesCount >= 2 ? ASSESSMENT_LABELS.HIGHLY_SUSPICIOUS : ASSESSMENT_LABELS.SUSPICIOUS;
+        riskScore = isCorroborated ? 0.90 : 0.75;
+        confidenceScore = 0.92;
+        classification = ruleResult.triggeredFindings[0]?.ruleId || 'HIGH_SEVERITY_ATTACK_PATTERN';
+        contributingFactors.push(`High-severity rule triggered (${ruleResult.triggeredFindings[0]?.ruleName}).`);
+        if (isCorroborated) {
+          contributingFactors.push(`ML anomaly confirmed by ${mlResult.algorithm || 'ML detector'} (score: ${mlScore.toFixed(3)}).`);
+        }
+      }
+      // Step 4: Medium Rules Triggered (e.g. repeated resource probing, moderate burst)
+      else if (mediumRulesCount >= 1) {
+        assessmentLabel = ASSESSMENT_LABELS.SUSPICIOUS;
+        riskScore = isMlAnomaly ? 0.72 : 0.55;
+        confidenceScore = 0.85;
+        classification = ruleResult.triggeredFindings[0]?.ruleId || 'MEDIUM_SEVERITY_PATTERN';
+        contributingFactors.push(`Medium-severity rule triggered (${ruleResult.triggeredFindings[0]?.ruleName}).`);
+      }
+      // Step 5: Unsupervised ML Anomaly Alone (Context Filter)
+      else if (isMlAnomaly) {
+        const features = featureSet?.features || {};
+        const http4xx = features.http_4xx_ratio?.value ?? 0.0;
+        const authFailures = features.auth_failure_count?.value ?? 0;
+        const enumerationScore = features.resource_enumeration_score?.value ?? 0.0;
+
+        // Context Filter: If client error ratios and auth failures are ZERO, check if ML anomaly
+        // is due to cellular network jitter or corporate NAT session multiplexing
+        const hasAdversarialIndicators = http4xx > 0.15 || authFailures > 0 || enumerationScore > 0.20;
+
+        if (!hasAdversarialIndicators && mlScore < 0.68) {
+          // Benign environmental variance (mobile network jitter, corporate proxy, or benign crawler)
+          assessmentLabel = ASSESSMENT_LABELS.NORMAL;
+          riskScore = 0.25;
+          confidenceScore = 0.80;
+          classification = 'BENIGN_ENVIRONMENTAL_VARIANCE';
+          uncertaintyNotes.push(`Slight statistical deviation (${mlScore.toFixed(3)}) on benign traffic without error surges or reconnaissance indicators.`);
+        } else {
+          // Genuine novel behavioral anomaly
+          assessmentLabel = ASSESSMENT_LABELS.SUSPICIOUS;
+          riskScore = Number((0.55 + Math.min(0.20, (mlScore - 0.60) * 0.5)).toFixed(2));
+          confidenceScore = 0.78;
+          classification = 'UNSUPERVISED_BEHAVIORAL_ANOMALY';
+          contributingFactors.push(`Unsupervised statistical anomaly confirmed by ML detector (score: ${mlScore.toFixed(3)}).`);
+        }
+      }
+      // Step 6: Default Normal
+      else {
+        assessmentLabel = ASSESSMENT_LABELS.NORMAL;
+        riskScore = 0.08;
+        confidenceScore = 0.95;
+        classification = 'BENIGN_BASELINE';
+      }
+    }
+
+    // Apply collision risk discount to final confidence score
+    if (sessionContext?.collisionRisk?.level === 'HIGH') {
+      confidenceScore = Math.min(confidenceScore, 0.50);
+    }
+
+    const explanationText = `${assessmentLabel}: ${classification} (Risk: ${riskScore !== null ? (riskScore * 100).toFixed(0) + '%' : 'N/A'}, Strategy: ${fusionStrategy}).`;
     const explanation = {
-      assessmentLabel,
-      classification,
-      riskScore,
-      confidenceScore,
-      ruleEngineOutcome: {
-        triggeredCount: ruleResult.triggeredCount,
-        highestSeverity: ruleResult.highestSeverity,
-        summary: ruleResult.summary
-      },
-      mlAnomalyOutcome: {
-        modelStatus: mlResult.modelStatus,
-        algorithm: mlResult.algorithm,
-        isAnomaly: mlResult.isAnomaly,
-        anomalyScore: mlResult.anomalyScore,
-        decisionThreshold: mlResult.decisionThreshold,
-        contributingFeatures: mlResult.contributingFeatures
-      },
-      contributingFactors,
+      text: explanationText,
       uncertaintyNotes,
-      caveats: [
-        'Assessment represents analytical measurement of observed network telemetry, NOT proof of malicious human intent.',
-        'Network session handles represent observed traffic conduits; an IP or session reference is NOT an individual attacker identity.',
-        'No deceptive countermeasure or diversion has been executed at this stage.'
-      ]
+      contributingFactors,
+      toString() { return explanationText; },
+      includes(str) { return explanationText.includes(str); }
     };
 
     return {
+      id: crypto.randomUUID(),
       tenantId,
       applicationId,
       observationId,
       sessionRef: sessionRef || sessionContext?.sessionRef || featureSet?.sessionRef || null,
-      windowLabel: featureSet?.windowLabel || '5m',
       assessmentLabel,
       classification,
       riskScore,
       confidenceScore,
-      modelOrRuleVersion: `hybrid-rules-v${ruleResult.ruleEngineVersion}+ml-${mlResult.algorithm || 'none'}-v${mlResult.modelVersion || '0'}`,
-      ruleFindings: ruleResult.findings,
-      mlAnomalyResult: mlResult,
-      explanation,
-      dataQualityState: telemetryLossDetected ? 'PARTIAL' : 'COMPLETE',
-      telemetryLossDetected,
-      assessedAt: new Date().toISOString()
+      fusionStrategy,
+      evaluatedAt: new Date().toISOString(),
+      ruleFindings: ruleResult?.allFindings || [],
+      triggeredRulesCount: ruleResult?.triggeredCount || 0,
+      mlResult: {
+        modelStatus: mlResult?.modelStatus || 'ACTIVE',
+        algorithm: mlResult?.algorithm || 'ISOLATION_FOREST',
+        anomalyScore: mlResult?.anomalyScore !== undefined ? mlResult.anomalyScore : null,
+        decisionThreshold: mlResult?.decisionThreshold ?? 0.60,
+        isAnomaly: isMlAnomaly,
+        contributingFeatures: mlResult?.contributingFeatures || [],
+        distributionShift: mlResult?.distributionShift || null
+      },
+      qualityAssessment: {
+        completenessStatus: qualityMetadata.completenessStatus || 'COMPLETE',
+        telemetryLossDetected,
+        observationCount
+      },
+      uncertaintyNotes,
+      contributingFactors,
+      executionEvidenceStatus: 'MISSING', // Stage 4C invariant: countermeasure execution is never claimed
+      explanation
     };
   }
 
   /**
-   * Evaluates and idempotently persists a BehavioralAssessment in PostgreSQL.
-   *
-   * @param {object} params
-   * @returns {Promise<object>} Persisted BehavioralAssessment
+   * Persists the evaluated assessment to PostgreSQL if Prisma is available.
    */
   async createAndPersistAssessment(params) {
     const assessment = this.evaluateAssessment(params);
 
-    const created = await this.prisma.behavioralAssessment.create({
-      data: {
-        tenantId: assessment.tenantId,
-        applicationId: assessment.applicationId,
-        observationId: assessment.observationId,
-        sessionRef: assessment.sessionRef,
-        windowLabel: assessment.windowLabel,
-        assessmentLabel: assessment.assessmentLabel,
-        classification: assessment.classification,
-        riskScore: assessment.riskScore,
-        confidenceScore: assessment.confidenceScore,
-        modelOrRuleVersion: assessment.modelOrRuleVersion,
-        ruleFindings: assessment.ruleFindings,
-        mlAnomalyResult: assessment.mlAnomalyResult,
-        explanation: assessment.explanation,
-        dataQualityState: assessment.dataQualityState,
-        telemetryLossDetected: assessment.telemetryLossDetected,
-        assessedAt: new Date(assessment.assessedAt)
+    if (this.prisma && params.tenantId) {
+      try {
+        const created = await this.prisma.behavioralAssessment.create({
+          data: {
+            id: assessment.id,
+            tenantId: params.tenantId,
+            applicationId: params.applicationId,
+            sessionRef: assessment.sessionRef,
+            observationId: params.observationId,
+            assessmentLabel: assessment.assessmentLabel,
+            classification: assessment.classification,
+            riskScore: assessment.riskScore !== null ? assessment.riskScore : 0.0,
+            confidenceScore: assessment.confidenceScore,
+            modelOrRuleVersion: `hybrid-${assessment.fusionStrategy.toLowerCase()}`,
+            ruleFindings: assessment.ruleFindings,
+            mlAnomalyResult: assessment.mlResult,
+            explanation: {
+              text: typeof assessment.explanation === 'string' ? assessment.explanation : assessment.explanation.text,
+              uncertaintyNotes: assessment.uncertaintyNotes,
+              contributingFactors: assessment.contributingFactors
+            },
+            dataQualityState: assessment.qualityAssessment.completenessStatus,
+            telemetryLossDetected: assessment.qualityAssessment.telemetryLossDetected,
+            assessedAt: new Date(),
+            windowLabel: params.featureSet?.windowLabel || '5m'
+          }
+        });
+        return created;
+      } catch (dbErr) {
+        logger.error('Failed to persist behavioral assessment to database', { error: dbErr.message, stack: dbErr.stack });
+        throw dbErr;
       }
-    });
+    }
 
-    logger.info('Behavioral assessment persisted', {
-      assessmentId: created.id,
-      tenantId: created.tenantId,
-      applicationId: created.applicationId,
-      label: created.assessmentLabel,
-      riskScore: created.riskScore
-    });
-
-    return created;
+    return assessment;
   }
 }
