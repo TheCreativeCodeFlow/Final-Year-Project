@@ -217,7 +217,8 @@ export class BehavioralFeatureExtractor {
       if (intervalsMs.length >= 2) {
         const squaredDiffs = intervalsMs.map((val) => Math.pow(val - intervalMeanMs, 2));
         const varianceSum = squaredDiffs.reduce((acc, val) => acc + val, 0);
-        intervalVarianceMs = Number((varianceSum / intervalsMs.length).toFixed(2));
+        // Unbiased sample variance with Bessel's correction (M - 1 degrees of freedom)
+        intervalVarianceMs = Number((varianceSum / (intervalsMs.length - 1)).toFixed(2));
         intervalStatus = MISSING_DATA_STATUS.COMPLETE;
       } else {
         intervalVarianceMs = 0;
@@ -250,9 +251,24 @@ export class BehavioralFeatureExtractor {
       ? Number((maxRouteHits / totalRequests).toFixed(4))
       : 0;
 
-    const unusualRouteRatio = totalRequests > 0
+    const http404Ratio = totalRequests > 0
       ? Number((count404 / totalRequests).toFixed(4))
       : 0;
+
+    // Genuine unusual route ratio:
+    // If baseline defines known routes, calculate ratio of requests to routes outside known set.
+    // Otherwise falls back to http404Ratio as an uninventoried proxy.
+    let unusualRouteRatio = http404Ratio;
+    if (baseline && baseline.metrics && Array.isArray(baseline.metrics.knownRoutes) && baseline.metrics.knownRoutes.length > 0) {
+      const knownRouteSet = new Set(baseline.metrics.knownRoutes);
+      let unusualCount = 0;
+      for (const ev of windowEvents) {
+        if (!knownRouteSet.has(ev.normalizedRoute)) {
+          unusualCount++;
+        }
+      }
+      unusualRouteRatio = Number((unusualCount / totalRequests).toFixed(4));
+    }
 
     // Resource enumeration reproducible score (0.0 to 1.0)
     // Formula: product of breadth (ratio of distinct 404 paths vs threshold K=5)
@@ -397,6 +413,16 @@ export class BehavioralFeatureExtractor {
       repeated_endpoint_ratio: {
         name: 'repeated_endpoint_ratio',
         value: repeatedEndpointRatio,
+        type: FEATURE_TYPES.RATIO,
+        unit: 'ratio',
+        timeWindow: windowLabel,
+        observationCount: totalRequests,
+        provenance: 'computed_from_canonical_observations',
+        missingDataStatus: MISSING_DATA_STATUS.COMPLETE
+      },
+      http_404_ratio: {
+        name: 'http_404_ratio',
+        value: http404Ratio,
         type: FEATURE_TYPES.RATIO,
         unit: 'ratio',
         timeWindow: windowLabel,

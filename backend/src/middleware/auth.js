@@ -147,7 +147,8 @@ export function requirePlatformAdmin(req, res, next) {
  *
  * @param {string[]} allowedRoles
  */
-export function requireRole(allowedRoles = []) {
+export function requireRole(...roles) {
+  const allowedRoles = roles.flat();
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({

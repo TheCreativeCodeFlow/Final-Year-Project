@@ -40,14 +40,20 @@ export class BehavioralSessionCorrelator {
   }
 
   /**
-   * Derives a tenant-specific HMAC key from the master secret, guaranteeing
-   * strict cross-tenant cryptographic isolation.
+   * Derives a tenant-specific key from the master secret using PBKDF2 with a tenant-scoped salt,
+   * guaranteeing strict cross-tenant cryptographic isolation.
    *
    * @param {string} tenantId
    * @returns {Buffer}
    */
   deriveTenantKey(tenantId) {
-    return crypto.createHmac('sha256', this.hmacSecret).update(tenantId || 'global').digest();
+    return crypto.pbkdf2Sync(
+      this.hmacSecret,
+      `adg-tenant-key-salt:${tenantId || 'global'}`,
+      10000,
+      32,
+      'sha256'
+    );
   }
 
   /**

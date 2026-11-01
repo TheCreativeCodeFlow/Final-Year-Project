@@ -18,6 +18,7 @@
 
 import { logger } from '../utils/logger.js';
 import fs from 'node:fs';
+import path from 'node:path';
 
 export const TELEMETRY_OUTCOMES = {
   PERSISTED: 'TELEMETRY_PERSISTED',
@@ -95,6 +96,10 @@ export class TelemetryRecorderService {
   persistDurableLossSummary() {
     if (!this.durableLossLogPath) return;
     try {
+      const dir = path.dirname(this.durableLossLogPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
       const summary = {
         droppedEventCount: this.droppedEventCount,
         hasDataLoss: this.droppedEventCount > 0,

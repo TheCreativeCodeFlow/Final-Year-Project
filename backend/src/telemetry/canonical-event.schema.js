@@ -244,9 +244,9 @@ export function validateAndNormalizeCanonicalEvent(rawEvent, options = {}) {
     errors.push('INVALID_TIMESTAMP: Failed to process timestamp.');
   }
 
-  // 6. HTTP Method Validation
+  // 6. HTTP Method Validation (RFC 9110 compliant token format, up to 32 characters)
   const httpMethod = (rawEvent.httpMethod || rawEvent.method || '').toUpperCase();
-  const isValidMethodToken = /^[A-Z]{3,16}$/.test(httpMethod);
+  const isValidMethodToken = /^[A-Z0-9!#$%&'*+\-.^_`|~]{1,32}$/.test(httpMethod);
   if (!isValidMethodToken || (!ALLOWED_HTTP_METHODS.has(httpMethod) && !rawEvent.validationOutcome)) {
     errors.push(`INVALID_HTTP_METHOD: Method "${httpMethod}" is not a valid or recognized HTTP method.`);
   }
@@ -317,10 +317,12 @@ export function validateAndNormalizeCanonicalEvent(rawEvent, options = {}) {
   // 14. Non-Attributive Source Metadata & Session Reference
   const sourceMetadata = generateSourceMetadata(rawEvent.clientIp || rawEvent.sourceIp || '127.0.0.1');
 
-  // Provenance metadata
+  // Provenance metadata strictly stamped by trusted gateway infrastructure
   const provenance = {
-    subsystem: rawEvent.provenance?.subsystem || 'GATEWAY_REVERSE_PROXY',
-    ingressNode: rawEvent.provenance?.ingressNode || 'gw-local-node',
+    subsystem: 'GATEWAY_REVERSE_PROXY',
+    ingressNode: typeof rawEvent.provenance?.ingressNode === 'string' && /^[a-zA-Z0-9_\-.]{1,64}$/.test(rawEvent.provenance.ingressNode)
+      ? rawEvent.provenance.ingressNode
+      : 'gw-local-node',
     normalizedAt: new Date().toISOString()
   };
 

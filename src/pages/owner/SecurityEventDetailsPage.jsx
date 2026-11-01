@@ -95,9 +95,23 @@ export default function SecurityEventDetailsPage() {
               {
                 id: 'asm-mock-01',
                 classification: mockEvt.vector || 'CREDENTIAL_STUFFING',
+                assessmentLabel: 'SUSPICIOUS',
                 riskScore: 0.88,
                 confidenceScore: 0.94,
-                modelOrRuleVersion: 'statistical-detector-v2.1'
+                modelOrRuleVersion: 'hybrid-engine-v1.0.0',
+                mlAlgorithm: 'ISOLATION_FOREST',
+                mlAnomalyScore: 0.82,
+                mlThreshold: 0.60,
+                ruleFindings: [
+                  {
+                    ruleId: 'RULE_AUTH_FAILURE',
+                    ruleName: 'Repeated Authentication Failure Probe',
+                    triggered: true,
+                    severity: 'HIGH',
+                    reason: 'Consecutive 401/403 responses detected exceeding failure threshold.'
+                  }
+                ],
+                contributingFeatures: ['auth_failure_count', 'http_4xx_ratio']
               }
             ],
             decisions: [
@@ -291,39 +305,195 @@ export default function SecurityEventDetailsPage() {
             </div>
           </div>
 
-          {/* Stage 2: Detector Interpretation */}
+          {/* Stage 2: Hybrid Behavioral Detection & Evidence Assessment */}
           <div className="cyber-card" style={{ borderLeft: '4px solid #a855f7' }}>
             <div className="cyber-card-header">
               <div className="cyber-card-title">
                 <Cpu size={18} style={{ color: '#c084fc' }} />
-                <span>Stage 2: Detector Interpretation (Statistical Assessment)</span>
+                <span>Stage 2: Hybrid Behavioral Detection & Evidence Assessment</span>
               </div>
-              <span className="mono-tag" style={{ color: '#c084fc' }}>
-                {assessment.modelOrRuleVersion || 'STATISTICAL_DETECTOR'}
-              </span>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', fontSize: '12px' }}>
-              <div>
-                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Heuristic Classification</span>
-                <strong style={{ color: '#e9d5ff' }}>{assessment.classification || 'UNCLASSIFIED_ANOMALY'}</strong>
-              </div>
-              <div>
-                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Calculated Risk Score</span>
-                <strong style={{ color: assessment.riskScore >= 0.8 ? '#f87171' : '#fbbf24' }}>
-                  {assessment.riskScore !== undefined ? assessment.riskScore : '0.85'} / 1.00
-                </strong>
-              </div>
-              <div>
-                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Model Confidence Score</span>
-                <span style={{ fontWeight: 600 }}>
-                  {assessment.confidenceScore ? `${(assessment.confidenceScore * 100).toFixed(1)}% Probability` : '92.0% Probability'}
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <span
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                    background:
+                      assessment.assessmentLabel === 'HIGHLY_SUSPICIOUS'
+                        ? 'rgba(239, 68, 68, 0.2)'
+                        : assessment.assessmentLabel === 'SUSPICIOUS'
+                        ? 'rgba(245, 158, 11, 0.2)'
+                        : assessment.assessmentLabel === 'INSUFFICIENT_EVIDENCE'
+                        ? 'rgba(156, 163, 175, 0.2)'
+                        : 'rgba(16, 185, 129, 0.2)',
+                    color:
+                      assessment.assessmentLabel === 'HIGHLY_SUSPICIOUS'
+                        ? '#f87171'
+                        : assessment.assessmentLabel === 'SUSPICIOUS'
+                        ? '#fbbf24'
+                        : assessment.assessmentLabel === 'INSUFFICIENT_EVIDENCE'
+                        ? '#9ca3af'
+                        : '#34d399',
+                    border: `1px solid ${
+                      assessment.assessmentLabel === 'HIGHLY_SUSPICIOUS'
+                        ? 'rgba(239, 68, 68, 0.4)'
+                        : assessment.assessmentLabel === 'SUSPICIOUS'
+                        ? 'rgba(245, 158, 11, 0.4)'
+                        : assessment.assessmentLabel === 'INSUFFICIENT_EVIDENCE'
+                        ? 'rgba(156, 163, 175, 0.4)'
+                        : 'rgba(16, 185, 129, 0.4)'
+                    }`
+                  }}
+                >
+                  {assessment.assessmentLabel || 'ASSESSMENT_PENDING'}
+                </span>
+                <span className="mono-tag" style={{ color: '#c084fc' }}>
+                  {assessment.modelOrRuleVersion || 'hybrid-engine-v1.0.0'}
                 </span>
               </div>
             </div>
 
-            <div style={{ marginTop: '10px', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-              Notice: Confidence scores reflect anomaly model probability. They do not constitute legal identity proof or human intent verification.
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', fontSize: '12px', marginBottom: '16px' }}>
+              <div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Classification</span>
+                <strong style={{ color: '#e9d5ff' }}>{assessment.classification || 'UNCLASSIFIED_BEHAVIOR'}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Fused Risk Score</span>
+                <strong style={{ color: (assessment.riskScore || 0) >= 0.75 ? '#f87171' : (assessment.riskScore || 0) >= 0.45 ? '#fbbf24' : '#34d399' }}>
+                  {assessment.riskScore !== undefined ? assessment.riskScore.toFixed(2) : '0.10'} / 1.00
+                </strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Confidence Score</span>
+                <span style={{ fontWeight: 600 }}>
+                  {assessment.confidenceScore !== undefined ? `${(assessment.confidenceScore * 100).toFixed(1)}%` : '90.0%'}
+                </span>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Telemetry Completeness</span>
+                <span style={{ fontWeight: 600, color: assessment.assessmentLabel === 'INSUFFICIENT_EVIDENCE' ? '#f87171' : '#38bdf8' }}>
+                  {assessment.assessmentLabel === 'INSUFFICIENT_EVIDENCE' ? 'PARTIAL / DEGRADED' : 'FULL OBSERVABILITY'}
+                </span>
+              </div>
+            </div>
+
+            {/* Dual-Branch Detection Breakdown */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '14px', marginBottom: '14px' }}>
+              {/* Branch A: Deterministic Rule-Based Findings */}
+              <div style={{ background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: '#38bdf8' }}>
+                    <Shield size={14} />
+                    <span>Branch A: Deterministic Rules</span>
+                  </div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                    {Array.isArray(assessment.ruleFindings) && assessment.ruleFindings.some((r) => r.triggered)
+                      ? `${assessment.ruleFindings.filter((r) => r.triggered).length} Triggered`
+                      : '0 Triggered'}
+                  </span>
+                </div>
+
+                {Array.isArray(assessment.ruleFindings) && assessment.ruleFindings.some((r) => r.triggered) ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {assessment.ruleFindings
+                      .filter((r) => r.triggered)
+                      .map((rule, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            padding: '6px 8px',
+                            borderRadius: '4px',
+                            background: 'rgba(239, 68, 68, 0.08)',
+                            border: '1px solid rgba(239, 68, 68, 0.2)',
+                            fontSize: '11px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                            <strong style={{ color: '#fca5a5' }}>{rule.ruleName || rule.ruleId}</strong>
+                            <span style={{ fontSize: '9px', fontWeight: 700, color: '#f87171' }}>{rule.severity || 'HIGH'}</span>
+                          </div>
+                          <div style={{ color: 'var(--text-secondary)', fontSize: '10px' }}>
+                            {rule.reason || 'Deterministic pattern threshold exceeded.'}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '8px 0' }}>
+                    Zero deterministic attack signatures detected in current time windows.
+                  </div>
+                )}
+              </div>
+
+              {/* Branch B: Unsupervised ML Anomaly Detection */}
+              <div style={{ background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: '#c084fc' }}>
+                    <Sparkles size={14} />
+                    <span>Branch B: Unsupervised ML Detection</span>
+                  </div>
+                  <span style={{ fontSize: '10px', color: '#c084fc', fontFamily: 'var(--font-mono)' }}>
+                    {assessment.mlAlgorithm || 'ISOLATION_FOREST'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '11px', marginBottom: '8px' }}>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '10px' }}>Anomaly Score</span>
+                    <strong style={{ color: (assessment.mlAnomalyScore || 0) >= (assessment.mlThreshold || 0.60) ? '#f87171' : '#34d399' }}>
+                      {assessment.mlAnomalyScore !== undefined ? assessment.mlAnomalyScore.toFixed(4) : '0.4500'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '10px' }}>Threshold</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                      {assessment.mlThreshold !== undefined ? assessment.mlThreshold.toFixed(2) : '0.60'}
+                    </span>
+                  </div>
+                </div>
+
+                {Array.isArray(assessment.contributingFeatures) && assessment.contributingFeatures.length > 0 && (
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '10px', marginBottom: '4px' }}>
+                      Key Deviating Features:
+                    </span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                      {assessment.contributingFeatures.map((feat, idx) => (
+                        <span
+                          key={idx}
+                          style={{
+                            fontSize: '9px',
+                            fontFamily: 'var(--font-mono)',
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            background: 'rgba(168, 85, 247, 0.1)',
+                            border: '1px solid rgba(168, 85, 247, 0.25)',
+                            color: '#d8b4fe'
+                          }}
+                        >
+                          {typeof feat === 'string' ? feat : feat.feature || JSON.stringify(feat)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Rigorous Caveats and Boundaries Notice */}
+            <div
+              style={{
+                fontSize: '11px',
+                color: 'var(--text-muted)',
+                lineHeight: 1.4,
+                borderTop: '1px solid var(--border-subtle)',
+                paddingTop: '8px'
+              }}
+            >
+              <strong>Integrity & Research Notice:</strong> Behavioral anomaly scores quantify statistical deviations from benign baseline traffic; they are NOT attack probabilities and do not identify specific human individuals. Deterministic rules verify specific protocol and rate signatures.
             </div>
           </div>
 

@@ -18,6 +18,7 @@ import { strategiesRouter } from './strategies.routes.js';
 import { securityEventsRouter, investigationsRouter } from './security-events.routes.js';
 import { attackerProfilesRouter } from './attacker-profiles.routes.js';
 import { behavioralFeaturesRouter, behavioralBaselinesRouter } from './behavioral-features.routes.js';
+import { detectionRouter } from './detection.routes.js';
 
 export const tenantRouter = Router({ mergeParams: true });
 
@@ -33,3 +34,4 @@ tenantRouter.use('/investigations', investigationsRouter);
 tenantRouter.use('/attacker-profiles', attackerProfilesRouter);
 tenantRouter.use('/behavioral-features', behavioralFeaturesRouter);
 tenantRouter.use('/behavioral-baselines', behavioralBaselinesRouter);
+tenantRouter.use('/detection', detectionRouter);

@@ -306,6 +306,37 @@ export const apiClient = {
 
   getAttackerProfileById: async (tenantId, profileId) => {
     return apiClient.get(`/tenants/${tenantId}/attacker-profiles/${profileId}`);
+  },
+
+  // ----------------------------------------------------------------------------
+  // Stage 4C: Hybrid Behavioral Detection Engine
+  // ----------------------------------------------------------------------------
+  getDetectionAssessments: async (tenantId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/detection/assessments${qs}`);
+  },
+
+  getDetectionAssessmentById: async (tenantId, assessmentId) => {
+    return apiClient.get(`/tenants/${tenantId}/detection/assessments/${assessmentId}`);
+  },
+
+  getDetectionModels: async (tenantId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/detection/models${qs}`);
+  },
+
+  triggerModelTraining: async (tenantId, payload = {}) => {
+    return apiClient.post(`/tenants/${tenantId}/detection/models/train`, payload);
+  },
+
+  getDetectionRules: async (tenantId) => {
+    return apiClient.get(`/tenants/${tenantId}/detection/rules`);
+  },
+
+  getDetectionEvaluation: async (tenantId) => {
+    return apiClient.get(`/tenants/${tenantId}/detection/evaluation`);
   }
 };
 

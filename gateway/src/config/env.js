@@ -84,6 +84,8 @@ export function loadGatewayConfig(sourceEnv = process.env) {
 
   const UPSTREAM_TIMEOUT_MS = Number(sourceEnv.UPSTREAM_TIMEOUT_MS) || 5000;
   const MAX_REQUEST_SIZE_BYTES = Number(sourceEnv.MAX_REQUEST_SIZE_BYTES) || 1048576; // 1 MB
+  const MAX_TELEMETRY_QUEUE_SIZE = Number(sourceEnv.MAX_TELEMETRY_QUEUE_SIZE) || 1000;
+  const TELEMETRY_LOSS_LOG_PATH = sourceEnv.TELEMETRY_LOSS_LOG_PATH || null;
   const LOG_LEVEL = (sourceEnv.LOG_LEVEL || 'info').toLowerCase();
   const TRUSTED_ORIGIN_MAP = parseOriginMap(sourceEnv.GATEWAY_ORIGIN_MAP);
 
@@ -106,6 +108,8 @@ export function loadGatewayConfig(sourceEnv = process.env) {
     GATEWAY_INTERNAL_TOKEN,
     UPSTREAM_TIMEOUT_MS,
     MAX_REQUEST_SIZE_BYTES,
+    MAX_TELEMETRY_QUEUE_SIZE,
+    TELEMETRY_LOSS_LOG_PATH,
     LOG_LEVEL,
     TRUSTED_ORIGIN_MAP,
     ALLOWED_HTTP_METHODS,

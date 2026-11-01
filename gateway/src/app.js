@@ -51,7 +51,9 @@ export function createGatewayApp(options = {}) {
     new TelemetryRecorderService({
       managementApiUrl: config.MANAGEMENT_API_URL,
       gatewayInternalToken: config.GATEWAY_INTERNAL_TOKEN,
-      fetchImpl: options.fetchImpl
+      fetchImpl: options.fetchImpl,
+      maxQueueSize: config.MAX_TELEMETRY_QUEUE_SIZE,
+      durableLossLogPath: config.TELEMETRY_LOSS_LOG_PATH
     });
 
   // 2. Request ID & Correlation Middleware

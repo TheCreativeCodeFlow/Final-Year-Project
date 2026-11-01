@@ -15,6 +15,9 @@ import { validateAndNormalizeCanonicalEvent } from '../telemetry/canonical-event
 import { BehavioralSessionCorrelator } from './behavioral-session-correlator.service.js';
 import { BehavioralFeatureExtractor } from './behavioral-feature-extractor.service.js';
 import { BehavioralBaselineService } from './behavioral-baseline.service.js';
+import { RuleEngineService } from '../detection/rules/rule-engine.service.js';
+import { MLInferenceService } from '../detection/ml/inference.service.js';
+import { HybridAssessmentService } from '../detection/hybrid-assessment.service.js';
 import { logger } from '../utils/logger.js';
 
 export class BehavioralTelemetryPipelineService {
@@ -24,12 +27,18 @@ export class BehavioralTelemetryPipelineService {
    * @param {BehavioralSessionCorrelator} [options.sessionCorrelator]
    * @param {BehavioralFeatureExtractor} [options.featureExtractor]
    * @param {BehavioralBaselineService} [options.baselineService]
+   * @param {RuleEngineService} [options.ruleEngine]
+   * @param {MLInferenceService} [options.mlInference]
+   * @param {HybridAssessmentService} [options.assessmentService]
    */
   constructor(options = {}) {
     this.prisma = options.prisma;
     this.sessionCorrelator = options.sessionCorrelator || new BehavioralSessionCorrelator();
     this.featureExtractor = options.featureExtractor || new BehavioralFeatureExtractor();
     this.baselineService = options.baselineService || new BehavioralBaselineService();
+    this.ruleEngine = options.ruleEngine || new RuleEngineService();
+    this.mlInference = options.mlInference || new MLInferenceService({ prisma: this.prisma });
+    this.assessmentService = options.assessmentService || new HybridAssessmentService({ prisma: this.prisma });
   }
 
   /**
@@ -249,6 +258,51 @@ export class BehavioralTelemetryPipelineService {
           });
           persistedFeatureSets.push(persisted);
         }
+        // 7. Hybrid Behavioral Detection Engine (Stage 4C)
+        let persistedAssessment = null;
+        if (options.performDetection !== false && event.applicationId && persistedFeatureSets.length > 0) {
+          try {
+            const primarySet = persistedFeatureSets.find((f) => f.windowLabel === '5m') || persistedFeatureSets[0];
+            const primaryFeatures = primarySet.features || {};
+
+            const ruleResult = this.ruleEngine.evaluate({
+              featureSets: persistedFeatureSets,
+              rawObservation: {
+                ...event,
+                validationOutcome: event.validationOutcome,
+                forwardingResult: event.forwardingResult
+              },
+              baseline: activeBaseline,
+              sessionContext: correlation,
+              tenantId: event.tenantId,
+              applicationId: event.applicationId
+            });
+
+            const mlResult = await this.mlInference.scoreFeatures({
+              features: primaryFeatures,
+              tenantId: event.tenantId,
+              applicationId: event.applicationId,
+              schemaVersion: event.schemaVersion
+            });
+
+            persistedAssessment = await this.assessmentService.createAndPersistAssessment({
+              ruleResult,
+              mlResult,
+              featureSet: primarySet,
+              rawObservation: event,
+              baseline: activeBaseline,
+              sessionContext: correlation,
+              tenantId: event.tenantId,
+              applicationId: event.applicationId,
+              observationId
+            });
+          } catch (detErr) {
+            logger.error('Error during hybrid behavioral detection or assessment persistence', {
+              correlationId: event.correlationId,
+              error: detErr.message
+            });
+          }
+        }
       } catch (err) {
         logger.error('Error during behavioral feature extraction or persistence', {
           correlationId: event.correlationId,
@@ -265,7 +319,8 @@ export class BehavioralTelemetryPipelineService {
       observationId,
       observationIdentifier,
       routingDecisionId: recordedRoutingDecisionId,
-      featureSets: persistedFeatureSets
+      featureSets: persistedFeatureSets,
+      assessment: typeof persistedAssessment !== 'undefined' ? persistedAssessment : null
     };
   }
 }
