@@ -120,9 +120,17 @@ export class RuleEngineService {
       }
     }
 
-    const summary = triggeredFindings.length > 0
-      ? `Deterministic rule engine triggered ${triggeredFindings.length} rule(s) [Highest Severity: ${highestSeverity}]: ${triggeredFindings.map((f) => f.ruleName).join(', ')}.`
-      : 'No deterministic security rules were triggered; behavior matches standard operational profiles.';
+    const missingTelemetryFindings = allFindings.filter((f) => f.matchedConditions?.some((c) => c.startsWith('MISSING_') || c === 'METHOD_DATA_MISSING'));
+    const isCompletelyMissingTelemetry = allFindings.length > 0 && missingTelemetryFindings.length === allFindings.length;
+
+    let summary;
+    if (triggeredFindings.length > 0) {
+      summary = `Deterministic rule engine triggered ${triggeredFindings.length} rule(s) [Highest Severity: ${highestSeverity}]: ${triggeredFindings.map((f) => f.ruleName).join(', ')}.`;
+    } else if (isCompletelyMissingTelemetry) {
+      summary = 'Rule engine evaluation inconclusive: all registered rules reported missing or unavailable telemetry features.';
+    } else {
+      summary = 'No deterministic security rules were triggered; behavior matches standard operational profiles.';
+    }
 
     return {
       hasTriggeredRules: triggeredFindings.length > 0,
@@ -130,6 +138,8 @@ export class RuleEngineService {
       highestSeverity: triggeredFindings.length > 0 ? highestSeverity : 'NONE',
       findings: allFindings,
       triggeredFindings,
+      hasMissingTelemetry: missingTelemetryFindings.length > 0,
+      missingTelemetryRuleCount: missingTelemetryFindings.length,
       ruleEngineVersion: '1.0.0',
       summary
     };

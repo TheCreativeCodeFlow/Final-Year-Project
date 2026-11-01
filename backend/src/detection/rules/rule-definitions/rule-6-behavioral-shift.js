@@ -30,10 +30,34 @@ export const RULE_BEHAVIORAL_SHIFT = Object.freeze({
 
     const f30 = multiWindowFeatures['30s'] || (timeWindow === '30s' ? features : null);
     const f5m = multiWindowFeatures['5m'] || (timeWindow === '5m' ? features : null);
+    const hasF30 = f30 && typeof f30 === 'object' && Object.keys(f30).length > 0;
+    const hasF5m = f5m && typeof f5m === 'object' && Object.keys(f5m).length > 0;
 
     const rateDelta = features?.rate_delta_vs_baseline?.value;
     const failureDelta = features?.failure_ratio_delta?.value;
     const baselineStatus = baseline?.status || 'NO_BASELINE';
+
+    // Missing-data check: If neither multi-window features nor baseline metrics are available
+    if (!hasF30 && !hasF5m && rateDelta === undefined && failureDelta === undefined) {
+      uncertaintyNotes.push('Multi-window feature telemetry unavailable for behavioral shift assessment.');
+      return createRuleFinding({
+        ruleId: this.ruleId,
+        ruleName: this.name,
+        version: this.version,
+        triggered: false,
+        severity: RULE_SEVERITY.LOW,
+        confidence: 0.10,
+        timeWindow,
+        matchedConditions: ['MISSING_BEHAVIORAL_SHIFT_TELEMETRY'],
+        evidence: {
+          rateRatio: null,
+          baselineStatus,
+          missingFeatures: ['multiWindowFeatures', 'rate_delta_vs_baseline', 'failure_ratio_delta']
+        },
+        uncertaintyNotes,
+        explanation: `Behavioral shift assessment inconclusive: multi-window feature telemetry missing from ${timeWindow} evaluation window.`
+      });
+    }
 
     if (baselineStatus !== 'ESTABLISHED') {
       uncertaintyNotes.push(`Application baseline is in state "${baselineStatus}"; baseline deltas cannot be reliably assessed.`);

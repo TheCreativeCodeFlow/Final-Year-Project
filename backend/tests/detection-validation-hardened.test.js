@@ -336,21 +336,21 @@ describe('Stage 4C.1: Hardened Detection Engine & Validation Suite', () => {
   });
 
   // =========================================================================
-  // 6. Complete 20-Scenario Benchmark Accounting
+  // 6. Complete 24-Scenario Benchmark Accounting & Ambiguous Isolation
   // =========================================================================
-  describe('Benchmark 20-Scenario Accounting & Partitioning', () => {
+  describe('Benchmark 24-Scenario Accounting & Partitioning', () => {
     const evaluator = new BenchmarkEvaluator();
 
-    test('Evaluates exactly 20 scenarios without dropping degraded telemetry', () => {
+    test('Evaluates exactly 24 scenarios without dropping degraded telemetry or ambiguous probes', () => {
       const report = evaluator.runEvaluation();
 
-      assert.equal(report.totalScenarios, 20);
-      assert.equal(report.partitions.trainingCount, 4);
-      assert.equal(report.partitions.validationCount, 6);
-      assert.equal(report.partitions.testCount, 10);
+      assert.equal(report.totalScenarios, 24);
+      assert.equal(report.partitions.trainingCount, 5);
+      assert.equal(report.partitions.validationCount, 7);
+      assert.equal(report.partitions.testCount, 12);
 
-      // Verify accounting table has exactly 20 scenario rows
-      assert.equal(report.accountingTable.length, 20);
+      // Verify accounting table has exactly 24 scenario rows
+      assert.equal(report.accountingTable.length, 24);
 
       // Verify degraded telemetry scenarios (Scenarios 10 & 20) are explicitly accounted for
       const s10 = report.accountingTable.find((row) => row.scenarioKey === 'incomplete_telemetry');
@@ -364,11 +364,23 @@ describe('Stage 4C.1: Hardened Detection Engine & Validation Suite', () => {
       assert.equal(s20.groundTruthIntent, 'DEGRADED_TELEMETRY_LOSS');
       assert.equal(s20.accountingVerdict, 'ACCURATELY_FLAGGED_DEGRADED');
 
+      // Verify ambiguous scenario (Scenario 05 repeated_not_found) is segregated
+      const s05 = report.accountingTable.find((row) => row.scenarioKey === 'repeated_not_found');
+      assert.ok(s05, 'Scenario 05 must be in accounting table');
+      assert.equal(s05.groundTruthType, 'AMBIGUOUS');
+      assert.ok(['AMBIGUOUS_ALERTED', 'AMBIGUOUS_QUIET', 'AMBIGUOUS_INSUFFICIENT'].includes(s05.accountingVerdict));
+
+      // Verify new scenarios 21-24 are present
+      assert.ok(report.accountingTable.some((r) => r.scenarioKey === 'benign_cors_preflight_stream'));
+      assert.ok(report.accountingTable.some((r) => r.scenarioKey === 'distributed_endpoint_enumeration'));
+      assert.ok(report.accountingTable.some((r) => r.scenarioKey === 'application_release_deployment'));
+      assert.ok(report.accountingTable.some((r) => r.scenarioKey === 'credential_stuffing_distributed'));
+
       // Ensure execution evidence status remains MISSING across all scenarios
       assert.ok(report.disclaimers.some((d) => d.includes('Execution evidence remains strictly MISSING')));
     });
 
-    test('Compares all 4 fusion strategies side-by-side', () => {
+    test('Compares all 4 fusion strategies side-by-side with explicit denominators', () => {
       const report = evaluator.runEvaluation();
       assert.ok(report.fusionStrategyComparison.strategyA_Existing);
       assert.ok(report.fusionStrategyComparison.strategyB_Conservative);
@@ -377,6 +389,7 @@ describe('Stage 4C.1: Hardened Detection Engine & Validation Suite', () => {
 
       // Verify that Data-Quality Aware flags degraded telemetry cleanly
       assert.equal(report.fusionStrategyComparison.strategyD_DataQualityAware.insufficientEvidenceCount, 1);
+      assert.equal(report.fusionStrategyComparison.strategyD_DataQualityAware.ambiguousCount, 1);
     });
   });
 });

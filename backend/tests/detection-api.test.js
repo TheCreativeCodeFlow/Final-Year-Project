@@ -199,7 +199,7 @@ describe('Stage 4C: Tenant-Scoped Detection REST APIs', () => {
     assert.equal(res.status, 200);
     const json = await res.json();
     assert.equal(json.success, true);
-    assert.equal(json.data.totalScenarios, 20);
+    assert.equal(json.data.totalScenarios, 24);
     assert.ok(json.data.comparison.ruleOnly);
     assert.ok(json.data.comparison.iforestOnly);
     assert.ok(json.data.comparison.statisticalBaselineOnly);

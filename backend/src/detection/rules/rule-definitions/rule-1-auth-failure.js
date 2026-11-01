@@ -26,18 +26,44 @@ export const RULE_AUTH_FAILURE = Object.freeze({
 
   evaluate({ features, timeWindow = '5m', thresholds = {}, sessionContext = {} }) {
     const config = { ...this.defaultThresholds, ...thresholds };
-    const authFailures = features?.auth_failure_count?.value ?? 0;
-    const requestCount = features?.request_count?.value ?? 0;
-    const http4xxRatio = features?.http_4xx_ratio?.value ?? 0.0;
-    const statusDist = features?.response_status_distribution?.value || {};
-    const successCount = statusDist['2xx'] ?? 0;
-
     const matchedConditions = [];
     const uncertaintyNotes = [];
 
     if (sessionContext?.collisionRisk?.level === 'HIGH') {
       uncertaintyNotes.push('Session handle derived from unverified client header; multiple actors may be conflated.');
     }
+
+    const rawAuthFailures = features?.auth_failure_count?.value ?? (typeof features?.auth_failure_count === 'number' ? features.auth_failure_count : undefined);
+    const rawRequestCount = features?.request_count?.value ?? (typeof features?.request_count === 'number' ? features.request_count : undefined);
+    const rawHttp4xxRatio = features?.http_4xx_ratio?.value ?? (typeof features?.http_4xx_ratio === 'number' ? features.http_4xx_ratio : undefined);
+
+    // Missing-data audit: Never fabricate 0 if auth_failure_count was not provided
+    if (rawAuthFailures === undefined || rawAuthFailures === null) {
+      uncertaintyNotes.push('Required feature "auth_failure_count" is missing or unavailable.');
+      return createRuleFinding({
+        ruleId: this.ruleId,
+        ruleName: this.name,
+        version: this.version,
+        triggered: false,
+        severity: RULE_SEVERITY.LOW,
+        confidence: 0.10,
+        timeWindow,
+        matchedConditions: ['MISSING_AUTH_FAILURE_TELEMETRY'],
+        evidence: {
+          authFailures: null,
+          requestCount: rawRequestCount ?? null,
+          missingFeatures: ['auth_failure_count']
+        },
+        uncertaintyNotes,
+        explanation: `Authentication failure assessment inconclusive: "auth_failure_count" feature missing from ${timeWindow} evaluation window.`
+      });
+    }
+
+    const authFailures = rawAuthFailures;
+    const requestCount = rawRequestCount ?? 0;
+    const http4xxRatio = rawHttp4xxRatio ?? 0.0;
+    const statusDist = features?.response_status_distribution?.value || {};
+    const successCount = statusDist['2xx'] ?? 0;
 
     // 1. Zero failures: Clean
     if (authFailures === 0) {
@@ -52,7 +78,9 @@ export const RULE_AUTH_FAILURE = Object.freeze({
         matchedConditions: [],
         evidence: { authFailures: 0, requestCount },
         uncertaintyNotes,
-        explanation: `Zero authentication failures observed across ${requestCount} requests in ${timeWindow} window.`
+        explanation: requestCount > 0
+          ? `Zero authentication failures observed across ${requestCount} requests in ${timeWindow} window.`
+          : `Zero authentication activity recorded in ${timeWindow} window (requestCount = 0).`
       });
     }
 

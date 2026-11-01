@@ -26,9 +26,9 @@ describe('Stage 4B: Synthetic Research Evaluation Dataset & Extraction Pipeline'
   const extractor = new BehavioralFeatureExtractor();
   const correlator = new BehavioralSessionCorrelator();
 
-  test('1. Dataset produces all 20 distinct scenario specifications with ground-truth separation', () => {
+  test('1. Dataset produces all 24 distinct scenario specifications with ground-truth separation', () => {
     const keys = Object.keys(dataset);
-    assert.equal(keys.length, 20);
+    assert.equal(keys.length, 24);
     assert.ok(keys.includes('normal_browsing'));
     assert.ok(keys.includes('repeated_login_failures'));
     assert.ok(keys.includes('endpoint_enumeration'));
@@ -49,10 +49,16 @@ describe('Stage 4B: Synthetic Research Evaluation Dataset & Extraction Pipeline'
     assert.ok(keys.includes('mobile_client_irregular_timing'));
     assert.ok(keys.includes('mixed_attacker_and_normal_traffic'));
     assert.ok(keys.includes('telemetry_loss_during_session'));
+    assert.ok(keys.includes('benign_cors_preflight_stream'));
+    assert.ok(keys.includes('distributed_endpoint_enumeration'));
+    assert.ok(keys.includes('application_release_deployment'));
+    assert.ok(keys.includes('credential_stuffing_distributed'));
 
     for (const [key, scen] of Object.entries(dataset)) {
       assert.ok(scen.scenarioName, `${key} missing scenarioName`);
       assert.ok(scen.groundTruthIntent, `${key} missing groundTruthIntent`);
+      assert.ok(scen.groundTruthType, `${key} missing groundTruthType`);
+      assert.ok(scen.groundTruthRationale, `${key} missing groundTruthRationale`);
       assert.ok(Array.isArray(scen.events), `${key} missing events array`);
       assert.ok(scen.events.length > 0, `${key} events must not be empty`);
     }
@@ -302,5 +308,50 @@ describe('Stage 4B: Synthetic Research Evaluation Dataset & Extraction Pipeline'
     const set5m = featureSets.find((f) => f.windowLabel === '5m');
     assert.equal(set5m.qualityMetadata.telemetryLossDetected, true);
     assert.equal(set5m.qualityMetadata.windowCompleteness, 'PARTIAL');
+  });
+
+  test('16. Scenario 21 (Benign CORS Preflight Stream) shows valid OPTIONS + mutation requests with 0% 4xx ratio', () => {
+    const scen = dataset.benign_cors_preflight_stream;
+    const refTime = scen.events[scen.events.length - 1].timestamp;
+
+    const featureSets = extractor.extractFeatures({
+      canonicalEvents: scen.events,
+      tenantId: 'tenant-apex-9941',
+      applicationId: 'app-apex-01',
+      sessionRef: 'sess-spa-cors-user',
+      referenceTimestamp: refTime
+    });
+
+    const set5m = featureSets.find((f) => f.windowLabel === '5m').features;
+    assert.equal(set5m.request_count.value, 12);
+    assert.equal(set5m.http_4xx_ratio.value, 0.0);
+    assert.ok(set5m.http_method_distribution.value.OPTIONS > 0);
+    assert.ok(set5m.http_method_distribution.value.PUT > 0);
+  });
+
+  test('17. Scenario 22 (Distributed Endpoint Enumeration) generates reconnaissance across multiple IPs', () => {
+    const scen = dataset.distributed_endpoint_enumeration;
+    assert.equal(scen.events.length, 16);
+    const uniqueSubnets = new Set(scen.events.map((e) => e.sourceMetadata.ipSubnetHash));
+    assert.equal(uniqueSubnets.size, 4, 'Must span 4 distinct source subnets');
+    const all404s = scen.events.every((e) => e.responseStatus === 404);
+    assert.equal(all404s, true, 'All scan attempts return 404');
+  });
+
+  test('18. Scenario 23 (Application Release Deployment) demonstrates transient 503s on valid routes', () => {
+    const scen = dataset.application_release_deployment;
+    const errorEvents = scen.events.filter((e) => e.responseStatus === 503);
+    const successEvents = scen.events.filter((e) => e.responseStatus === 200);
+    assert.equal(errorEvents.length, 3, 'Contains 3 transient 503s during restart window');
+    assert.equal(successEvents.length, 7, 'Recovers to 200 OK');
+  });
+
+  test('19. Scenario 24 (Distributed Credential Stuffing) generates authentication failures across distinct IPs', () => {
+    const scen = dataset.credential_stuffing_distributed;
+    assert.equal(scen.events.length, 16);
+    const uniqueSubnets = new Set(scen.events.map((e) => e.sourceMetadata.ipSubnetHash));
+    assert.equal(uniqueSubnets.size, 4, 'Must rotate across 4 source subnets');
+    const all401s = scen.events.every((e) => e.responseStatus === 401 && e.normalizedRoute === '/api/v1/auth/login');
+    assert.equal(all401s, true, 'All requests are 401 authentication failures on login route');
   });
 });

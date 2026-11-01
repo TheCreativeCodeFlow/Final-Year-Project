@@ -54,10 +54,13 @@ export const RULE_SUSPICIOUS_METHOD = Object.freeze({
   defaultSeverity: RULE_SEVERITY.HIGH,
 
   evaluate({ features, rawObservation = {}, timeWindow = '5m', thresholds = {}, sessionContext = {} }) {
+    const rawMethod = rawObservation.httpMethod || rawObservation.method;
+    const hasRawMethod = typeof rawMethod === 'string' && rawMethod.trim().length > 0;
+    const observedMethod = hasRawMethod ? rawMethod.trim().toUpperCase() : null;
     const methodDist = features?.http_method_distribution?.value || {};
-    const validationOutcome = rawObservation.validationOutcome || rawObservation.validation_outcome || 'VALIDATED';
-    const forwardingResult = rawObservation.forwardingResult || rawObservation.forwarding_result || 'SUCCESS';
-    const observedMethod = (rawObservation.httpMethod || rawObservation.method || '').toUpperCase();
+    const hasMethodDist = typeof methodDist === 'object' && methodDist !== null && Object.keys(methodDist).length > 0;
+    const validationOutcome = rawObservation.validationOutcome || rawObservation.validation_outcome || null;
+    const forwardingResult = rawObservation.forwardingResult || rawObservation.forwarding_result || null;
 
     const matchedConditions = [];
     const uncertaintyNotes = [];
@@ -79,12 +82,60 @@ export const RULE_SUSPICIOUS_METHOD = Object.freeze({
         evidence: {
           observedMethod,
           validationOutcome,
-          forwardingResult,
+          forwardingResult: forwardingResult || 'NOT_ATTEMPTED',
           upstreamInvoked: false,
           securityGuarantee: 'Connection terminated immediately at gateway ingress; protected origin never invoked.'
         },
         uncertaintyNotes,
         explanation: `Ingress protocol attack detected (${validationOutcome}). Connection terminated before reaching protected origin.`
+      });
+    }
+
+    // Missing-data check: Never fabricate GET/POST if method is completely absent
+    if (observedMethod === null && !hasMethodDist) {
+      uncertaintyNotes.push('HTTP method data unavailable; neither rawObservation.httpMethod nor http_method_distribution provided.');
+      return createRuleFinding({
+        ruleId: this.ruleId,
+        ruleName: this.name,
+        version: this.version,
+        triggered: false,
+        severity: RULE_SEVERITY.LOW,
+        confidence: 0.10,
+        timeWindow,
+        matchedConditions: ['METHOD_DATA_MISSING'],
+        evidence: {
+          observedMethod: null,
+          methodCategory: 'UNKNOWN_MISSING',
+          methodDist: {},
+          validationOutcome,
+          missingFeatures: ['httpMethod', 'http_method_distribution']
+        },
+        uncertaintyNotes,
+        explanation: 'HTTP method evaluation skipped: method data missing from observation evidence.'
+      });
+    }
+
+    // Malformed method check: RFC 7230 token syntax validation
+    if (observedMethod && !/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(observedMethod)) {
+      matchedConditions.push('PROTOCOL_VIOLATION_INVALID_METHOD_SYNTAX');
+      return createRuleFinding({
+        ruleId: this.ruleId,
+        ruleName: this.name,
+        version: this.version,
+        triggered: true,
+        severity: RULE_SEVERITY.CRITICAL,
+        confidence: 0.99,
+        timeWindow,
+        matchedConditions,
+        evidence: {
+          observedMethod,
+          methodCategory: 'INVALID_TOKEN_SYNTAX',
+          validationOutcome: 'METHOD_NOT_ALLOWED',
+          forwardingResult: 'NOT_ATTEMPTED',
+          upstreamInvoked: false
+        },
+        uncertaintyNotes,
+        explanation: `Malformed HTTP method token containing invalid characters or whitespace (${observedMethod}). Rejected at perimeter.`
       });
     }
 
@@ -243,10 +294,10 @@ export const RULE_SUSPICIOUS_METHOD = Object.freeze({
         observedMethod,
         methodCategory: 'STANDARD_ALLOWED',
         methodDist,
-        validationOutcome
+        validationOutcome: validationOutcome || 'VALIDATED'
       },
       uncertaintyNotes,
-      explanation: `Standard HTTP methods observed (${Object.keys(methodDist).join(', ') || observedMethod || 'GET/POST'}); ingress validation passed.`
+      explanation: `Standard HTTP methods observed (${[observedMethod, ...Object.keys(methodDist)].filter(Boolean).join(', ')}); ingress validation passed.`
     });
   }
 });

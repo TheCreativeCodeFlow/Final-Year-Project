@@ -24,20 +24,50 @@ export const RULE_ENDPOINT_ENUMERATION = Object.freeze({
 
   evaluate({ features, timeWindow = '5m', thresholds = {}, sessionContext = {} }) {
     const config = { ...this.defaultThresholds, ...thresholds };
-    const requestCount = features?.request_count?.value ?? 0;
-    const uniqueEndpoints = features?.unique_endpoint_count?.value ?? 0;
-    const endpointDiversity = features?.endpoint_diversity_ratio?.value ?? 0.0;
-    const notFoundCount = features?.repeated_not_found_count?.value ?? 0;
-    const fallback404Ratio = requestCount > 0 ? notFoundCount / requestCount : 0.0;
-    const http404Ratio = features?.http_404_ratio?.value ?? features?.unusual_route_ratio?.value ?? fallback404Ratio;
-    const resourceEnumerationScore = features?.resource_enumeration_score?.value ?? 0.0;
-
     const matchedConditions = [];
     const uncertaintyNotes = [];
 
     if (sessionContext?.collisionRisk?.level === 'HIGH') {
       uncertaintyNotes.push('Session handle derived from unverified client header; multiple actors may be conflated.');
     }
+
+    const rawRequestCount = features?.request_count?.value ?? (typeof features?.request_count === 'number' ? features.request_count : undefined);
+    const rawNotFoundCount = features?.repeated_not_found_count?.value ?? (typeof features?.repeated_not_found_count === 'number' ? features.repeated_not_found_count : undefined);
+    const rawUniqueEndpoints = features?.unique_endpoint_count?.value ?? (typeof features?.unique_endpoint_count === 'number' ? features.unique_endpoint_count : undefined);
+    const rawEnumScore = features?.resource_enumeration_score?.value ?? (typeof features?.resource_enumeration_score === 'number' ? features.resource_enumeration_score : undefined);
+
+    const hasAnyEnumerationFeature = rawRequestCount !== undefined || rawNotFoundCount !== undefined || rawUniqueEndpoints !== undefined || rawEnumScore !== undefined;
+
+    if (!hasAnyEnumerationFeature) {
+      uncertaintyNotes.push('Required endpoint enumeration features are missing or unavailable.');
+      return createRuleFinding({
+        ruleId: this.ruleId,
+        ruleName: this.name,
+        version: this.version,
+        triggered: false,
+        severity: RULE_SEVERITY.LOW,
+        confidence: 0.10,
+        timeWindow,
+        matchedConditions: ['MISSING_ENDPOINT_ENUMERATION_TELEMETRY'],
+        evidence: {
+          requestCount: null,
+          uniqueEndpoints: null,
+          notFoundCount: null,
+          resourceEnumerationScore: null,
+          missingFeatures: ['request_count', 'unique_endpoint_count', 'repeated_not_found_count', 'resource_enumeration_score']
+        },
+        uncertaintyNotes,
+        explanation: `Endpoint enumeration assessment inconclusive: required features missing from ${timeWindow} evaluation window.`
+      });
+    }
+
+    const requestCount = rawRequestCount ?? 0;
+    const uniqueEndpoints = rawUniqueEndpoints ?? 0;
+    const endpointDiversity = features?.endpoint_diversity_ratio?.value ?? 0.0;
+    const notFoundCount = rawNotFoundCount ?? 0;
+    const fallback404Ratio = requestCount > 0 ? notFoundCount / requestCount : 0.0;
+    const http404Ratio = features?.http_404_ratio?.value ?? features?.unusual_route_ratio?.value ?? fallback404Ratio;
+    const resourceEnumerationScore = rawEnumScore ?? 0.0;
 
     if (requestCount < config.minRequestCount) {
       return createRuleFinding({

@@ -31,30 +31,34 @@ export const BENCHMARK_PARTITIONS = Object.freeze({
 });
 
 export const SCENARIO_PARTITIONS = Object.freeze({
-  // Training Partition (4 strictly benign baseline scenarios, 0 attacks)
+  // Training Partition (5 strictly benign baseline scenarios, 0 attacks)
   normal_browsing: BENCHMARK_PARTITIONS.TRAIN,
   legitimate_api_polling: BENCHMARK_PARTITIONS.TRAIN,
   legitimate_crawler_traversal: BENCHMARK_PARTITIONS.TRAIN,
   legitimate_api_pagination: BENCHMARK_PARTITIONS.TRAIN,
+  benign_cors_preflight_stream: BENCHMARK_PARTITIONS.TRAIN,
 
-  // Validation Partition (6 scenarios for threshold & fusion strategy calibration)
+  // Validation Partition (7 scenarios for threshold & fusion strategy calibration)
   repeated_login_failures: BENCHMARK_PARTITIONS.VALIDATION,
   high_frequency_burst: BENCHMARK_PARTITIONS.VALIDATION,
   legitimate_repeated_login_failures: BENCHMARK_PARTITIONS.VALIDATION,
   developer_endpoint_exploration: BENCHMARK_PARTITIONS.VALIDATION,
   shared_ip_distinct_sessions: BENCHMARK_PARTITIONS.VALIDATION,
   incomplete_telemetry: BENCHMARK_PARTITIONS.VALIDATION,
+  repeated_not_found: BENCHMARK_PARTITIONS.VALIDATION,
 
-  // Held-Out Test Partition (10 scenarios strictly held out for final reporting)
+  // Held-Out Test Partition (12 scenarios strictly held out for final reporting)
   endpoint_enumeration: BENCHMARK_PARTITIONS.TEST,
-  repeated_not_found: BENCHMARK_PARTITIONS.TEST,
   unusual_method_distribution: BENCHMARK_PARTITIONS.TEST,
   slow_irregular_probing: BENCHMARK_PARTITIONS.TEST,
   sudden_behavioral_change: BENCHMARK_PARTITIONS.TEST,
   mixed_attacker_and_normal_traffic: BENCHMARK_PARTITIONS.TEST,
+  distributed_endpoint_enumeration: BENCHMARK_PARTITIONS.TEST,
+  credential_stuffing_distributed: BENCHMARK_PARTITIONS.TEST,
   legitimate_repeated_404_asset: BENCHMARK_PARTITIONS.TEST,
   shared_nat_identical_user_agents: BENCHMARK_PARTITIONS.TEST,
   mobile_client_irregular_timing: BENCHMARK_PARTITIONS.TEST,
+  application_release_deployment: BENCHMARK_PARTITIONS.TEST,
   telemetry_loss_during_session: BENCHMARK_PARTITIONS.TEST
 });
 
@@ -127,7 +131,7 @@ export class BenchmarkEvaluator {
    * @returns {object}
    */
   _computeMetrics(stats, totalScenarios) {
-    const { tp, fp, tn, fn, insufficient = 0, totalDurationMs = 0 } = stats;
+    const { tp = 0, fp = 0, tn = 0, fn = 0, insufficient = 0, ambiguousAlerted = 0, ambiguousQuiet = 0, totalDurationMs = 0 } = stats;
     const classifiedCount = tp + fp + tn + fn;
     const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
     const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
@@ -136,6 +140,7 @@ export class BenchmarkEvaluator {
     const fnr = fn + tp > 0 ? fn / (fn + tp) : 0;
     const avgLatencyMs = totalScenarios > 0 ? totalDurationMs / totalScenarios : 0;
     const insufficientEvidenceRate = totalScenarios > 0 ? insufficient / totalScenarios : 0;
+    const ambiguousCount = ambiguousAlerted + ambiguousQuiet;
 
     return {
       confusionMatrix: { tp, fp, tn, fn },
@@ -146,15 +151,20 @@ export class BenchmarkEvaluator {
       falseNegativeRate: Number(fnr.toFixed(4)),
       insufficientEvidenceCount: insufficient,
       insufficientEvidenceRate: Number(insufficientEvidenceRate.toFixed(4)),
+      ambiguousCount,
+      ambiguousAlertedCount: ambiguousAlerted,
+      ambiguousQuietCount: ambiguousQuiet,
       classifiedCount,
       totalEvaluated: totalScenarios,
+      attacksEvaluated: tp + fn,
+      benignEvaluated: fp + tn,
       avgLatencyMs: Number(avgLatencyMs.toFixed(3))
     };
   }
 
   /**
-   * Runs the complete benchmark across all 20 scenarios, computing:
-   * 1. 20-Scenario Accounting Table.
+   * Runs the complete benchmark across all 24 scenarios, computing:
+   * 1. 24-Scenario Accounting Table with explicit ambiguous separation.
    * 2. Partitioned Metrics (Validation vs Held-Out Test vs Full).
    * 3. Comparison of Fusion Strategies A, B, C, D on Validation Set.
    * 4. Anomaly Threshold Sensitivity Analysis.
@@ -181,13 +191,13 @@ export class BenchmarkEvaluator {
 
     // Stats tracking per partition and branch
     const initBranchStats = () => ({
-      ruleOnly: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, totalDurationMs: 0 },
-      iforestOnly: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, totalDurationMs: 0 },
-      statOnly: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, totalDurationMs: 0 },
-      hybridA: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, totalDurationMs: 0 },
-      hybridB: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, totalDurationMs: 0 },
-      hybridC: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, totalDurationMs: 0 },
-      hybridD: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, totalDurationMs: 0 }
+      ruleOnly: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
+      iforestOnly: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
+      statOnly: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
+      hybridA: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
+      hybridB: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
+      hybridC: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 },
+      hybridD: { tp: 0, fp: 0, tn: 0, fn: 0, insufficient: 0, ambiguousAlerted: 0, ambiguousQuiet: 0, totalDurationMs: 0 }
     });
 
     const fullStats = initBranchStats();
@@ -201,24 +211,37 @@ export class BenchmarkEvaluator {
       const partition = SCENARIO_PARTITIONS[scenarioKey] || BENCHMARK_PARTITIONS.TEST;
       const intent = scenario.groundTruthIntent || '';
 
-      const isAttack = [
-        'POTENTIAL_CREDENTIAL_STUFFING',
-        'RECONNAISSANCE_SCAN',
-        'SCRAPER_OR_BURST_FLOOD',
-        'METHOD_TAMPERING_PROBE',
-        'STEALTH_RECONNAISSANCE',
-        'SESSION_HIJACK_OR_PIVOT',
-        'BROKEN_INTEGRATION_OR_PROBE',
-        'MALICIOUS_COVERT_ATTACK_MIXED'
-      ].includes(intent);
-
+      const isAmbiguous = scenario.groundTruthType === 'AMBIGUOUS' || intent === 'BROKEN_INTEGRATION_OR_PROBE';
       const isDegradedTelemetry =
+        scenario.groundTruthType === 'DEGRADED_TELEMETRY' ||
         intent === 'TELEMETRY_QUALITY_DEGRADATION' ||
         intent === 'DEGRADED_TELEMETRY_LOSS' ||
         intent.includes('TELEMETRY');
 
-      const isBenign = !isAttack && !isDegradedTelemetry;
-      const groundTruthType = isAttack ? 'ATTACK' : isDegradedTelemetry ? 'DEGRADED_TELEMETRY' : 'BENIGN';
+      const isAttack = !isAmbiguous && !isDegradedTelemetry && (
+        scenario.groundTruthType === 'ATTACK' ||
+        [
+          'POTENTIAL_CREDENTIAL_STUFFING',
+          'RECONNAISSANCE_SCAN',
+          'SCRAPER_OR_BURST_FLOOD',
+          'METHOD_TAMPERING_PROBE',
+          'STEALTH_RECONNAISSANCE',
+          'SESSION_HIJACK_OR_PIVOT',
+          'MALICIOUS_COVERT_ATTACK_MIXED',
+          'DISTRIBUTED_RECONNAISSANCE',
+          'DISTRIBUTED_CREDENTIAL_STUFFING'
+        ].includes(intent)
+      );
+
+      const isBenign = !isAmbiguous && !isDegradedTelemetry && !isAttack;
+
+      const groundTruthType = isAmbiguous
+        ? 'AMBIGUOUS'
+        : isDegradedTelemetry
+          ? 'DEGRADED_TELEMETRY'
+          : isAttack
+            ? 'ATTACK'
+            : 'BENIGN';
 
       // Feature extraction with scenario reference timestamp
       const lastEvent = scenario.events[scenario.events.length - 1];
@@ -297,7 +320,10 @@ export class BenchmarkEvaluator {
       // Helper to update branch stats
       const recordBranch = (targetStats, isFlagged, isInsufficient, duration) => {
         targetStats.totalDurationMs += duration;
-        if (isInsufficient) {
+        if (isAmbiguous) {
+          if (isFlagged) targetStats.ambiguousAlerted++;
+          else targetStats.ambiguousQuiet++;
+        } else if (isInsufficient) {
           targetStats.insufficient++;
         } else if (isAttack) {
           if (isFlagged) targetStats.tp++;
@@ -338,7 +364,9 @@ export class BenchmarkEvaluator {
       const isHybridInsufficient = selectedHybrid.assessmentLabel === ASSESSMENT_LABELS.INSUFFICIENT_EVIDENCE;
 
       let accountingVerdict = 'NORMAL';
-      if (isDegradedTelemetry) {
+      if (isAmbiguous) {
+        accountingVerdict = isHybridSuspicious ? 'AMBIGUOUS_ALERTED' : (isHybridInsufficient ? 'AMBIGUOUS_INSUFFICIENT' : 'AMBIGUOUS_QUIET');
+      } else if (isDegradedTelemetry) {
         accountingVerdict = isHybridInsufficient ? 'ACCURATELY_FLAGGED_DEGRADED' : (isHybridSuspicious ? 'DEGRADED_FALSE_ALARM' : 'DEGRADED_UNNOTICED');
       } else if (isAttack) {
         accountingVerdict = isHybridSuspicious ? 'TRUE_POSITIVE' : 'FALSE_NEGATIVE';
@@ -352,6 +380,7 @@ export class BenchmarkEvaluator {
         scenarioName: scenario.scenarioName,
         groundTruthIntent: scenario.groundTruthIntent,
         groundTruthType,
+        groundTruthRationale: scenario.groundTruthRationale || null,
         partition,
         ruleOnly: {
           triggered: ruleResult.hasTriggeredRules,
@@ -434,7 +463,7 @@ export class BenchmarkEvaluator {
 
     return {
       evaluatedAt: new Date().toISOString(),
-      evaluationFrameworkVersion: '4C.1-hardened',
+      evaluationFrameworkVersion: '4C.2-integrity',
       trainingDurationMs,
       totalScenarios: totalCount,
       partitions: {
@@ -442,24 +471,25 @@ export class BenchmarkEvaluator {
         validationCount: valCount,
         testCount: testCount
       },
-      // Held-Out Test Partition Report (10 Scenarios - Primary Empirical Benchmark)
+      // Held-Out Test Partition Report (12 Scenarios - Primary Empirical Benchmark)
       heldOutTestEvaluation: formatPartitionReport(testStats, testCount),
       comparison: formatPartitionReport(testStats, testCount),
-      // Validation Partition Report (6 Scenarios)
+      // Validation Partition Report (7 Scenarios)
       validationEvaluation: formatPartitionReport(validationStats, valCount),
-      // Full 20-Scenario Composite Report
+      // Full 24-Scenario Composite Report
       fullBenchmarkEvaluation: formatPartitionReport(fullStats, totalCount),
       // Side-by-Side Comparison of 4 Fusion Strategies
       fusionStrategyComparison: strategyComparisonOnValidation,
       // Anomaly Threshold Sensitivity
       sensitivityAnalysis: iforestSensitivityAnalysis,
-      // Exact Accounting Table for All 20 Scenarios (Zero Omissions)
+      // Exact Accounting Table for All 24 Scenarios (Zero Omissions)
       accountingTable,
       perScenarioResults: accountingTable,
       disclaimers: [
-        'Evaluation enforces strict 3-way partitioning: Train (4), Validation (6), Held-Out Test (10).',
+        'Evaluation enforces strict 3-way partitioning: Train (5), Validation (7), Held-Out Test (12).',
         'Synthetic evaluation is a controlled research benchmark; it does not claim real-world production equivalence.',
         'Isolation Forest anomaly scores quantify statistical deviation, NOT attack probability.',
+        'Ambiguous scenarios are segregated into an explicit accounting category to prevent forced-choice metric distortion.',
         'Execution evidence remains strictly MISSING; no dynamic deception diversion was executed.'
       ]
     };

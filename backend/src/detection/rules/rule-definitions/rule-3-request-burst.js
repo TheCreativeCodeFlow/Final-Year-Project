@@ -22,19 +22,47 @@ export const RULE_REQUEST_BURST = Object.freeze({
 
   evaluate({ features, timeWindow = '5m', thresholds = {}, sessionContext = {} }) {
     const config = { ...this.defaultThresholds, ...thresholds };
-    const burst1s = features?.burst_frequency_max_1s?.value ?? 0;
-    const requestRate = features?.request_rate_per_sec?.value ?? 0.0;
-    const requestCount = features?.request_count?.value ?? 0;
-    const endpointDiversity = features?.endpoint_diversity_ratio?.value ?? 0.0;
-    const http4xxRatio = features?.http_4xx_ratio?.value ?? 0.0;
-    const repeatedEndpointRatio = features?.repeated_endpoint_ratio?.value ?? 0.0;
-
     const matchedConditions = [];
     const uncertaintyNotes = [];
 
     if (sessionContext?.collisionRisk?.level === 'HIGH') {
       uncertaintyNotes.push('Session handle derived from unverified client header; burst may reflect multiple clients sharing NAT.');
     }
+
+    const rawBurst1s = features?.burst_frequency_max_1s?.value ?? (typeof features?.burst_frequency_max_1s === 'number' ? features.burst_frequency_max_1s : undefined);
+    const rawRequestRate = features?.request_rate_per_sec?.value ?? (typeof features?.request_rate_per_sec === 'number' ? features.request_rate_per_sec : undefined);
+    const rawRequestCount = features?.request_count?.value ?? (typeof features?.request_count === 'number' ? features.request_count : undefined);
+
+    const hasBurstTelemetry = rawBurst1s !== undefined || rawRequestRate !== undefined || rawRequestCount !== undefined;
+
+    if (!hasBurstTelemetry) {
+      uncertaintyNotes.push('Required burst telemetry features are missing or unavailable.');
+      return createRuleFinding({
+        ruleId: this.ruleId,
+        ruleName: this.name,
+        version: this.version,
+        triggered: false,
+        severity: RULE_SEVERITY.LOW,
+        confidence: 0.10,
+        timeWindow,
+        matchedConditions: ['MISSING_BURST_TELEMETRY'],
+        evidence: {
+          burst1s: null,
+          requestRate: null,
+          requestCount: null,
+          missingFeatures: ['burst_frequency_max_1s', 'request_rate_per_sec', 'request_count']
+        },
+        uncertaintyNotes,
+        explanation: `Request burst assessment inconclusive: burst telemetry missing from ${timeWindow} evaluation window.`
+      });
+    }
+
+    const burst1s = rawBurst1s ?? 0;
+    const requestRate = rawRequestRate ?? 0.0;
+    const requestCount = rawRequestCount ?? 0;
+    const endpointDiversity = features?.endpoint_diversity_ratio?.value ?? 0.0;
+    const http4xxRatio = features?.http_4xx_ratio?.value ?? 0.0;
+    const repeatedEndpointRatio = features?.repeated_endpoint_ratio?.value ?? 0.0;
 
     // Static Asset Burst Exception:
     // If requests have high endpoint diversity (e.g. distinct JS/CSS/image/font assets), zero client errors,

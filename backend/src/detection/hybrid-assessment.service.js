@@ -242,12 +242,13 @@ export class HybridAssessmentService {
           classification = 'BENIGN_ENVIRONMENTAL_VARIANCE';
           uncertaintyNotes.push(`Slight statistical deviation (${mlScore.toFixed(3)}) on benign traffic without error surges or reconnaissance indicators.`);
         } else {
-          // Genuine novel behavioral anomaly
+          // Genuine novel behavioral anomaly (Unverified statistical deviation)
           assessmentLabel = ASSESSMENT_LABELS.SUSPICIOUS;
-          riskScore = Number((0.55 + Math.min(0.20, (mlScore - 0.60) * 0.5)).toFixed(2));
-          confidenceScore = 0.78;
+          riskScore = Number((0.55 + Math.min(0.15, (mlScore - 0.60) * 0.4)).toFixed(2));
+          confidenceScore = Math.min(0.60, 0.50 + (mlScore - 0.60) * 0.3); // Discounted confidence <= 0.60 per safety audit
           classification = 'UNSUPERVISED_BEHAVIORAL_ANOMALY';
           contributingFactors.push(`Unsupervised statistical anomaly confirmed by ML detector (score: ${mlScore.toFixed(3)}).`);
+          uncertaintyNotes.push('Statistical deviation flagged without matching deterministic rule findings; non-actionable for autonomous deception diversion.');
         }
       }
       // Step 6: Default Normal
@@ -259,10 +260,39 @@ export class HybridAssessmentService {
       }
     }
 
+    // Apply rule missing-data discount
+    if (ruleResult?.hasMissingTelemetry === true) {
+      uncertaintyNotes.push('Telemetry fields were missing during rule evaluation; findings are qualified with reduced confidence.');
+      confidenceScore = Math.min(confidenceScore, 0.65);
+    }
+
     // Apply collision risk discount to final confidence score
     if (sessionContext?.collisionRisk?.level === 'HIGH') {
+      uncertaintyNotes.push('Session handle derived from unverified client header; collision risk is HIGH. Autonomous deception diversion prohibited.');
       confidenceScore = Math.min(confidenceScore, 0.50);
     }
+
+    // Decision-Safety Gate: Determine deception diversion eligibility
+    // In accordance with Stage 4C.2 Decision Safety:
+    // - Unsupervised ML anomaly alone is NEVER eligible for deception diversion
+    // - High collision risk (NAT/proxy) suppresses deception to protect co-located benign users
+    // - Degraded telemetry / INSUFFICIENT_EVIDENCE suppresses deception
+    // - NORMAL traffic is never eligible
+    const isCorroboratedAdversarial = (
+      (assessmentLabel === ASSESSMENT_LABELS.HIGHLY_SUSPICIOUS || assessmentLabel === ASSESSMENT_LABELS.SUSPICIOUS) &&
+      (ruleResult?.triggeredCount || 0) > 0 &&
+      classification !== 'UNSUPERVISED_BEHAVIORAL_ANOMALY' &&
+      !classification.includes('UNVERIFIED') &&
+      !classification.includes('ENVIRONMENTAL')
+    );
+
+    const deceptionEligible = Boolean(
+      isCorroboratedAdversarial &&
+      !telemetryLossDetected &&
+      assessmentLabel !== ASSESSMENT_LABELS.INSUFFICIENT_EVIDENCE &&
+      sessionContext?.collisionRisk?.level !== 'HIGH' &&
+      confidenceScore >= 0.70
+    );
 
     const explanationText = `${assessmentLabel}: ${classification} (Risk: ${riskScore !== null ? (riskScore * 100).toFixed(0) + '%' : 'N/A'}, Strategy: ${fusionStrategy}).`;
     const explanation = {
@@ -284,6 +314,7 @@ export class HybridAssessmentService {
       riskScore,
       confidenceScore,
       fusionStrategy,
+      deceptionEligible,
       evaluatedAt: new Date().toISOString(),
       ruleFindings: ruleResult?.allFindings || [],
       triggeredRulesCount: ruleResult?.triggeredCount || 0,
