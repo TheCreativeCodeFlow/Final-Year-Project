@@ -22,7 +22,7 @@ const benchmarkEvaluator = new BenchmarkEvaluator();
  */
 export async function listAssessments(req, res, next) {
   try {
-    const { tenantId } = req.params;
+    const tenantId = req.authorizedTenant?.id || req.params.tenantId;
     const { applicationId, sessionRef, label, limit = 50, offset = 0 } = req.query;
     const prisma = getPrismaClient();
 
@@ -37,9 +37,19 @@ export async function listAssessments(req, res, next) {
         where,
         orderBy: { assessedAt: 'desc' },
         take: Math.min(100, Math.max(1, parseInt(limit, 10) || 50)),
-        skip: Math.max(0, parseInt(offset, 10) || 0)
+        skip: Math.max(0, parseInt(offset, 10) || 0),
+        include: {
+          application: {
+            select: { id: true, applicationIdentifier: true, name: true, domain: true }
+          }
+        }
       })
     ]);
+
+    const normalized = assessments.map((asm) => ({
+      ...asm,
+      executionEvidenceStatus: 'MISSING'
+    }));
 
     res.json({
       success: true,
@@ -47,7 +57,7 @@ export async function listAssessments(req, res, next) {
         total,
         limit: parseInt(limit, 10) || 50,
         offset: parseInt(offset, 10) || 0,
-        assessments
+        assessments: normalized
       },
       requestId: req.id
     });
@@ -61,7 +71,8 @@ export async function listAssessments(req, res, next) {
  */
 export async function getAssessment(req, res, next) {
   try {
-    const { tenantId, assessmentId } = req.params;
+    const tenantId = req.authorizedTenant?.id || req.params.tenantId;
+    const { assessmentId } = req.params;
     const prisma = getPrismaClient();
 
     const assessment = await prisma.behavioralAssessment.findFirst({
@@ -93,7 +104,10 @@ export async function getAssessment(req, res, next) {
 
     res.json({
       success: true,
-      data: assessment,
+      data: {
+        ...assessment,
+        executionEvidenceStatus: 'MISSING'
+      },
       requestId: req.id
     });
   } catch (err) {
@@ -106,7 +120,7 @@ export async function getAssessment(req, res, next) {
  */
 export async function listModels(req, res, next) {
   try {
-    const { tenantId } = req.params;
+    const tenantId = req.authorizedTenant?.id || req.params.tenantId;
     const { applicationId } = req.query;
     const prisma = getPrismaClient();
 
@@ -128,7 +142,10 @@ export async function listModels(req, res, next) {
         decisionThreshold: true,
         evaluationMetrics: true,
         trainedAt: true,
-        expiresAt: true
+        expiresAt: true,
+        application: {
+          select: { id: true, applicationIdentifier: true, name: true, domain: true }
+        }
       }
     });
 
@@ -147,7 +164,7 @@ export async function listModels(req, res, next) {
  */
 export async function triggerModelTraining(req, res, next) {
   try {
-    const { tenantId } = req.params;
+    const tenantId = req.authorizedTenant?.id || req.params.tenantId;
     const { applicationId, algorithm = 'ISOLATION_FOREST', minSamples } = req.body || {};
     const prisma = getPrismaClient();
 
@@ -185,7 +202,7 @@ export async function triggerModelTraining(req, res, next) {
  */
 export async function listRules(req, res, next) {
   try {
-    const { tenantId } = req.params;
+    const tenantId = req.authorizedTenant?.id || req.params.tenantId;
     const rules = ruleRegistry.listRules(tenantId);
 
     res.json({

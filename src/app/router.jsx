@@ -42,6 +42,14 @@ import DeceptionStrategiesPage from '../pages/admin/DeceptionStrategiesPage';
 import DeceptionStrategyDetailsPage from '../pages/admin/DeceptionStrategyDetailsPage';
 import GatewaySimulatorPage from '../pages/admin/GatewaySimulatorPage';
 
+// Detection Operations & Model Lifecycle Pages (Stage 4D)
+import DetectionOverviewPage from '../pages/detection/DetectionOverviewPage';
+import AssessmentListPage from '../pages/detection/AssessmentListPage';
+import AssessmentDetailsPage from '../pages/detection/AssessmentDetailsPage';
+import DetectionRulesPage from '../pages/detection/DetectionRulesPage';
+import ModelLifecyclePage from '../pages/detection/ModelLifecyclePage';
+import BenchmarkExplorerPage from '../pages/detection/BenchmarkExplorerPage';
+
 export default function AppRouter() {
   const { isAuthenticated, role, ROLES } = useAuth();
 
@@ -372,6 +380,77 @@ export default function AppRouter() {
           </RoleGuard>
         }
       />
+
+      {/* Detection Operations & Model Lifecycle Routes (Stage 4D) */}
+      <Route
+        path="/detection/overview"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <DetectionOverviewPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/detection/assessments"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <AssessmentListPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/detection/assessments/:assessmentId"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <AssessmentDetailsPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/detection/rules"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <DetectionRulesPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/detection/models"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <ModelLifecyclePage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/detection/benchmark"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <BenchmarkExplorerPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      {/* Convenience redirects */}
+      <Route path="/owner/detection" element={<Navigate to="/detection/overview" replace />} />
+      <Route path="/admin/detection" element={<Navigate to="/detection/overview" replace />} />
 
       {/* 404 Catch-All */}
       <Route path="*" element={<NotFoundPage />} />

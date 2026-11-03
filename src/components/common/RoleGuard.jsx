@@ -4,7 +4,7 @@ import { ShieldAlert, ArrowRight, Lock, LogIn, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import LoadingState from './LoadingState';
 
-export default function RoleGuard({ requiredRole, children }) {
+export default function RoleGuard({ requiredRole, allowedRoles, children }) {
   const { isAuthenticated, isLoading, role, user, ROLES } = useAuth();
   const location = useLocation();
 
@@ -36,16 +36,16 @@ export default function RoleGuard({ requiredRole, children }) {
   }
 
   // 4. Role Match check
-  const isMatch = role === requiredRole;
-  if (isMatch) {
+  const rolesToCheck = allowedRoles || (Array.isArray(requiredRole) ? requiredRole : (requiredRole ? [requiredRole] : null));
+  if (!rolesToCheck || rolesToCheck.includes(role)) {
     return children;
   }
 
   // 5. Access Restricted
-  const isRequiredAdmin = requiredRole === ROLES.ADMIN;
-  const targetTitle = isRequiredAdmin ? 'Platform Administrator' : 'Application Owner';
-  const currentTitle = user?.roleTitle || (role === ROLES.OWNER ? 'Application Owner' : 'Tenant Member');
-  const fallbackDashboard = '/owner/overview';
+  const isRequiredAdmin = requiredRole === ROLES.ADMIN || (Array.isArray(rolesToCheck) && rolesToCheck.length === 1 && rolesToCheck[0] === ROLES.ADMIN);
+  const targetTitle = isRequiredAdmin ? 'Platform Administrator' : 'Authorized Operator';
+  const currentTitle = user?.roleTitle || (role === ROLES.OWNER ? 'Application Owner' : (role === ROLES.ANALYST ? 'Security Analyst' : 'Tenant Member'));
+  const fallbackDashboard = role === ROLES.ADMIN ? '/admin/overview' : '/owner/overview';
 
   return (
     <div

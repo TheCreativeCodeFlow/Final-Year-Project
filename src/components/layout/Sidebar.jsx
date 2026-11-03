@@ -19,7 +19,9 @@ import {
   Compass,
   PlayCircle,
   Building2,
-  ChevronDown
+  ChevronDown,
+  Cpu,
+  Database
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -122,6 +124,63 @@ export default function Sidebar({ isOpen, onClose }) {
               </ul>
             </div>
           )}
+
+          {/* Behavioral Detection Navigation (Stage 4D) */}
+          <div style={{ marginTop: '1.25rem' }}>
+            <div className="nav-section-title">Behavioral Detection</div>
+            <ul className="nav-list">
+              <li>
+                <NavLink
+                  to="/detection/overview"
+                  className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                  onClick={onClose}
+                >
+                  <Cpu size={18} />
+                  <span>Detection Overview</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/detection/assessments"
+                  className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                  onClick={onClose}
+                >
+                  <Activity size={18} />
+                  <span>Security Assessments</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/detection/models"
+                  className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                  onClick={onClose}
+                >
+                  <Sliders size={18} />
+                  <span>Model Lifecycle</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/detection/rules"
+                  className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                  onClick={onClose}
+                >
+                  <FileText size={18} />
+                  <span>Rule Catalog</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/detection/benchmark"
+                  className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                  onClick={onClose}
+                >
+                  <Database size={18} />
+                  <span>Research Benchmark</span>
+                </NavLink>
+              </li>
+            </ul>
+          </div>
 
           {/* Admin Navigation */}
           {isAdmin && (
