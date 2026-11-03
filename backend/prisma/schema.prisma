@@ -73,6 +73,9 @@ model ProtectedApplication {
   behavioralBaselines    BehavioralBaseline[]
   detectionModelVersions DetectionModelVersion[]
   modelTrainingRuns      ModelTrainingRun[]
+  deceptionPolicies      DeceptionPolicy[]
+  policyDecisions        PolicyDecision[]
+  deceptionGraphs        DeceptionGraph[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, applicationIdentifier])
@@ -87,6 +90,7 @@ model ProtectedApplication {
 model DeceptionPolicy {
   id                            String   @id @default(uuid())
   tenantId                      String? // Null indicates platform-wide baseline policy
+  applicationId                 String? // Null indicates all applications within tenant
   policyIdentifier              String // e.g. "pol-sec-01", "pol-sec-06"
   name                          String
   description                   String?
@@ -101,11 +105,13 @@ model DeceptionPolicy {
   createdAt                     DateTime @default(now())
   updatedAt                     DateTime @updatedAt
 
-  tenant    Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  decisions PolicyDecision[]
+  tenant      Tenant?               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application ProtectedApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  decisions   PolicyDecision[]
 
   @@unique([policyIdentifier, version])
   @@index([tenantId])
+  @@index([applicationId])
   @@index([priority])
   @@map("deception_policies")
 }
@@ -120,15 +126,17 @@ model DeceptionStrategy {
   strategyIdentifier           String   @unique // e.g. "strat-contain-06", "strat-tarpit-02"
   name                         String
   description                  String?
-  strategyType                 String // "CONTAINMENT", "TARPIT", "HONEYPOT_DIVERSION", "CANARY_INJECTION"
+  strategyType                 String // "CONTAINMENT", "TARPIT", "HONEYPOT_DIVERSION", "CANARY_INJECTION", or Stage 5A categories
   enabled                      Boolean  @default(true)
+  version                      Int      @default(1)
   prerequisites                Json // Structured prerequisites
   permittedStateChangeProposal Json // Structured state-change proposal (NO arbitrary code/commands)
   isolationRequirements        Json // Required sandbox isolation boundaries
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
 
-  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant    Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  decisions PolicyDecision[]
 
   @@index([tenantId])
   @@map("deception_strategies")
@@ -289,25 +297,42 @@ model BehavioralAssessment {
 }
 
 model PolicyDecision {
-  id                 String   @id @default(uuid())
-  tenantId           String
-  observationId      String?
-  assessmentId       String?
-  policyId           String?
-  policyVersion      Int?
-  decisionResult     String // "PERMIT_DIVERSION", "BLOCK", "ALLOW_NORMAL"
-  decisionRationale  String
-  evidenceReferences Json?
-  decidedAt          DateTime @default(now())
+  id                      String   @id @default(uuid())
+  tenantId                String
+  applicationId           String?
+  observationId           String?
+  assessmentId            String?
+  policyId                String?
+  policyVersion           Int?
+  selectedStrategyId      String?
+  selectedStrategyVersion Int?
+  candidateStrategyIds    Json?
+  dsgGraphId              String?
+  proposedMutations       Json?
+  reasonCodes             Json?
+  evaluatorVersion        String?
+  decisionResult          String // "ALLOW_NORMAL", "BLOCK_POLICY", "INSUFFICIENT_EVIDENCE", "POLICY_NOT_CONFIGURED", "NO_ELIGIBLE_STRATEGY", "PROPOSE_DECEPTION"
+  decisionRationale       String
+  evidenceReferences      Json?
+  decidedAt               DateTime @default(now())
 
   tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application      ProtectedApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
   observation      SecurityObservation?  @relation(fields: [observationId, tenantId], references: [id, tenantId], onDelete: Cascade)
   assessment       BehavioralAssessment? @relation(fields: [assessmentId, tenantId], references: [id, tenantId], onDelete: Cascade)
   policy           DeceptionPolicy?      @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  selectedStrategy DeceptionStrategy?    @relation(fields: [selectedStrategyId], references: [id], onDelete: SetNull)
+  graph            DeceptionGraph?       @relation(fields: [dsgGraphId], references: [id], onDelete: SetNull)
   routingDecisions RoutingDecision[]
+  transitions      DeceptionGraphTransition[]
 
   @@unique([id, tenantId])
   @@index([tenantId])
+  @@index([applicationId])
+  @@index([assessmentId])
+  @@index([policyId])
+  @@index([selectedStrategyId])
+  @@index([dsgGraphId])
   @@map("policy_decisions")
 }
 
@@ -380,22 +405,26 @@ model ExecutionEvidence {
 model DeceptionGraph {
   id              String   @id @default(uuid())
   tenantId        String
-  environmentId   String
+  environmentId   String?
+  applicationId   String?
   graphIdentifier String // e.g. "dsg-apex-01"
   graphVersion    Int      @default(1)
   status          String   @default("ACTIVE") // ACTIVE, DRAFT, ARCHIVED
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  tenant      Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  environment DeceptionEnvironment       @relation(fields: [environmentId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  nodes       DeceptionGraphNode[]
-  edges       DeceptionGraphEdge[]
-  transitions DeceptionGraphTransition[]
+  tenant          Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  environment     DeceptionEnvironment?      @relation(fields: [environmentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  application     ProtectedApplication?      @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  nodes           DeceptionGraphNode[]
+  edges           DeceptionGraphEdge[]
+  transitions     DeceptionGraphTransition[]
+  policyDecisions PolicyDecision[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, graphIdentifier, graphVersion])
   @@index([tenantId])
+  @@index([applicationId])
   @@map("deception_graphs")
 }
 
@@ -442,20 +471,23 @@ model DeceptionGraphTransition {
   id                      String    @id @default(uuid())
   tenantId                String
   graphId                 String
+  policyDecisionId        String?
   previousState           Json
   proposedState           Json
-  transitionStatus        String    @default("PROPOSED") // "PROPOSED", "APPROVED", "EXECUTED", "REJECTED"
+  transitionStatus        String    @default("PROPOSED") // "PROPOSED", "VALIDATED", "REJECTED", "PENDING_EXECUTION"
   triggeringObservationId String?
   triggeringDecisionId    String?
-  provenance              String // e.g. "ADAPTIVE_PLANNER_SIMULATION", "MANUAL_ADMIN_PROPOSAL"
+  provenance              String // e.g. "ADAPTIVE_PLANNER_SIMULATION", "POLICY_EVALUATOR_STAGE_5A"
   proposedAt              DateTime  @default(now())
   resolvedAt              DateTime?
 
-  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  graph  DeceptionGraph @relation(fields: [graphId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  graph          DeceptionGraph  @relation(fields: [graphId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  policyDecision PolicyDecision? @relation(fields: [policyDecisionId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([graphId])
+  @@index([policyDecisionId])
   @@map("deception_graph_transitions")
 }
 

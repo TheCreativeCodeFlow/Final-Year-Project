@@ -337,6 +337,66 @@ export const apiClient = {
 
   getDetectionEvaluation: async (tenantId) => {
     return apiClient.get(`/tenants/${tenantId}/detection/evaluation`);
+  },
+
+  // ---------------------------------------------------------------------------
+  // Stage 5A: Deception Policies, Strategies, Evaluation, Decisions & Graphs
+  // ---------------------------------------------------------------------------
+
+  getDeceptionPolicies: async (tenantId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/deception/policies${qs}`);
+  },
+
+  getDeceptionPolicyById: async (tenantId, policyId) => {
+    return apiClient.get(`/tenants/${tenantId}/deception/policies/${policyId}`);
+  },
+
+  createDeceptionPolicy: async (tenantId, payload) => {
+    return apiClient.post(`/tenants/${tenantId}/deception/policies`, payload);
+  },
+
+  updateDeceptionPolicy: async (tenantId, policyId, payload) => {
+    return apiClient.patch(`/tenants/${tenantId}/deception/policies/${policyId}`, payload);
+  },
+
+  getDeceptionStrategies: async (tenantId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/deception/strategies${qs}`);
+  },
+
+  getDeceptionStrategyById: async (tenantId, strategyId) => {
+    return apiClient.get(`/tenants/${tenantId}/deception/strategies/${strategyId}`);
+  },
+
+  evaluateDeceptionPolicy: async (tenantId, payload) => {
+    return apiClient.post(`/tenants/${tenantId}/deception/evaluate`, payload);
+  },
+
+  getDeceptionDecisions: async (tenantId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/deception/decisions${qs}`);
+  },
+
+  getDeceptionDecisionById: async (tenantId, decisionId) => {
+    return apiClient.get(`/tenants/${tenantId}/deception/decisions/${decisionId}`);
+  },
+
+  getDeceptionGraphs: async (tenantId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/deception/graphs${qs}`);
+  },
+
+  getDeceptionGraphById: async (tenantId, graphId) => {
+    return apiClient.get(`/tenants/${tenantId}/deception/graphs/${graphId}`);
+  },
+
+  planDeceptionGraphMutation: async (tenantId, graphId, payload) => {
+    return apiClient.post(`/tenants/${tenantId}/deception/graphs/${graphId}/plan`, payload);
   }
 };
 

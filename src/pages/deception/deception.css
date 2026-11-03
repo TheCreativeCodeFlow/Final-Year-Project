@@ -1,0 +1,318 @@
+/* Adaptive Deception Policy & DSG Planning Styles (Stage 5A) */
+
+.deception-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6, 1.5rem);
+  width: 100%;
+}
+
+.deception-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+  flex-wrap: wrap;
+}
+
+/* Metric / Highlight Grid */
+.deception-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4, 1rem);
+}
+
+.deception-card {
+  background: var(--bg-surface-card, #111a2d);
+  border: 1px solid var(--border-default, #243553);
+  border-radius: var(--radius-lg, 12px);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.deception-card-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary, #94a3b8);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.deception-card-value {
+  font-size: 1.875rem;
+  font-weight: 700;
+  color: var(--text-primary, #f8fafc);
+  line-height: 1.2;
+}
+
+.deception-card-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-muted, #64748b);
+  margin-top: 0.35rem;
+}
+
+/* Stage 5A Non-Execution Notice Banner */
+.planning-notice-banner {
+  background: linear-gradient(90deg, rgba(30, 58, 138, 0.25) 0%, rgba(15, 23, 42, 0.4) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-left: 4px solid #3b82f6;
+  border-radius: 8px;
+  padding: 0.875rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  color: #bfdbfe;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+/* Strategy Cards */
+.strategy-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 1.25rem;
+}
+
+.strategy-card {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.strategy-card:hover {
+  border-color: #38bdf8;
+  box-shadow: 0 4px 20px rgba(56, 189, 248, 0.08);
+}
+
+.strategy-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.strategy-category-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cat-recon {
+  background: rgba(14, 165, 233, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.3);
+}
+
+.cat-credential {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.cat-api {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.cat-data {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.cat-service {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+/* Decision Result Badges */
+.decision-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.decision-propose {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+.decision-allow {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.decision-block {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.decision-insufficient {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.decision-nostrategy {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+}
+
+/* Reason Code Pills */
+.reason-pill {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #cbd5e1;
+  margin: 0.15rem 0.2rem 0.15rem 0;
+}
+
+/* DSG 3-Layer Visual Styling */
+.dsg-layer-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.dsg-layer-box {
+  background: #0f172a;
+  border-radius: 12px;
+  padding: 1.25rem;
+  border: 1px solid #1e293b;
+}
+
+.layer-policy-box {
+  border-left: 4px solid #6366f1;
+}
+
+.layer-dynamic-box {
+  border-left: 4px solid #06b6d4;
+}
+
+.layer-attacker-box {
+  border-left: 4px solid #f43f5e;
+}
+
+.dsg-layer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.dsg-node-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.875rem;
+}
+
+.dsg-node-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.dsg-node-card:hover {
+  border-color: #64748b;
+}
+
+/* Slide Drawer for Details */
+.decision-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.decision-drawer {
+  width: 100%;
+  max-width: 650px;
+  height: 100%;
+  background: #0b1120;
+  border-left: 1px solid #1e293b;
+  box-shadow: -8px 0 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.drawer-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.drawer-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Modal Form */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.modal-content {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 680px;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}

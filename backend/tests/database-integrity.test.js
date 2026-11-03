@@ -47,6 +47,19 @@ describe('Stage 3B: PostgreSQL Domain Model & Tenant Isolation Integrity', () =>
 
   after(async () => {
     await disconnectDatabase(prisma);
+    try {
+      const { execSync } = await import('node:child_process');
+      const { fileURLToPath } = await import('node:url');
+      const path = await import('node:path');
+      const backendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+      execSync('node prisma/seed.js', {
+        cwd: backendDir,
+        env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
+        stdio: 'ignore'
+      });
+    } catch {
+      // Ignore re-seed error if in non-db environment
+    }
   });
 
   // Clean all tables before each test to maintain strict test isolation

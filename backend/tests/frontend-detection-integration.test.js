@@ -29,6 +29,13 @@ import {
 } from '../../src/services/apiClient.js';
 import { authService, ROLES } from '../../src/services/authService.js';
 
+const TEST_DATABASE_URL =
+  process.env.TEST_DATABASE_URL ||
+  process.env.DATABASE_URL ||
+  'postgresql://rahulseervi@localhost:5432/adaptive_deception_test?schema=public';
+
+process.env.DATABASE_URL = TEST_DATABASE_URL;
+
 describe('Stage 4D: Frontend Detection Operations & Model Lifecycle Integration', () => {
   let app;
   let server;

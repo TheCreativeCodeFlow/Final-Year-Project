@@ -50,6 +50,12 @@ import DetectionRulesPage from '../pages/detection/DetectionRulesPage';
 import ModelLifecyclePage from '../pages/detection/ModelLifecyclePage';
 import BenchmarkExplorerPage from '../pages/detection/BenchmarkExplorerPage';
 
+// Adaptive Deception Policy & DSG Planning Pages (Stage 5A)
+import PolicyManagementPage from '../pages/deception/PolicyManagementPage';
+import StrategyCatalogPage from '../pages/deception/StrategyCatalogPage';
+import PolicyDecisionExplorerPage from '../pages/deception/PolicyDecisionExplorerPage';
+import DSGPlannerPage from '../pages/deception/DSGPlannerPage';
+
 export default function AppRouter() {
   const { isAuthenticated, role, ROLES } = useAuth();
 
@@ -448,9 +454,56 @@ export default function AppRouter() {
         }
       />
 
+      {/* Adaptive Deception Policy Engine & DSG Planning Routes (Stage 5A) */}
+      <Route
+        path="/deception/policies"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <PolicyManagementPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/deception/strategies"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <StrategyCatalogPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/deception/decisions"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <PolicyDecisionExplorerPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/deception/graphs"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <DSGPlannerPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
       {/* Convenience redirects */}
       <Route path="/owner/detection" element={<Navigate to="/detection/overview" replace />} />
       <Route path="/admin/detection" element={<Navigate to="/detection/overview" replace />} />
+      <Route path="/owner/deception" element={<Navigate to="/deception/policies" replace />} />
+      <Route path="/admin/deception" element={<Navigate to="/deception/policies" replace />} />
 
       {/* 404 Catch-All */}
       <Route path="*" element={<NotFoundPage />} />

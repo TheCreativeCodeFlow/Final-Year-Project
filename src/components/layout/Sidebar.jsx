@@ -182,6 +182,53 @@ export default function Sidebar({ isOpen, onClose }) {
             </ul>
           </div>
 
+          {/* Adaptive Deception Planning (Stage 5A) */}
+          <div style={{ marginTop: '1.25rem' }}>
+            <div className="nav-section-title">Adaptive Deception Planning</div>
+            <ul className="nav-list">
+              <li>
+                <NavLink
+                  to="/deception/policies"
+                  className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                  onClick={onClose}
+                >
+                  <ShieldAlert size={18} />
+                  <span>Deception Policies</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/deception/strategies"
+                  className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                  onClick={onClose}
+                >
+                  <Layers size={18} />
+                  <span>Strategy Catalogue</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/deception/decisions"
+                  className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                  onClick={onClose}
+                >
+                  <FileText size={18} />
+                  <span>Decision Explorer</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/deception/graphs"
+                  className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                  onClick={onClose}
+                >
+                  <Network size={18} />
+                  <span>State Graph Planner</span>
+                </NavLink>
+              </li>
+            </ul>
+          </div>
+
           {/* Admin Navigation */}
           {isAdmin && (
             <div style={{ marginTop: isOwner ? '1.5rem' : '0' }}>
