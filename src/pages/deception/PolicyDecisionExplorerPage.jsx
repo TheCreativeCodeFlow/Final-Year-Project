@@ -88,6 +88,60 @@ export default function PolicyDecisionExplorerPage() {
     }
   };
 
+  const getDispositionBadge = (disp) => {
+    switch (disp) {
+      case 'PROPOSE_DECEPTION':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            PROPOSE_DECEPTION
+          </span>
+        );
+      case 'DECEPTION_REJECTED':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30">
+            DECEPTION_REJECTED
+          </span>
+        );
+      case 'DECEPTION_NOT_PROPOSED':
+      default:
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-slate-500/15 text-slate-400 border border-slate-500/20">
+            DECEPTION_NOT_PROPOSED
+          </span>
+        );
+    }
+  };
+
+  const getOriginAccessBadge = (access) => {
+    switch (access) {
+      case 'PROPOSE_DIVERT_TO_DECEPTION':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30">
+            DIVERT_DECEPTION
+          </span>
+        );
+      case 'DENY_APPLICATION_SUSPENDED':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-red-500/15 text-red-400 border border-red-500/30">
+            DENY_SUSPENDED
+          </span>
+        );
+      case 'DEFER_WITH_UNCERTAINTY':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+            DEFER_UNCERTAIN
+          </span>
+        );
+      case 'DEFER_TO_GATEWAY':
+      default:
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-sky-500/15 text-sky-300 border border-sky-500/30">
+            DEFER_GATEWAY
+          </span>
+        );
+    }
+  };
+
   return (
     <div className="deception-page p-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -165,24 +219,29 @@ export default function PolicyDecisionExplorerPage() {
             <thead className="bg-slate-950/60 text-xs uppercase tracking-wider text-slate-400 border-b border-slate-800">
               <tr>
                 <th className="py-3 px-4">Decided At</th>
-                <th className="py-3 px-4">Result</th>
+                <th className="py-3 px-4">Deception Disposition</th>
+                <th className="py-3 px-4">Origin Access Policy</th>
                 <th className="py-3 px-4">Policy</th>
                 <th className="py-3 px-4">Selected Strategy</th>
-                <th className="py-3 px-4">Reason Codes</th>
                 <th className="py-3 px-4">Evidence Status</th>
                 <th className="py-3 px-4 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono text-xs">
               {decisions.map((dec) => {
-                const reasons = dec.reasonCodes || [];
                 return (
                   <tr key={dec.id} className="hover:bg-slate-800/30 transition">
                     <td className="py-3 px-4 text-slate-400">
                       {new Date(dec.decidedAt).toLocaleString()}
                     </td>
                     <td className="py-3 px-4 font-sans">
-                      {getDecisionBadge(dec.decisionResult)}
+                      <div className="flex flex-col gap-1 items-start">
+                        {getDecisionBadge(dec.decisionResult)}
+                        {dec.deceptionDisposition && getDispositionBadge(dec.deceptionDisposition)}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 font-sans">
+                      {getOriginAccessBadge(dec.originAccessDecision || 'DEFER_TO_GATEWAY')}
                     </td>
                     <td className="py-3 px-4 font-sans">
                       <div className="font-semibold text-slate-200">
@@ -205,20 +264,6 @@ export default function PolicyDecisionExplorerPage() {
                       ) : (
                         <span className="text-slate-500 italic">None</span>
                       )}
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex flex-wrap gap-1 max-w-xs">
-                        {reasons.slice(0, 3).map((r, i) => (
-                          <span key={i} className="reason-pill">
-                            {r}
-                          </span>
-                        ))}
-                        {reasons.length > 3 && (
-                          <span className="text-[10px] text-slate-500">
-                            +{reasons.length - 3} more
-                          </span>
-                        )}
-                      </div>
                     </td>
                     <td className="py-3 px-4 font-sans">
                       <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded text-[10px] font-semibold">
@@ -265,11 +310,20 @@ export default function PolicyDecisionExplorerPage() {
 
             <div className="drawer-body">
               {/* Result & Evaluation Summary */}
-              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
                 <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Decision Outcome
+                  Decision Outcome & Semantic Separation
                 </div>
-                <div>{getDecisionBadge(selectedDecision.decisionResult)}</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {getDecisionBadge(selectedDecision.decisionResult)}
+                  {selectedDecision.deceptionDisposition && getDispositionBadge(selectedDecision.deceptionDisposition)}
+                  {selectedDecision.originAccessDecision && getOriginAccessBadge(selectedDecision.originAccessDecision)}
+                </div>
+                <div className="text-xs font-mono text-slate-400 flex flex-wrap gap-x-4 gap-y-1 pt-1 border-t border-slate-800">
+                  <span>Evaluator: <span className="text-sky-300">{selectedDecision.evaluatorVersion || '5A.1'}</span></span>
+                  <span>Catalogue: <span className="text-emerald-300">v{selectedDecision.strategyCatalogueVersion || '1.0.0'}</span></span>
+                  <span>Base Graph Version: <span className="text-amber-300">v{selectedDecision.baseGraphVersion || 1}</span></span>
+                </div>
                 <p className="text-xs text-slate-300 font-sans leading-relaxed pt-1">
                   {selectedDecision.decisionRationale}
                 </p>

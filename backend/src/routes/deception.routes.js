@@ -1,14 +1,16 @@
 /**
- * Tenant-Scoped Deception Router (Stage 5A).
+ * Tenant-Scoped Deception Router (Stage 5A & Stage 5A.1).
  *
  * Mount path: /api/v1/tenants/:tenantId/deception
  *
  * Exposes:
  * - /policies: CRUD for deception policies
  * - /strategies: catalog of the 5 deception strategies
+ * - /strategies/benchmark: 11-scenario strategy selection validation suite
  * - /evaluate: policy evaluation engine execution
  * - /decisions: immutable decision history
  * - /graphs: Deception State Graph topology and planning
+ * - /graphs/:graphId/reassess: multi-stage strategy reassessment and consistency verification
  */
 
 import { Router } from 'express';
@@ -20,12 +22,14 @@ import {
   updatePolicy,
   listStrategies,
   getStrategy,
+  getStrategyBenchmark,
   evaluatePolicy,
   listDecisions,
   getDecision,
   listGraphs,
   getGraph,
-  planGraphMutation
+  planGraphMutation,
+  reassessGraphMutation
 } from '../controllers/deception.controller.js';
 
 export const deceptionRouter = Router({ mergeParams: true });
@@ -53,6 +57,11 @@ deceptionRouter.patch(
 );
 
 // Strategies
+deceptionRouter.get(
+  '/strategies/benchmark',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  getStrategyBenchmark
+);
 deceptionRouter.get(
   '/strategies',
   requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
@@ -98,4 +107,9 @@ deceptionRouter.post(
   '/graphs/:graphId/plan',
   requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
   planGraphMutation
+);
+deceptionRouter.post(
+  '/graphs/:graphId/reassess',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  reassessGraphMutation
 );

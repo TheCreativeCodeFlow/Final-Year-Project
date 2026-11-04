@@ -371,6 +371,10 @@ export const apiClient = {
     return apiClient.get(`/tenants/${tenantId}/deception/strategies/${strategyId}`);
   },
 
+  getDeceptionStrategyBenchmark: async (tenantId) => {
+    return apiClient.get(`/tenants/${tenantId}/deception/strategies/benchmark`);
+  },
+
   evaluateDeceptionPolicy: async (tenantId, payload) => {
     return apiClient.post(`/tenants/${tenantId}/deception/evaluate`, payload);
   },
@@ -397,6 +401,10 @@ export const apiClient = {
 
   planDeceptionGraphMutation: async (tenantId, graphId, payload) => {
     return apiClient.post(`/tenants/${tenantId}/deception/graphs/${graphId}/plan`, payload);
+  },
+
+  reassessDeceptionGraphMutation: async (tenantId, graphId, payload) => {
+    return apiClient.post(`/tenants/${tenantId}/deception/graphs/${graphId}/reassess`, payload);
   }
 };
 

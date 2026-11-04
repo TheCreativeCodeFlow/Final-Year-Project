@@ -1,22 +1,15 @@
 /**
- * Adaptive Deception Policy Evaluation Engine (Stage 5A).
+ * Adaptive Deception Policy Evaluation Engine (Stage 5A & Stage 5A.1).
  *
- * Consumes:
- * - BehavioralAssessment (detection assessment with rule findings and ML anomaly results)
- * - ProtectedApplication (target application configuration and routing mode)
- * - DeceptionPolicy (tenant/application policy with evidence criteria and permitted actions)
- * - DeceptionStrategy metadata (available strategy catalogue)
- * - DeceptionGraph (current graph topology)
+ * Implements strict separation between:
+ * 1. deceptionDisposition: Represents whether deception is proposed, not proposed, or rejected.
+ * 2. originAccessDecision: Deferral to gateway's independent access-control policy (never grants origin access).
  *
- * Returns deterministic PolicyDecision:
- * - ALLOW_NORMAL
- * - BLOCK_POLICY
- * - INSUFFICIENT_EVIDENCE
- * - POLICY_NOT_CONFIGURED
- * - NO_ELIGIBLE_STRATEGY
- * - PROPOSE_DECEPTION
- *
- * Invariant: Never proposes diversion when no policy is configured or evidence is degraded.
+ * Invariants:
+ * - A missing deception policy must NOT override an existing gateway security restriction.
+ * - A degraded detection assessment must NOT become proof that traffic is benign.
+ * - Deception eligibility safeguards prevent legitimate user disruption.
+ * - Decisions record complete immutable snapshots of policy, strategy, and evidence.
  */
 
 import { StrategySelectionService } from './strategy-selection.service.js';
@@ -31,7 +24,21 @@ export const DECISION_RESULTS = {
   PROPOSE_DECEPTION: 'PROPOSE_DECEPTION'
 };
 
+export const DECEPTION_DISPOSITIONS = {
+  PROPOSE_DECEPTION: 'PROPOSE_DECEPTION',
+  DECEPTION_NOT_PROPOSED: 'DECEPTION_NOT_PROPOSED',
+  DECEPTION_REJECTED: 'DECEPTION_REJECTED'
+};
+
+export const ORIGIN_ACCESS_DECISIONS = {
+  DEFER_TO_GATEWAY: 'DEFER_TO_GATEWAY',
+  PROPOSE_DIVERT_TO_DECEPTION: 'PROPOSE_DIVERT_TO_DECEPTION',
+  DENY_APPLICATION_SUSPENDED: 'DENY_APPLICATION_SUSPENDED',
+  DEFER_WITH_UNCERTAINTY: 'DEFER_WITH_UNCERTAINTY'
+};
+
 export const REASON_CODES = {
+  // Foundational codes
   POLICY_DISABLED_OR_MISSING: 'POLICY_DISABLED_OR_MISSING',
   ASSESSMENT_BENIGN: 'ASSESSMENT_BENIGN',
   ASSESSMENT_INSUFFICIENT_EVIDENCE: 'ASSESSMENT_INSUFFICIENT_EVIDENCE',
@@ -49,7 +56,19 @@ export const REASON_CODES = {
   CONFIDENCE_THRESHOLD_MET: 'CONFIDENCE_THRESHOLD_MET',
   RULE_CORROBORATED: 'RULE_CORROBORATED',
   STRATEGY_SELECTED: 'STRATEGY_SELECTED',
-  DSG_PLAN_GENERATED: 'DSG_PLAN_GENERATED'
+  DSG_PLAN_GENERATED: 'DSG_PLAN_GENERATED',
+
+  // Stage 5A.1 Semantic Separation & Disambiguation Codes
+  DECEPTION_POLICY_NOT_CONFIGURED_DEFER_GATEWAY: 'DECEPTION_POLICY_NOT_CONFIGURED_DEFER_GATEWAY',
+  DEGRADED_TELEMETRY_NO_ASSUMPTION_OF_BENIGN: 'DEGRADED_TELEMETRY_NO_ASSUMPTION_OF_BENIGN',
+  BENIGN_TRAFFIC_DECEPTION_NOT_PROPOSED: 'BENIGN_TRAFFIC_DECEPTION_NOT_PROPOSED',
+  DECEPTION_REJECTED_UNVERIFIED_ML_ANOMALY: 'DECEPTION_REJECTED_UNVERIFIED_ML_ANOMALY',
+  DECEPTION_REJECTED_LOW_CONFIDENCE: 'DECEPTION_REJECTED_LOW_CONFIDENCE',
+  DECEPTION_REJECTED_MISSING_CORROBORATION: 'DECEPTION_REJECTED_MISSING_CORROBORATION',
+  DECEPTION_REJECTED_COLLISION_RISK: 'DECEPTION_REJECTED_COLLISION_RISK',
+  APPLICATION_SUSPENDED_ACCESS_DENIED: 'APPLICATION_SUSPENDED_ACCESS_DENIED',
+  DECEPTION_PROPOSED_AWAITING_ROUTING_AUTH: 'DECEPTION_PROPOSED_AWAITING_ROUTING_AUTH',
+  NO_ELIGIBLE_STRATEGY_DECEPTION_REJECTED: 'NO_ELIGIBLE_STRATEGY_DECEPTION_REJECTED'
 };
 
 export class PolicyEvaluationEngine {
@@ -57,6 +76,7 @@ export class PolicyEvaluationEngine {
     this.strategySelector = strategySelector || new StrategySelectionService();
     this.dsgPlanner = dsgPlanner || new DSGPlannerService();
     this.evaluatorVersion = '5A.1';
+    this.strategyCatalogueVersion = '1.0.0';
   }
 
   /**
@@ -72,7 +92,49 @@ export class PolicyEvaluationEngine {
     const findings = Array.isArray(assessment.ruleFindings) ? assessment.ruleFindings : [];
     const hasCorroboration = findings.length > 0;
     const isComplete = !assessment.telemetryLossDetected && assessment.dataQualityState !== 'DEGRADED';
-    return (assessment.assessmentLabel === 'ATTACK' || assessment.classification === 'ATTACK') && hasCorroboration && isComplete;
+    return (
+      (assessment.assessmentLabel === 'ATTACK' || assessment.classification === 'ATTACK') &&
+      hasCorroboration &&
+      isComplete
+    );
+  }
+
+  /**
+   * Build immutable assessment and policy snapshots for provenance.
+   */
+  static buildAssessmentSnapshot(assessment = {}) {
+    return {
+      id: assessment.id || null,
+      label: assessment.assessmentLabel || assessment.classification || 'UNKNOWN',
+      confidence: Number(
+        assessment.confidence ??
+        assessment.confidenceScore ??
+        assessment.riskScore ??
+        assessment.assessmentScore ??
+        0
+      ),
+      riskScore: Number(assessment.riskScore ?? 0),
+      dataQualityState: assessment.dataQualityState || 'COMPLETE',
+      telemetryLossDetected: Boolean(assessment.telemetryLossDetected),
+      deceptionEligible: PolicyEvaluationEngine.isDeceptionEligible(assessment),
+      ruleFindingCount: Array.isArray(assessment.ruleFindings) ? assessment.ruleFindings.length : 0,
+      mlAnomalyDetected: Boolean(assessment.mlAnomalyResult?.anomalyDetected),
+      featureSnapshot: assessment.features || assessment.featureSnapshot || null
+    };
+  }
+
+  static buildPolicySnapshot(policy = null) {
+    if (!policy) return null;
+    return {
+      id: policy.id,
+      name: policy.name,
+      policyIdentifier: policy.policyIdentifier,
+      version: policy.version || 1,
+      priority: policy.priority || 100,
+      applicationId: policy.applicationId || null,
+      requiredEvidenceCriteria: policy.requiredEvidenceCriteria || {},
+      permittedActions: policy.permittedActions || []
+    };
   }
 
   /**
@@ -87,6 +149,8 @@ export class PolicyEvaluationEngine {
    * @param {string} params.tenantId
    * @returns {{
    *   decisionResult: string,
+   *   deceptionDisposition: string,
+   *   originAccessDecision: string,
    *   decisionRationale: string,
    *   reasonCodes: string[],
    *   policyId: string|null,
@@ -98,6 +162,7 @@ export class PolicyEvaluationEngine {
    *   rejectedCandidates: Array,
    *   dsgPlan: Object|null,
    *   evaluatorVersion: string,
+   *   strategyCatalogueVersion: string,
    *   evidenceReferences: Object
    * }}
    */
@@ -110,47 +175,77 @@ export class PolicyEvaluationEngine {
     tenantId
   }) {
     const reasonCodes = [];
-    const assessmentConfidence = Number(
-      assessment.confidence ??
-      assessment.confidenceScore ??
-      assessment.riskScore ??
-      assessment.assessmentScore ??
-      0
-    );
-    const deceptionEligible = PolicyEvaluationEngine.isDeceptionEligible(assessment);
+    const assessmentSnapshot = PolicyEvaluationEngine.buildAssessmentSnapshot(assessment);
+    const policySnapshot = PolicyEvaluationEngine.buildPolicySnapshot(policy);
+    const assessmentConfidence = assessmentSnapshot.confidence;
+    const deceptionEligible = assessmentSnapshot.deceptionEligible;
 
     const evidenceReferences = {
-      assessmentId: assessment.id || null,
-      assessmentLabel: assessment.assessmentLabel || assessment.classification || 'UNKNOWN',
+      assessmentId: assessmentSnapshot.id,
+      assessmentLabel: assessmentSnapshot.label,
       confidence: assessmentConfidence,
-      dataQualityState: assessment.dataQualityState || 'COMPLETE',
-      telemetryLossDetected: Boolean(assessment.telemetryLossDetected),
+      dataQualityState: assessmentSnapshot.dataQualityState,
+      telemetryLossDetected: assessmentSnapshot.telemetryLossDetected,
       deceptionEligible,
-      ruleFindingCount: Array.isArray(assessment.ruleFindings) ? assessment.ruleFindings.length : 0,
-      mlAnomalyDetected: Boolean(assessment.mlAnomalyResult?.anomalyDetected)
+      ruleFindingCount: assessmentSnapshot.ruleFindingCount,
+      mlAnomalyDetected: assessmentSnapshot.mlAnomalyDetected,
+      assessmentSnapshot,
+      policySnapshot,
+      featureSnapshot: assessmentSnapshot.featureSnapshot
     };
+
+    // Helper to package consistent return structure
+    const createResult = ({
+      decisionResult,
+      deceptionDisposition,
+      originAccessDecision,
+      decisionRationale,
+      selectedStrategy = null,
+      selectedStrategyVersion = null,
+      candidateStrategyIds = [],
+      rejectedCandidates = [],
+      dsgPlan = null
+    }) => ({
+      decisionResult,
+      deceptionDisposition,
+      originAccessDecision,
+      decisionRationale,
+      reasonCodes,
+      policyId: policy?.id || null,
+      policyVersion: policy?.version || null,
+      selectedStrategy,
+      selectedStrategyId: selectedStrategy ? (selectedStrategy.id || selectedStrategy.strategyIdentifier) : null,
+      selectedStrategyVersion,
+      candidateStrategyIds,
+      rejectedCandidates,
+      dsgPlan,
+      evaluatorVersion: this.evaluatorVersion,
+      strategyCatalogueVersion: this.strategyCatalogueVersion,
+      evidenceReferences: {
+        ...evidenceReferences,
+        selectedStrategySnapshot: selectedStrategy
+          ? {
+              strategyIdentifier: selectedStrategy.strategyIdentifier,
+              strategyType: selectedStrategy.strategyType,
+              version: selectedStrategyVersion || selectedStrategy.version || 1
+            }
+          : null
+      }
+    });
 
     // -------------------------------------------------------------------------
     // Guard 1: Policy Configuration Safe Default
     // -------------------------------------------------------------------------
     if (!policy || policy.enabled === false) {
       reasonCodes.push(REASON_CODES.POLICY_DISABLED_OR_MISSING);
-      return {
+      reasonCodes.push(REASON_CODES.DECEPTION_POLICY_NOT_CONFIGURED_DEFER_GATEWAY);
+      return createResult({
         decisionResult: DECISION_RESULTS.POLICY_NOT_CONFIGURED,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_NOT_PROPOSED,
+        originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_TO_GATEWAY,
         decisionRationale:
-          'No active deception policy is configured for this tenant or application. System defaults safely to normal traffic flow without deception proposal.',
-        reasonCodes,
-        policyId: policy?.id || null,
-        policyVersion: policy?.version || null,
-        selectedStrategy: null,
-        selectedStrategyId: null,
-        selectedStrategyVersion: null,
-        candidateStrategyIds: [],
-        rejectedCandidates: [],
-        dsgPlan: null,
-        evaluatorVersion: this.evaluatorVersion,
-        evidenceReferences
-      };
+          'No active deception policy is configured for this tenant or application. Deception is not proposed. Origin access control is deferred to independent gateway routing policy.'
+      });
     }
 
     // -------------------------------------------------------------------------
@@ -158,21 +253,14 @@ export class PolicyEvaluationEngine {
     // -------------------------------------------------------------------------
     if (application && application.status === 'SUSPENDED') {
       reasonCodes.push(REASON_CODES.APPLICATION_SUSPENDED);
-      return {
+      reasonCodes.push(REASON_CODES.APPLICATION_SUSPENDED_ACCESS_DENIED);
+      return createResult({
         decisionResult: DECISION_RESULTS.BLOCK_POLICY,
-        decisionRationale: 'Protected application is suspended. Access is blocked per administrative policy.',
-        reasonCodes,
-        policyId: policy.id,
-        policyVersion: policy.version,
-        selectedStrategy: null,
-        selectedStrategyId: null,
-        selectedStrategyVersion: null,
-        candidateStrategyIds: [],
-        rejectedCandidates: [],
-        dsgPlan: null,
-        evaluatorVersion: this.evaluatorVersion,
-        evidenceReferences
-      };
+        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_NOT_PROPOSED,
+        originAccessDecision: ORIGIN_ACCESS_DECISIONS.DENY_APPLICATION_SUSPENDED,
+        decisionRationale:
+          'Protected application is administratively suspended. Origin access is denied per administrative policy; deception is not proposed.'
+      });
     }
 
     // -------------------------------------------------------------------------
@@ -180,42 +268,26 @@ export class PolicyEvaluationEngine {
     // -------------------------------------------------------------------------
     if (assessment.telemetryLossDetected || assessment.dataQualityState === 'DEGRADED') {
       reasonCodes.push(REASON_CODES.TELEMETRY_LOSS_DEGRADATION);
-      return {
+      reasonCodes.push(REASON_CODES.DEGRADED_TELEMETRY_NO_ASSUMPTION_OF_BENIGN);
+      return createResult({
         decisionResult: DECISION_RESULTS.INSUFFICIENT_EVIDENCE,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+        originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_WITH_UNCERTAINTY,
         decisionRationale:
-          'Telemetry loss or degraded data quality detected during observation window. Deception proposals are strictly prohibited on degraded observations.',
-        reasonCodes,
-        policyId: policy.id,
-        policyVersion: policy.version,
-        selectedStrategy: null,
-        selectedStrategyId: null,
-        selectedStrategyVersion: null,
-        candidateStrategyIds: [],
-        rejectedCandidates: [],
-        dsgPlan: null,
-        evaluatorVersion: this.evaluatorVersion,
-        evidenceReferences
-      };
+          'Telemetry loss or degraded data quality detected during observation window. Deception is strictly rejected. Origin access decision is deferred to gateway under uncertainty condition — degraded telemetry is never assumed to be benign.'
+      });
     }
 
     if (assessment.assessmentLabel === 'INSUFFICIENT_EVIDENCE') {
       reasonCodes.push(REASON_CODES.ASSESSMENT_INSUFFICIENT_EVIDENCE);
-      return {
+      reasonCodes.push(REASON_CODES.DEGRADED_TELEMETRY_NO_ASSUMPTION_OF_BENIGN);
+      return createResult({
         decisionResult: DECISION_RESULTS.INSUFFICIENT_EVIDENCE,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+        originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_WITH_UNCERTAINTY,
         decisionRationale:
-          'Detection assessment explicitly labeled as INSUFFICIENT_EVIDENCE. Cannot authorize deception planning without sufficient behavioral ground truth.',
-        reasonCodes,
-        policyId: policy.id,
-        policyVersion: policy.version,
-        selectedStrategy: null,
-        selectedStrategyId: null,
-        selectedStrategyVersion: null,
-        candidateStrategyIds: [],
-        rejectedCandidates: [],
-        dsgPlan: null,
-        evaluatorVersion: this.evaluatorVersion,
-        evidenceReferences
-      };
+          'Detection assessment explicitly labeled as INSUFFICIENT_EVIDENCE. Deception is rejected. Origin access decision is deferred to gateway with uncertainty flag.'
+      });
     }
 
     // -------------------------------------------------------------------------
@@ -223,69 +295,44 @@ export class PolicyEvaluationEngine {
     // -------------------------------------------------------------------------
     if (assessment.assessmentLabel === 'BENIGN') {
       reasonCodes.push(REASON_CODES.ASSESSMENT_BENIGN);
-      return {
+      reasonCodes.push(REASON_CODES.BENIGN_TRAFFIC_DECEPTION_NOT_PROPOSED);
+      return createResult({
         decisionResult: DECISION_RESULTS.ALLOW_NORMAL,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_NOT_PROPOSED,
+        originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_TO_GATEWAY,
         decisionRationale:
-          'Observed behavioral telemetry conforms to benign baseline parameters. Routed normally without diversion.',
-        reasonCodes,
-        policyId: policy.id,
-        policyVersion: policy.version,
-        selectedStrategy: null,
-        selectedStrategyId: null,
-        selectedStrategyVersion: null,
-        candidateStrategyIds: [],
-        rejectedCandidates: [],
-        dsgPlan: null,
-        evaluatorVersion: this.evaluatorVersion,
-        evidenceReferences
-      };
+          'Observed behavioral telemetry conforms to benign baseline parameters. Deception is not proposed. Origin access control is deferred to gateway upstream policy.'
+      });
     }
 
     // -------------------------------------------------------------------------
     // Guard 5: Deception Eligibility Safeguards
     // -------------------------------------------------------------------------
     if (deceptionEligible !== true) {
-      // Differentiate why it's not eligible
       const ruleCount = Array.isArray(assessment.ruleFindings) ? assessment.ruleFindings.length : 0;
-      const isMlOnly = ruleCount === 0 && assessment.mlAnomalyResult?.anomalyDetected;
+      const isMlOnly = ruleCount === 0 && Boolean(assessment.mlAnomalyResult?.anomalyDetected);
 
       if (isMlOnly) {
         reasonCodes.push(REASON_CODES.ML_ONLY_UNVERIFIED_ANOMALY);
-        return {
+        reasonCodes.push(REASON_CODES.DECEPTION_REJECTED_UNVERIFIED_ML_ANOMALY);
+        return createResult({
           decisionResult: DECISION_RESULTS.INSUFFICIENT_EVIDENCE,
+          deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+          originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_WITH_UNCERTAINTY,
           decisionRationale:
-            'Unsupervised ML anomaly detected without deterministic security rule corroboration. Deception proposals require verified rule corroboration to avoid legitimate user disruption.',
-          reasonCodes,
-          policyId: policy.id,
-          policyVersion: policy.version,
-          selectedStrategy: null,
-          selectedStrategyId: null,
-          selectedStrategyVersion: null,
-          candidateStrategyIds: [],
-          rejectedCandidates: [],
-          dsgPlan: null,
-          evaluatorVersion: this.evaluatorVersion,
-          evidenceReferences
-        };
+            'Unsupervised ML anomaly detected without deterministic security rule corroboration. Deception rejected; requires verified rule corroboration to avoid legitimate user disruption. Origin access deferred with uncertainty.'
+        });
       }
 
       reasonCodes.push(REASON_CODES.HIGH_COLLISION_RISK);
-      return {
+      reasonCodes.push(REASON_CODES.DECEPTION_REJECTED_COLLISION_RISK);
+      return createResult({
         decisionResult: DECISION_RESULTS.ALLOW_NORMAL,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+        originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_TO_GATEWAY,
         decisionRationale:
-          'Assessment failed deception eligibility criteria (e.g. potential legitimate user collision risk or unverified session attribution). Allowed normal flow.',
-        reasonCodes,
-        policyId: policy.id,
-        policyVersion: policy.version,
-        selectedStrategy: null,
-        selectedStrategyId: null,
-        selectedStrategyVersion: null,
-        candidateStrategyIds: [],
-        rejectedCandidates: [],
-        dsgPlan: null,
-        evaluatorVersion: this.evaluatorVersion,
-        evidenceReferences
-      };
+          'Assessment failed deception eligibility criteria (e.g. potential legitimate user collision risk or unverified session attribution). Deception rejected; origin access deferred to gateway policy.'
+      });
     }
 
     reasonCodes.push(REASON_CODES.ELIGIBILITY_CHECK_PASSED);
@@ -299,21 +346,13 @@ export class PolicyEvaluationEngine {
     const minConfidence = Number(criteria.minConfidence ?? 0.7);
     if (assessmentConfidence < minConfidence) {
       reasonCodes.push(REASON_CODES.CONFIDENCE_BELOW_POLICY_MINIMUM);
-      return {
+      reasonCodes.push(REASON_CODES.DECEPTION_REJECTED_LOW_CONFIDENCE);
+      return createResult({
         decisionResult: DECISION_RESULTS.INSUFFICIENT_EVIDENCE,
-        decisionRationale: `Assessment confidence (${assessmentConfidence}) does not meet policy minimum requirement (${minConfidence}).`,
-        reasonCodes,
-        policyId: policy.id,
-        policyVersion: policy.version,
-        selectedStrategy: null,
-        selectedStrategyId: null,
-        selectedStrategyVersion: null,
-        candidateStrategyIds: [],
-        rejectedCandidates: [],
-        dsgPlan: null,
-        evaluatorVersion: this.evaluatorVersion,
-        evidenceReferences
-      };
+        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+        originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_WITH_UNCERTAINTY,
+        decisionRationale: `Assessment confidence (${assessmentConfidence}) does not meet policy minimum requirement (${minConfidence}). Deception rejected.`
+      });
     }
     reasonCodes.push(REASON_CODES.CONFIDENCE_THRESHOLD_MET);
 
@@ -322,22 +361,14 @@ export class PolicyEvaluationEngine {
     const ruleFindings = Array.isArray(assessment.ruleFindings) ? assessment.ruleFindings : [];
     if (requireRuleCorroboration && ruleFindings.length === 0) {
       reasonCodes.push(REASON_CODES.RULE_CORROBORATION_REQUIRED);
-      return {
+      reasonCodes.push(REASON_CODES.DECEPTION_REJECTED_MISSING_CORROBORATION);
+      return createResult({
         decisionResult: DECISION_RESULTS.INSUFFICIENT_EVIDENCE,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+        originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_WITH_UNCERTAINTY,
         decisionRationale:
-          'Policy strictly requires deterministic rule corroboration, but no deterministic rule findings were present in the assessment.',
-        reasonCodes,
-        policyId: policy.id,
-        policyVersion: policy.version,
-        selectedStrategy: null,
-        selectedStrategyId: null,
-        selectedStrategyVersion: null,
-        candidateStrategyIds: [],
-        rejectedCandidates: [],
-        dsgPlan: null,
-        evaluatorVersion: this.evaluatorVersion,
-        evidenceReferences
-      };
+          'Policy strictly requires deterministic rule corroboration, but no deterministic rule findings were present in the assessment. Deception rejected.'
+      });
     }
     if (ruleFindings.length > 0) {
       reasonCodes.push(REASON_CODES.RULE_CORROBORATED);
@@ -347,21 +378,13 @@ export class PolicyEvaluationEngine {
     const requiredQuality = criteria.requiredTelemetryQuality || 'COMPLETE';
     if (requiredQuality === 'COMPLETE' && assessment.dataQualityState !== 'COMPLETE') {
       reasonCodes.push(REASON_CODES.TELEMETRY_QUALITY_INSUFFICIENT);
-      return {
+      reasonCodes.push(REASON_CODES.DEGRADED_TELEMETRY_NO_ASSUMPTION_OF_BENIGN);
+      return createResult({
         decisionResult: DECISION_RESULTS.INSUFFICIENT_EVIDENCE,
-        decisionRationale: `Policy requires "${requiredQuality}" telemetry quality, but assessment reports "${assessment.dataQualityState}".`,
-        reasonCodes,
-        policyId: policy.id,
-        policyVersion: policy.version,
-        selectedStrategy: null,
-        selectedStrategyId: null,
-        selectedStrategyVersion: null,
-        candidateStrategyIds: [],
-        rejectedCandidates: [],
-        dsgPlan: null,
-        evaluatorVersion: this.evaluatorVersion,
-        evidenceReferences
-      };
+        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+        originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_WITH_UNCERTAINTY,
+        decisionRationale: `Policy requires "${requiredQuality}" telemetry quality, but assessment reports "${assessment.dataQualityState}". Deception rejected.`
+      });
     }
 
     // 6d. Check permitted actions in policy
@@ -369,24 +392,16 @@ export class PolicyEvaluationEngine {
     const permitsDeception =
       permittedActions.includes('PROPOSE_DECEPTION') ||
       permittedActions.includes('DIVERSION') ||
-      permittedActions.length === 0; // Default permits if open
+      permittedActions.length === 0; // Default permits if unspecified
     if (!permitsDeception) {
       reasonCodes.push(REASON_CODES.ACTION_NOT_PERMITTED_BY_POLICY);
-      return {
+      return createResult({
         decisionResult: DECISION_RESULTS.ALLOW_NORMAL,
-        decisionRationale: 'Policy does not permit deception proposal or diversion actions.',
-        reasonCodes,
-        policyId: policy.id,
-        policyVersion: policy.version,
-        selectedStrategy: null,
-        selectedStrategyId: null,
-        selectedStrategyVersion: null,
-        candidateStrategyIds: [],
-        rejectedCandidates: [],
-        dsgPlan: null,
-        evaluatorVersion: this.evaluatorVersion,
-        evidenceReferences
-      };
+        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_NOT_PROPOSED,
+        originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_TO_GATEWAY,
+        decisionRationale:
+          'Policy does not permit deception proposal or diversion actions. Deception is not proposed; origin access deferred to gateway.'
+      });
     }
 
     // -------------------------------------------------------------------------
@@ -402,21 +417,15 @@ export class PolicyEvaluationEngine {
 
     if (!selection.selectedStrategy) {
       reasonCodes.push(REASON_CODES.NO_COMPATIBLE_STRATEGY_FOUND);
-      return {
+      reasonCodes.push(REASON_CODES.NO_ELIGIBLE_STRATEGY_DECEPTION_REJECTED);
+      return createResult({
         decisionResult: DECISION_RESULTS.NO_ELIGIBLE_STRATEGY,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+        originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_TO_GATEWAY,
         decisionRationale: `Assessment passed eligibility criteria, but no deception strategy met category and compatibility requirements. ${selection.selectionRationale}`,
-        reasonCodes,
-        policyId: policy.id,
-        policyVersion: policy.version,
-        selectedStrategy: null,
-        selectedStrategyId: null,
-        selectedStrategyVersion: null,
         candidateStrategyIds,
-        rejectedCandidates: selection.rejectedCandidates,
-        dsgPlan: null,
-        evaluatorVersion: this.evaluatorVersion,
-        evidenceReferences
-      };
+        rejectedCandidates: selection.rejectedCandidates
+      });
     }
 
     reasonCodes.push(REASON_CODES.STRATEGY_SELECTED);
@@ -435,23 +444,20 @@ export class PolicyEvaluationEngine {
     });
 
     reasonCodes.push(REASON_CODES.DSG_PLAN_GENERATED);
+    reasonCodes.push(REASON_CODES.DECEPTION_PROPOSED_AWAITING_ROUTING_AUTH);
 
-    const decisionRationale = `Corroborated ${assessment.assessmentLabel} attack (confidence: ${assessmentConfidence}). Policy "${policy.name}" criteria satisfied. Selected strategy "${selectedStrategy.strategyIdentifier}" (${selectedStrategy.strategyType}). Generated proposed DSG mutation plan (${dsgPlan.nodesToAdd.length} nodes, ${dsgPlan.edgesToAdd.length} edges). Live execution remains unprovisioned.`;
+    const decisionRationale = `Corroborated ${assessmentSnapshot.label} attack (confidence: ${assessmentConfidence}). Policy "${policy.name}" criteria satisfied. Selected strategy "${selectedStrategy.strategyIdentifier}" (${selectedStrategy.strategyType}). Generated proposed DSG mutation plan (${dsgPlan.nodesToAdd.length} nodes, ${dsgPlan.edgesToAdd.length} edges). Deception is proposed awaiting routing authorization. Origin access remains governed by gateway.`;
 
-    return {
+    return createResult({
       decisionResult: DECISION_RESULTS.PROPOSE_DECEPTION,
+      deceptionDisposition: DECEPTION_DISPOSITIONS.PROPOSE_DECEPTION,
+      originAccessDecision: ORIGIN_ACCESS_DECISIONS.PROPOSE_DIVERT_TO_DECEPTION,
       decisionRationale,
-      reasonCodes,
-      policyId: policy.id,
-      policyVersion: policy.version,
       selectedStrategy,
-      selectedStrategyId: selectedStrategy.id || selectedStrategy.strategyIdentifier,
       selectedStrategyVersion: selectedStrategy.version || 1,
       candidateStrategyIds,
       rejectedCandidates: selection.rejectedCandidates,
-      dsgPlan,
-      evaluatorVersion: this.evaluatorVersion,
-      evidenceReferences
-    };
+      dsgPlan
+    });
   }
 }

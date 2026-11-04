@@ -311,6 +311,10 @@ model PolicyDecision {
   proposedMutations       Json?
   reasonCodes             Json?
   evaluatorVersion        String?
+  deceptionDisposition    String? // "PROPOSE_DECEPTION", "DECEPTION_NOT_PROPOSED", "DECEPTION_REJECTED"
+  originAccessDecision    String? // "DEFER_TO_GATEWAY", "PROPOSE_DIVERT_TO_DECEPTION", "DENY_APPLICATION_SUSPENDED", "DEFER_WITH_UNCERTAINTY"
+  baseGraphVersion        Int?
+  strategyCatalogueVersion String?
   decisionResult          String // "ALLOW_NORMAL", "BLOCK_POLICY", "INSUFFICIENT_EVIDENCE", "POLICY_NOT_CONFIGURED", "NO_ELIGIBLE_STRATEGY", "PROPOSE_DECEPTION"
   decisionRationale       String
   evidenceReferences      Json?
@@ -409,6 +413,7 @@ model DeceptionGraph {
   applicationId   String?
   graphIdentifier String // e.g. "dsg-apex-01"
   graphVersion    Int      @default(1)
+  revisionId      String?  @default(uuid())
   status          String   @default("ACTIVE") // ACTIVE, DRAFT, ARCHIVED
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -472,9 +477,13 @@ model DeceptionGraphTransition {
   tenantId                String
   graphId                 String
   policyDecisionId        String?
+  baseGraphVersion        Int?
+  targetGraphVersion      Int?
+  idempotencyKey          String?
+  rejectionReason         String?
   previousState           Json
   proposedState           Json
-  transitionStatus        String    @default("PROPOSED") // "PROPOSED", "VALIDATED", "REJECTED", "PENDING_EXECUTION"
+  transitionStatus        String    @default("PROPOSED") // "PROPOSED", "VALIDATED", "REJECTED"
   triggeringObservationId String?
   triggeringDecisionId    String?
   provenance              String // e.g. "ADAPTIVE_PLANNER_SIMULATION", "POLICY_EVALUATOR_STAGE_5A"

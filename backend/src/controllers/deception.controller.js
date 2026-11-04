@@ -1,12 +1,14 @@
 /**
- * Adaptive Deception Policy & DSG Controller (Stage 5A).
+ * Adaptive Deception Policy & DSG Controller (Stage 5A & Stage 5A.1).
  *
  * Exposes tenant-scoped endpoints under /api/v1/tenants/:tenantId/deception/...:
- * - Policies: list, get, create, update
- * - Strategies: catalogue across 5 categories
+ * - Policies: list, get, create, update (with deterministic priority & conflict resolution)
+ * - Strategies: catalogue across 5 categories + /strategies/benchmark
  * - Evaluation: evaluate assessments against policies and record immutable decisions
+ *   with separated deceptionDisposition and originAccessDecision
  * - Decisions: list and inspect historical policy decisions
- * - DSG Graphs: list, inspect topology across 3 layers, and plan proposed mutations
+ * - DSG Graphs: list, inspect topology across 3 layers, plan proposed mutations with
+ *   version concurrency, and reassess multi-stage strategies
  */
 
 import { getPrismaClient } from '../db/client.js';
@@ -16,6 +18,7 @@ import { DecisionRecorderService } from '../deception/decision-recorder.service.
 import { StrategySelectionService } from '../deception/strategy-selection.service.js';
 import { DSGPlannerService } from '../deception/dsg-planner.service.js';
 import { BASELINE_STRATEGIES } from '../deception/strategy-catalog.js';
+import { StrategyBenchmarkRunner } from '../deception/strategy-scenarios.js';
 import { parsePagination } from '../utils/validators.js';
 
 function getTenantId(req) {
@@ -135,14 +138,12 @@ export async function listStrategies(req, res, next) {
     const tenantId = getTenantId(req);
     const prisma = req.prisma || getPrismaClient();
 
-    // Query DB strategies + baseline strategies
     const dbStrategies = await prisma.deceptionStrategy.findMany({
       where: {
         OR: [{ tenantId }, { tenantId: null }]
       }
     });
 
-    // Merge baseline definitions with DB records
     const mergedStrategies = BASELINE_STRATEGIES.map((base) => {
       const match = dbStrategies.find((s) => s.strategyIdentifier === base.strategyIdentifier);
       return {
@@ -155,7 +156,8 @@ export async function listStrategies(req, res, next) {
     res.status(200).json({
       status: 'success',
       data: mergedStrategies,
-      notice: 'STAGE_5A_PLANNING_ONLY: Deception strategies define simulation blueprints. No live containers or honeypots are executed in this milestone.'
+      notice:
+        'STAGE_5A_PLANNING_ONLY: Deception strategies define simulation blueprints. No live containers or honeypots are executed in this milestone.'
     });
   } catch (err) {
     next(err);
@@ -192,6 +194,24 @@ export async function getStrategy(req, res, next) {
   }
 }
 
+export async function getStrategyBenchmark(req, res, next) {
+  try {
+    const runner = new StrategyBenchmarkRunner();
+    const benchmarkResults = runner.evaluateAllScenarios();
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        totalScenarios: benchmarkResults.length,
+        passedCount: benchmarkResults.filter((r) => r.pass).length,
+        scenarios: benchmarkResults
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Policy Evaluation Engine
 // -----------------------------------------------------------------------------
@@ -205,6 +225,7 @@ export async function evaluatePolicy(req, res, next) {
       applicationId,
       policyId,
       customAssessment,
+      baseGraphVersion,
       persistDecision = true
     } = req.body;
 
@@ -241,7 +262,7 @@ export async function evaluatePolicy(req, res, next) {
       });
     }
 
-    // 3. Resolve Policy
+    // 3. Resolve Policy (with deterministic priority & conflict resolution)
     const policyService = new PolicyService(prisma);
     let policy = null;
     if (policyId) {
@@ -250,18 +271,17 @@ export async function evaluatePolicy(req, res, next) {
       policy = await policyService.resolveApplicablePolicy({
         tenantId,
         applicationId: resolvedAppId,
-        classification: assessment.assessmentLabel
+        classification: assessment.assessmentLabel || assessment.classification
       });
     }
 
     // 4. Resolve Active DSG Graph
-    let currentGraph = null;
-    currentGraph = await prisma.deceptionGraph.findFirst({
+    let currentGraph = await prisma.deceptionGraph.findFirst({
       where: { tenantId, status: 'ACTIVE' },
       include: { nodes: true, edges: true }
     });
 
-    // 5. Evaluate
+    // 5. Evaluate policy
     const engine = new PolicyEvaluationEngine();
     const evaluation = engine.evaluate({
       assessment,
@@ -283,6 +303,7 @@ export async function evaluatePolicy(req, res, next) {
         observationId: assessment.observationId || null,
         evaluation,
         graphId: currentGraph?.id || null,
+        baseGraphVersion: baseGraphVersion ?? currentGraph?.graphVersion,
         actorIdentifier: req.user?.email || 'POLICY_EVALUATOR'
       });
     }
@@ -292,7 +313,9 @@ export async function evaluatePolicy(req, res, next) {
       data: {
         evaluation,
         decisionId: recordedDecision?.id || null,
-        persisted: Boolean(recordedDecision)
+        persisted: Boolean(recordedDecision),
+        deceptionDisposition: evaluation.deceptionDisposition,
+        originAccessDecision: evaluation.originAccessDecision
       }
     });
   } catch (err) {
@@ -315,6 +338,7 @@ export async function listDecisions(req, res, next) {
       page,
       limit,
       decisionResult: req.query.decisionResult,
+      deceptionDisposition: req.query.deceptionDisposition,
       applicationId: req.query.applicationId
     });
 
@@ -404,7 +428,6 @@ export async function getGraph(req, res, next) {
       });
     }
 
-    // Organize nodes by the 3 canonical layers
     const layerSummary = {
       PROTECTED_DECEPTION_POLICY: graph.nodes.filter(
         (n) => n.layerClassification === 'PROTECTED_DECEPTION_POLICY'
@@ -422,7 +445,8 @@ export async function getGraph(req, res, next) {
       data: {
         graph,
         layerSummary,
-        nonExecutionNotice: 'STAGE_5A_INVARIANT: Graph topology represents model state and proposed mutations. Transitions with status PROPOSED have not been executed.'
+        nonExecutionNotice:
+          'STAGE_5A_INVARIANT: Graph topology represents model state and proposed mutations. Transitions with status PROPOSED have not been executed.'
       }
     });
   } catch (err) {
@@ -434,7 +458,7 @@ export async function planGraphMutation(req, res, next) {
   try {
     const tenantId = getTenantId(req);
     const { graphId } = req.params;
-    const { strategyIdentifier, assessmentId, policyId } = req.body;
+    const { strategyIdentifier, assessmentId, policyId, baseGraphVersion } = req.body;
     const prisma = req.prisma || getPrismaClient();
 
     const graph = await prisma.deceptionGraph.findFirst({
@@ -465,10 +489,74 @@ export async function planGraphMutation(req, res, next) {
       strategy,
       assessment: assessmentId ? { id: assessmentId } : {},
       policy: policyId ? { id: policyId } : {},
+      tenantId,
+      baseGraphVersion
+    });
+
+    if (plan.status === 'REJECTED') {
+      return res.status(409).json({
+        status: 'error',
+        code: 'MUTATION_PLAN_REJECTED',
+        message: plan.rejectionReason,
+        data: plan
+      });
+    }
+
+    res.status(200).json({ status: 'success', data: plan });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function reassessGraphMutation(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const { graphId } = req.params;
+    const { activeProposal, newStrategyIdentifier, newAssessmentId, policyId } = req.body;
+    const prisma = req.prisma || getPrismaClient();
+
+    const graph = await prisma.deceptionGraph.findFirst({
+      where: { id: graphId, tenantId },
+      include: { nodes: true, edges: true }
+    });
+
+    if (!graph) {
+      return res.status(404).json({
+        status: 'error',
+        code: 'GRAPH_NOT_FOUND',
+        message: `Graph "${graphId}" not found.`
+      });
+    }
+
+    const newStrategy = BASELINE_STRATEGIES.find((s) => s.strategyIdentifier === newStrategyIdentifier);
+    if (!newStrategy) {
+      return res.status(404).json({
+        status: 'error',
+        code: 'STRATEGY_NOT_FOUND',
+        message: `Strategy "${newStrategyIdentifier}" not found in catalogue.`
+      });
+    }
+
+    const planner = new DSGPlannerService();
+    const reassessment = planner.reassessStrategy({
+      currentGraph: graph,
+      activeProposal,
+      newStrategy,
+      newAssessment: newAssessmentId ? { id: newAssessmentId } : {},
+      policy: policyId ? { id: policyId } : {},
       tenantId
     });
 
-    res.status(200).json({ status: 'success', data: plan });
+    if (!reassessment.consistent) {
+      return res.status(422).json({
+        status: 'error',
+        code: 'INCONSISTENT_SYNTHETIC_STATE',
+        message: reassessment.rejectionReason,
+        data: reassessment
+      });
+    }
+
+    res.status(200).json({ status: 'success', data: reassessment });
   } catch (err) {
     next(err);
   }
