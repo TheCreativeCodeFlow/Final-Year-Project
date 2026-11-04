@@ -283,28 +283,20 @@ export class StrategySelectionService {
   }
 
   /**
-   * Deterministically select the best strategy for the given assessment and policy.
+   * Phase 1: Candidate Generation.
+   * Generates scored candidate objects for all strategies in the pool.
    *
    * @param {Object} params
-   * @param {Object} params.assessment
-   * @param {Object} params.policy
-   * @param {Array} [params.customStrategies]
-   * @returns {{
-   *   selectedStrategy: Object|null,
-   *   candidates: Array,
-   *   rejectedCandidates: Array,
-   *   selectionRationale: string,
-   *   rankingMethod: string
-   * }}
+   * @param {Array} [params.strategies]
+   * @param {Object} [params.assessment]
+   * @param {Object} [params.policy]
+   * @returns {Array<Object>}
    */
-  selectStrategy({ assessment = {}, policy = {}, customStrategies = null }) {
-    const strategyPool = customStrategies || this.strategies;
-    const candidates = [];
-    const rejectedCandidates = [];
-
-    for (const strategy of strategyPool) {
+  generateCandidates({ strategies = null, assessment = {}, policy = {} } = {}) {
+    const strategyPool = strategies || this.strategies;
+    return strategyPool.map((strategy) => {
       const evaluation = this.evaluateCandidate(strategy, assessment, policy);
-      const candidateInfo = {
+      return {
         id: strategy.id || strategy.strategyIdentifier,
         strategyIdentifier: strategy.strategyIdentifier,
         name: strategy.name,
@@ -316,25 +308,96 @@ export class StrategySelectionService {
         scoreBreakdown: evaluation.scoreBreakdown,
         rawStrategy: strategy
       };
+    });
+  }
 
-      candidates.push(candidateInfo);
+  /**
+   * Phase 2: Constraint Filtering.
+   * Partitions candidates into eligible and rejected pools based on prerequisites and policy constraints.
+   *
+   * @param {Object} params
+   * @param {Array} params.candidates
+   * @param {Object} [params.assessment]
+   * @param {Object} [params.policy]
+   * @returns {{ eligibleCandidates: Array<Object>, rejectedCandidates: Array<Object> }}
+   */
+  filterCandidates({ candidates = [], assessment = {}, policy = {} } = {}) {
+    const eligibleCandidates = [];
+    const rejectedCandidates = [];
 
-      if (!evaluation.eligible) {
+    for (const candidate of candidates) {
+      if (candidate.eligible) {
+        eligibleCandidates.push(candidate);
+      } else {
         rejectedCandidates.push({
-          strategyIdentifier: strategy.strategyIdentifier,
-          strategyType: strategy.strategyType,
-          reasons: evaluation.reasons
+          strategyIdentifier: candidate.strategyIdentifier,
+          strategyType: candidate.strategyType,
+          reasons: candidate.reasons
         });
       }
     }
 
-    // Filter eligible candidates
-    const eligibleCandidates = candidates.filter((c) => c.eligible);
+    return { eligibleCandidates, rejectedCandidates };
+  }
+
+  /**
+   * Phase 3: Deterministic Ranking.
+   * Ranks eligible candidates using multi-factor deterministic scoring and collation tie-breaking.
+   * 1. Multi-factor score descending.
+   * 2. Collation on strategyIdentifier ascending.
+   *
+   * @param {Object} params
+   * @param {Array} params.eligibleCandidates
+   * @returns {Array<Object>}
+   */
+  rankCandidates({ eligibleCandidates = [] } = {}) {
+    return [...eligibleCandidates].sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.strategyIdentifier.localeCompare(b.strategyIdentifier);
+    });
+  }
+
+  /**
+   * Phase 4: Final Selection.
+   * Orchestrates the 4-phase strategy selection pipeline:
+   * 1. Candidate generation
+   * 2. Constraint filtering
+   * 3. Deterministic ranking
+   * 4. Final selection and rationale generation
+   *
+   * @param {Object} params
+   * @param {Object} params.assessment
+   * @param {Object} params.policy
+   * @param {Array} [params.customStrategies]
+   * @returns {{
+   *   selectedStrategy: Object|null,
+   *   candidates: Array,
+   *   eligibleCandidates: Array,
+   *   rejectedCandidates: Array,
+   *   selectionRationale: string,
+   *   rankingMethod: string
+   * }}
+   */
+  selectStrategy({ assessment = {}, policy = {}, customStrategies = null } = {}) {
+    // Phase 1: Candidate Generation
+    const candidates = this.generateCandidates({
+      strategies: customStrategies || this.strategies,
+      assessment,
+      policy
+    });
+
+    // Phase 2: Constraint Filtering
+    const { eligibleCandidates, rejectedCandidates } = this.filterCandidates({
+      candidates,
+      assessment,
+      policy
+    });
 
     if (eligibleCandidates.length === 0) {
       return {
         selectedStrategy: null,
         candidates,
+        eligibleCandidates: [],
         rejectedCandidates,
         selectionRationale:
           'No deception strategy met category compatibility, minimum confidence, or telemetry quality prerequisites.',
@@ -342,20 +405,17 @@ export class StrategySelectionService {
       };
     }
 
-    // Deterministic ranking:
-    // 1. Score descending
-    // 2. Collation on strategyIdentifier ascending
-    eligibleCandidates.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return a.strategyIdentifier.localeCompare(b.strategyIdentifier);
-    });
+    // Phase 3: Deterministic Ranking
+    const rankedCandidates = this.rankCandidates({ eligibleCandidates });
 
-    const bestCandidate = eligibleCandidates[0];
+    // Phase 4: Final Selection
+    const bestCandidate = rankedCandidates[0];
     const selectionRationale = `Selected strategy "${bestCandidate.strategyIdentifier}" (${bestCandidate.strategyType}) with score ${bestCandidate.score} matching assessment category and meeting all isolation prerequisites.`;
 
     return {
       selectedStrategy: bestCandidate.rawStrategy,
       candidates,
+      eligibleCandidates: rankedCandidates,
       rejectedCandidates,
       selectionRationale,
       rankingMethod: 'DETERMINISTIC_SCORE_DESC_THEN_IDENTIFIER_ASC'

@@ -25,9 +25,13 @@ export const DECISION_RESULTS = {
 };
 
 export const DECEPTION_DISPOSITIONS = {
-  PROPOSE_DECEPTION: 'PROPOSE_DECEPTION',
-  DECEPTION_NOT_PROPOSED: 'DECEPTION_NOT_PROPOSED',
-  DECEPTION_REJECTED: 'DECEPTION_REJECTED'
+  PROPOSED: 'PROPOSED',
+  NOT_PROPOSED: 'NOT_PROPOSED',
+  REJECTED: 'REJECTED',
+  // Backward compatibility aliases
+  PROPOSE_DECEPTION: 'PROPOSED',
+  DECEPTION_NOT_PROPOSED: 'NOT_PROPOSED',
+  DECEPTION_REJECTED: 'REJECTED'
 };
 
 export const ORIGIN_ACCESS_DECISIONS = {
@@ -241,7 +245,7 @@ export class PolicyEvaluationEngine {
       reasonCodes.push(REASON_CODES.DECEPTION_POLICY_NOT_CONFIGURED_DEFER_GATEWAY);
       return createResult({
         decisionResult: DECISION_RESULTS.POLICY_NOT_CONFIGURED,
-        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_NOT_PROPOSED,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.NOT_PROPOSED,
         originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_TO_GATEWAY,
         decisionRationale:
           'No active deception policy is configured for this tenant or application. Deception is not proposed. Origin access control is deferred to independent gateway routing policy.'
@@ -256,7 +260,7 @@ export class PolicyEvaluationEngine {
       reasonCodes.push(REASON_CODES.APPLICATION_SUSPENDED_ACCESS_DENIED);
       return createResult({
         decisionResult: DECISION_RESULTS.BLOCK_POLICY,
-        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_NOT_PROPOSED,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.NOT_PROPOSED,
         originAccessDecision: ORIGIN_ACCESS_DECISIONS.DENY_APPLICATION_SUSPENDED,
         decisionRationale:
           'Protected application is administratively suspended. Origin access is denied per administrative policy; deception is not proposed.'
@@ -271,7 +275,7 @@ export class PolicyEvaluationEngine {
       reasonCodes.push(REASON_CODES.DEGRADED_TELEMETRY_NO_ASSUMPTION_OF_BENIGN);
       return createResult({
         decisionResult: DECISION_RESULTS.INSUFFICIENT_EVIDENCE,
-        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.REJECTED,
         originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_WITH_UNCERTAINTY,
         decisionRationale:
           'Telemetry loss or degraded data quality detected during observation window. Deception is strictly rejected. Origin access decision is deferred to gateway under uncertainty condition — degraded telemetry is never assumed to be benign.'
@@ -283,7 +287,7 @@ export class PolicyEvaluationEngine {
       reasonCodes.push(REASON_CODES.DEGRADED_TELEMETRY_NO_ASSUMPTION_OF_BENIGN);
       return createResult({
         decisionResult: DECISION_RESULTS.INSUFFICIENT_EVIDENCE,
-        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.REJECTED,
         originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_WITH_UNCERTAINTY,
         decisionRationale:
           'Detection assessment explicitly labeled as INSUFFICIENT_EVIDENCE. Deception is rejected. Origin access decision is deferred to gateway with uncertainty flag.'
@@ -298,7 +302,7 @@ export class PolicyEvaluationEngine {
       reasonCodes.push(REASON_CODES.BENIGN_TRAFFIC_DECEPTION_NOT_PROPOSED);
       return createResult({
         decisionResult: DECISION_RESULTS.ALLOW_NORMAL,
-        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_NOT_PROPOSED,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.NOT_PROPOSED,
         originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_TO_GATEWAY,
         decisionRationale:
           'Observed behavioral telemetry conforms to benign baseline parameters. Deception is not proposed. Origin access control is deferred to gateway upstream policy.'
@@ -317,7 +321,7 @@ export class PolicyEvaluationEngine {
         reasonCodes.push(REASON_CODES.DECEPTION_REJECTED_UNVERIFIED_ML_ANOMALY);
         return createResult({
           decisionResult: DECISION_RESULTS.INSUFFICIENT_EVIDENCE,
-          deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+          deceptionDisposition: DECEPTION_DISPOSITIONS.REJECTED,
           originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_WITH_UNCERTAINTY,
           decisionRationale:
             'Unsupervised ML anomaly detected without deterministic security rule corroboration. Deception rejected; requires verified rule corroboration to avoid legitimate user disruption. Origin access deferred with uncertainty.'
@@ -328,7 +332,7 @@ export class PolicyEvaluationEngine {
       reasonCodes.push(REASON_CODES.DECEPTION_REJECTED_COLLISION_RISK);
       return createResult({
         decisionResult: DECISION_RESULTS.ALLOW_NORMAL,
-        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.REJECTED,
         originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_TO_GATEWAY,
         decisionRationale:
           'Assessment failed deception eligibility criteria (e.g. potential legitimate user collision risk or unverified session attribution). Deception rejected; origin access deferred to gateway policy.'
@@ -349,7 +353,7 @@ export class PolicyEvaluationEngine {
       reasonCodes.push(REASON_CODES.DECEPTION_REJECTED_LOW_CONFIDENCE);
       return createResult({
         decisionResult: DECISION_RESULTS.INSUFFICIENT_EVIDENCE,
-        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.REJECTED,
         originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_WITH_UNCERTAINTY,
         decisionRationale: `Assessment confidence (${assessmentConfidence}) does not meet policy minimum requirement (${minConfidence}). Deception rejected.`
       });
@@ -364,7 +368,7 @@ export class PolicyEvaluationEngine {
       reasonCodes.push(REASON_CODES.DECEPTION_REJECTED_MISSING_CORROBORATION);
       return createResult({
         decisionResult: DECISION_RESULTS.INSUFFICIENT_EVIDENCE,
-        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.REJECTED,
         originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_WITH_UNCERTAINTY,
         decisionRationale:
           'Policy strictly requires deterministic rule corroboration, but no deterministic rule findings were present in the assessment. Deception rejected.'
@@ -381,7 +385,7 @@ export class PolicyEvaluationEngine {
       reasonCodes.push(REASON_CODES.DEGRADED_TELEMETRY_NO_ASSUMPTION_OF_BENIGN);
       return createResult({
         decisionResult: DECISION_RESULTS.INSUFFICIENT_EVIDENCE,
-        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.REJECTED,
         originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_WITH_UNCERTAINTY,
         decisionRationale: `Policy requires "${requiredQuality}" telemetry quality, but assessment reports "${assessment.dataQualityState}". Deception rejected.`
       });
@@ -397,7 +401,7 @@ export class PolicyEvaluationEngine {
       reasonCodes.push(REASON_CODES.ACTION_NOT_PERMITTED_BY_POLICY);
       return createResult({
         decisionResult: DECISION_RESULTS.ALLOW_NORMAL,
-        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_NOT_PROPOSED,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.NOT_PROPOSED,
         originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_TO_GATEWAY,
         decisionRationale:
           'Policy does not permit deception proposal or diversion actions. Deception is not proposed; origin access deferred to gateway.'
@@ -420,7 +424,7 @@ export class PolicyEvaluationEngine {
       reasonCodes.push(REASON_CODES.NO_ELIGIBLE_STRATEGY_DECEPTION_REJECTED);
       return createResult({
         decisionResult: DECISION_RESULTS.NO_ELIGIBLE_STRATEGY,
-        deceptionDisposition: DECEPTION_DISPOSITIONS.DECEPTION_REJECTED,
+        deceptionDisposition: DECEPTION_DISPOSITIONS.REJECTED,
         originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_TO_GATEWAY,
         decisionRationale: `Assessment passed eligibility criteria, but no deception strategy met category and compatibility requirements. ${selection.selectionRationale}`,
         candidateStrategyIds,
@@ -450,7 +454,7 @@ export class PolicyEvaluationEngine {
 
     return createResult({
       decisionResult: DECISION_RESULTS.PROPOSE_DECEPTION,
-      deceptionDisposition: DECEPTION_DISPOSITIONS.PROPOSE_DECEPTION,
+      deceptionDisposition: DECEPTION_DISPOSITIONS.PROPOSED,
       originAccessDecision: ORIGIN_ACCESS_DECISIONS.PROPOSE_DIVERT_TO_DECEPTION,
       decisionRationale,
       selectedStrategy,

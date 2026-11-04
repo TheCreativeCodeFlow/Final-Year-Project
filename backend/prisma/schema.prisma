@@ -315,6 +315,8 @@ model PolicyDecision {
   originAccessDecision    String? // "DEFER_TO_GATEWAY", "PROPOSE_DIVERT_TO_DECEPTION", "DENY_APPLICATION_SUSPENDED", "DEFER_WITH_UNCERTAINTY"
   baseGraphVersion        Int?
   strategyCatalogueVersion String?
+  idempotencyKey          String?
+  requestPayloadHash      String?
   decisionResult          String // "ALLOW_NORMAL", "BLOCK_POLICY", "INSUFFICIENT_EVIDENCE", "POLICY_NOT_CONFIGURED", "NO_ELIGIBLE_STRATEGY", "PROPOSE_DECEPTION"
   decisionRationale       String
   evidenceReferences      Json?
@@ -337,6 +339,7 @@ model PolicyDecision {
   @@index([policyId])
   @@index([selectedStrategyId])
   @@index([dsgGraphId])
+  @@index([idempotencyKey])
   @@map("policy_decisions")
 }
 
@@ -480,6 +483,7 @@ model DeceptionGraphTransition {
   baseGraphVersion        Int?
   targetGraphVersion      Int?
   idempotencyKey          String?
+  requestPayloadHash      String?
   rejectionReason         String?
   previousState           Json
   proposedState           Json
@@ -497,6 +501,7 @@ model DeceptionGraphTransition {
   @@index([tenantId])
   @@index([graphId])
   @@index([policyDecisionId])
+  @@index([idempotencyKey])
   @@map("deception_graph_transitions")
 }
 

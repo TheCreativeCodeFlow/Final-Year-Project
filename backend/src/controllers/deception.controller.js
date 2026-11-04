@@ -11,6 +11,7 @@
  *   version concurrency, and reassess multi-stage strategies
  */
 
+import crypto from 'node:crypto';
 import { getPrismaClient } from '../db/client.js';
 import { PolicyService } from '../deception/policy.service.js';
 import { PolicyEvaluationEngine } from '../deception/policy-evaluation.service.js';
@@ -226,8 +227,54 @@ export async function evaluatePolicy(req, res, next) {
       policyId,
       customAssessment,
       baseGraphVersion,
-      persistDecision = true
+      persistDecision = true,
+      idempotencyKey: bodyIdempotencyKey
     } = req.body;
+
+    const headerIdempotencyKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
+    const idempotencyKey = headerIdempotencyKey || bodyIdempotencyKey || null;
+    const requestPayloadHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(req.body || {}))
+      .digest('hex');
+
+    // 0. Check for existing decision by idempotency key
+    if (idempotencyKey) {
+      const existingDecision = await prisma.policyDecision.findFirst({
+        where: { tenantId, idempotencyKey }
+      });
+      if (existingDecision) {
+        if (
+          existingDecision.requestPayloadHash &&
+          existingDecision.requestPayloadHash !== requestPayloadHash
+        ) {
+          return res.status(409).json({
+            status: 'error',
+            code: 'IDEMPOTENCY_KEY_REUSE_PAYLOAD_MISMATCH',
+            message: 'Idempotency key reuse detected with mismatched request payload.'
+          });
+        }
+        return res.status(200).json({
+          status: 'success',
+          data: {
+            evaluation: {
+              decisionResult: existingDecision.decisionResult,
+              deceptionDisposition: existingDecision.deceptionDisposition,
+              originAccessDecision: existingDecision.originAccessDecision,
+              decisionRationale: existingDecision.decisionRationale,
+              reasonCodes: existingDecision.reasonCodes,
+              dsgPlan: existingDecision.proposedMutations,
+              evidenceReferences: existingDecision.evidenceReferences
+            },
+            decisionId: existingDecision.id,
+            persisted: true,
+            deceptionDisposition: existingDecision.deceptionDisposition,
+            originAccessDecision: existingDecision.originAccessDecision,
+            idempotentReplay: true
+          }
+        });
+      }
+    }
 
     // 1. Resolve Assessment
     let assessment = customAssessment || null;
@@ -245,16 +292,8 @@ export async function evaluatePolicy(req, res, next) {
       }
     }
 
-    if (!assessment) {
-      return res.status(400).json({
-        status: 'error',
-        code: 'MISSING_ASSESSMENT',
-        message: 'Either assessmentId or customAssessment must be provided.'
-      });
-    }
-
     // 2. Resolve Application
-    const resolvedAppId = applicationId || assessment.applicationId;
+    const resolvedAppId = applicationId || assessment?.applicationId;
     let application = null;
     if (resolvedAppId) {
       application = await prisma.protectedApplication.findFirst({
@@ -271,7 +310,7 @@ export async function evaluatePolicy(req, res, next) {
       policy = await policyService.resolveApplicablePolicy({
         tenantId,
         applicationId: resolvedAppId,
-        classification: assessment.assessmentLabel || assessment.classification
+        classification: assessment?.assessmentLabel || assessment?.classification
       });
     }
 
@@ -299,12 +338,14 @@ export async function evaluatePolicy(req, res, next) {
       recordedDecision = await recorder.recordDecision({
         tenantId,
         applicationId: resolvedAppId,
-        assessmentId: assessment.id || null,
-        observationId: assessment.observationId || null,
+        assessmentId: assessment?.id || null,
+        observationId: assessment?.observationId || null,
         evaluation,
         graphId: currentGraph?.id || null,
         baseGraphVersion: baseGraphVersion ?? currentGraph?.graphVersion,
-        actorIdentifier: req.user?.email || 'POLICY_EVALUATOR'
+        actorIdentifier: req.user?.email || 'POLICY_EVALUATOR',
+        idempotencyKey,
+        requestPayloadHash
       });
     }
 
@@ -319,6 +360,13 @@ export async function evaluatePolicy(req, res, next) {
       }
     });
   } catch (err) {
+    if (err.code === 'IDEMPOTENCY_KEY_REUSE_PAYLOAD_MISMATCH') {
+      return res.status(409).json({
+        status: 'error',
+        code: 'IDEMPOTENCY_KEY_REUSE_PAYLOAD_MISMATCH',
+        message: err.message
+      });
+    }
     next(err);
   }
 }
@@ -459,6 +507,12 @@ export async function planGraphMutation(req, res, next) {
     const tenantId = getTenantId(req);
     const { graphId } = req.params;
     const { strategyIdentifier, assessmentId, policyId, baseGraphVersion } = req.body;
+    const headerIdempotencyKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
+    const idempotencyKey = headerIdempotencyKey || req.body.idempotencyKey || null;
+    const requestPayloadHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(req.body || {}))
+      .digest('hex');
     const prisma = req.prisma || getPrismaClient();
 
     const graph = await prisma.deceptionGraph.findFirst({
@@ -472,6 +526,49 @@ export async function planGraphMutation(req, res, next) {
         code: 'GRAPH_NOT_FOUND',
         message: `Graph "${graphId}" not found.`
       });
+    }
+
+    // Check for existing transition by idempotency key
+    if (idempotencyKey) {
+      const existingTransition = await prisma.deceptionGraphTransition.findFirst({
+        where: { tenantId, idempotencyKey }
+      });
+      if (existingTransition) {
+        if (
+          existingTransition.requestPayloadHash &&
+          existingTransition.requestPayloadHash !== requestPayloadHash
+        ) {
+          return res.status(409).json({
+            status: 'error',
+            code: 'IDEMPOTENCY_KEY_REUSE_PAYLOAD_MISMATCH',
+            message: 'Idempotency key reuse detected with mismatched request payload.'
+          });
+        }
+        return res.status(200).json({
+          status: 'success',
+          data: {
+            status: existingTransition.transitionStatus,
+            planId: `plan-replay-${existingTransition.id}`,
+            idempotencyKey,
+            baseGraphVersion: existingTransition.baseGraphVersion,
+            targetGraphVersion: existingTransition.targetGraphVersion,
+            rejectionReason: existingTransition.rejectionReason,
+            previousState: existingTransition.previousState,
+            proposedState: existingTransition.proposedState,
+            nodesToAdd: existingTransition.proposedState?.nodesToAdd || [],
+            edgesToAdd: existingTransition.proposedState?.edgesToAdd || [],
+            syntheticEnvironmentModel:
+              existingTransition.proposedState?.syntheticEnvironmentModel || null,
+            validationResult: {
+              valid: existingTransition.transitionStatus !== 'REJECTED',
+              violations: existingTransition.rejectionReason ? [existingTransition.rejectionReason] : []
+            },
+            nonExecutionNotice:
+              'STAGE_5A_PLANNING_ONLY: Replayed proposed plan. Live environments remain unprovisioned.',
+            idempotentReplay: true
+          }
+        });
+      }
     }
 
     const strategy = BASELINE_STRATEGIES.find((s) => s.strategyIdentifier === strategyIdentifier);
@@ -499,6 +596,24 @@ export async function planGraphMutation(req, res, next) {
         code: 'MUTATION_PLAN_REJECTED',
         message: plan.rejectionReason,
         data: plan
+      });
+    }
+
+    if (idempotencyKey) {
+      await prisma.deceptionGraphTransition.create({
+        data: {
+          tenantId,
+          graphId,
+          baseGraphVersion: plan.baseGraphVersion,
+          targetGraphVersion: plan.targetGraphVersion,
+          idempotencyKey,
+          requestPayloadHash,
+          rejectionReason: null,
+          previousState: plan.previousState || {},
+          proposedState: plan.proposedState || {},
+          transitionStatus: 'PROPOSED',
+          provenance: 'STAGE_5A_DSG_PLANNER'
+        }
       });
     }
 

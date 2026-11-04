@@ -35,6 +35,8 @@ export class DecisionRecorderService {
    * @param {string} [params.graphId] - Target DSG ID if available
    * @param {number} [params.baseGraphVersion] - Base version the plan was computed against
    * @param {string} [params.actorIdentifier]
+   * @param {string} [params.idempotencyKey]
+   * @param {string} [params.requestPayloadHash]
    * @returns {Promise<Object>}
    */
   async recordDecision({
@@ -45,9 +47,36 @@ export class DecisionRecorderService {
     evaluation,
     graphId = null,
     baseGraphVersion = null,
-    actorIdentifier = 'ADAPTIVE_POLICY_ENGINE'
+    actorIdentifier = 'ADAPTIVE_POLICY_ENGINE',
+    idempotencyKey = null,
+    requestPayloadHash = null
   }) {
     const prisma = this.getDb();
+
+    // Idempotency check: if an existing decision with this idempotency key exists for tenant
+    const effectiveIdempotencyKey =
+      idempotencyKey || evaluation?.idempotencyKey || evaluation?.dsgPlan?.idempotencyKey || null;
+
+    if (effectiveIdempotencyKey) {
+      const existing = await prisma.policyDecision.findFirst({
+        where: { tenantId, idempotencyKey: effectiveIdempotencyKey }
+      });
+      if (existing) {
+        if (
+          requestPayloadHash &&
+          existing.requestPayloadHash &&
+          existing.requestPayloadHash !== requestPayloadHash
+        ) {
+          const err = new Error(
+            'Idempotency key reuse detected with mismatched request payload.'
+          );
+          err.code = 'IDEMPOTENCY_KEY_REUSE_PAYLOAD_MISMATCH';
+          err.statusCode = 409;
+          throw err;
+        }
+        return existing;
+      }
+    }
 
     // 1. Resolve strategy and policy DB record IDs safely
     let selectedStrategyDbId = null;
@@ -139,7 +168,9 @@ export class DecisionRecorderService {
           baseGraphVersion: effectiveBaseVersion,
           strategyCatalogueVersion: evaluation.strategyCatalogueVersion || '1.0.0',
           evaluatorVersion: evaluation.evaluatorVersion || '5A.1',
-          deceptionDisposition: evaluation.deceptionDisposition || 'DECEPTION_NOT_PROPOSED',
+          idempotencyKey: effectiveIdempotencyKey,
+          requestPayloadHash: requestPayloadHash || null,
+          deceptionDisposition: evaluation.deceptionDisposition || 'NOT_PROPOSED',
           originAccessDecision: evaluation.originAccessDecision || 'DEFER_TO_GATEWAY',
           decisionResult: evaluation.decisionResult,
           decisionRationale: evaluation.decisionRationale,
@@ -151,7 +182,7 @@ export class DecisionRecorderService {
                 syntheticEnvironmentModel: evaluation.dsgPlan.syntheticEnvironmentModel,
                 planId: evaluation.dsgPlan.planId,
                 status: evaluation.dsgPlan.status,
-                idempotencyKey: evaluation.dsgPlan.idempotencyKey,
+                idempotencyKey: evaluation.dsgPlan.idempotencyKey || effectiveIdempotencyKey,
                 rejectionReason: evaluation.dsgPlan.rejectionReason,
                 nonExecutionNotice: evaluation.dsgPlan.nonExecutionNotice
               }
@@ -178,7 +209,8 @@ export class DecisionRecorderService {
             policyDecisionId: newDecision.id,
             baseGraphVersion: effectiveBaseVersion,
             targetGraphVersion: evaluation.dsgPlan.targetGraphVersion || (effectiveBaseVersion + 1),
-            idempotencyKey: evaluation.dsgPlan.idempotencyKey || null,
+            idempotencyKey: evaluation.dsgPlan.idempotencyKey || effectiveIdempotencyKey,
+            requestPayloadHash: requestPayloadHash || null,
             rejectionReason: evaluation.dsgPlan.rejectionReason || null,
             previousState: evaluation.dsgPlan.previousState || {},
             proposedState: evaluation.dsgPlan.proposedState || {},

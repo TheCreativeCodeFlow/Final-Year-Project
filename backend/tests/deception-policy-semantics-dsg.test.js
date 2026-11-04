@@ -31,6 +31,7 @@ import { DSGPlannerService, TRANSITION_STATUSES } from '../src/deception/dsg-pla
 import { DecisionRecorderService } from '../src/deception/decision-recorder.service.js';
 import { BASELINE_STRATEGIES } from '../src/deception/strategy-catalog.js';
 import { StrategyBenchmarkRunner } from '../src/deception/strategy-scenarios.js';
+import { StrategySelectionService } from '../src/deception/strategy-selection.service.js';
 
 const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL ||
@@ -705,5 +706,200 @@ describe('Stage 5A.1: Policy Semantics, DSG Consistency & Adaptive Strategy Suit
         `Decision ${d.id} must have executionEvidenceStatus: MISSING`
       );
     }
+  });
+
+  it('22. Four-stage strategy selection pipeline: generateCandidates, filterCandidates, rankCandidates, selectStrategy', () => {
+    const selector = new StrategySelectionService();
+    const assessment = {
+      assessmentLabel: 'ATTACK',
+      confidenceScore: 0.95,
+      dataQualityState: 'COMPLETE',
+      sessionCorrelationConfidence: 0.9,
+      ruleFindings: [{ ruleId: 'RULE_API_RESOURCE_PROBING', severity: 'HIGH' }]
+    };
+
+    // Phase 1: Candidate Generation
+    const candidates = selector.generateCandidates({
+      strategies: BASELINE_STRATEGIES,
+      assessment,
+      policy: testPolicy
+    });
+    assert.strictEqual(candidates.length, BASELINE_STRATEGIES.length);
+    assert.ok(candidates.every((c) => typeof c.score === 'number'));
+
+    // Phase 2: Constraint Filtering
+    const { eligibleCandidates, rejectedCandidates } = selector.filterCandidates({
+      candidates,
+      assessment,
+      policy: testPolicy
+    });
+    assert.ok(eligibleCandidates.length > 0);
+    assert.ok(rejectedCandidates.length > 0);
+    assert.strictEqual(eligibleCandidates.length + rejectedCandidates.length, candidates.length);
+
+    // Phase 3: Deterministic Ranking
+    const ranked = selector.rankCandidates({ eligibleCandidates });
+    for (let i = 0; i < ranked.length - 1; i++) {
+      assert.ok(
+        ranked[i].score > ranked[i + 1].score ||
+          (ranked[i].score === ranked[i + 1].score &&
+            ranked[i].strategyIdentifier.localeCompare(ranked[i + 1].strategyIdentifier) <= 0)
+      );
+    }
+
+    // Phase 4: Full Selection Output
+    const selection = selector.selectStrategy({
+      assessment,
+      policy: testPolicy
+    });
+    assert.ok(selection.selectedStrategy);
+    assert.strictEqual(selection.selectedStrategy.strategyIdentifier, ranked[0].strategyIdentifier);
+    assert.strictEqual(selection.rankingMethod, 'DETERMINISTIC_SCORE_DESC_THEN_IDENTIFIER_ASC');
+  });
+
+  it('23. Idempotent replay of identical plan request returns cached proposal without creating duplicate records', async () => {
+    const idempotencyKey = `idemp-test-${Date.now()}`;
+    const payload = {
+      strategyIdentifier: 'strat-recon-honey-endpoints-01',
+      idempotencyKey,
+      baseGraphVersion: testGraph.graphVersion
+    };
+
+    // First request
+    const res1 = await fetch(`${baseUrl}/tenants/${tenantApexId}/deception/graphs/${testGraph.id}/plan`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: ownerCookie,
+        'x-csrf-token': ownerCsrfToken
+      },
+      body: JSON.stringify(payload)
+    });
+    assert.strictEqual(res1.status, 200);
+    const body1 = await res1.json();
+    assert.strictEqual(body1.status, 'success');
+
+    // Second request with exact same payload and idempotency key
+    const res2 = await fetch(`${baseUrl}/tenants/${tenantApexId}/deception/graphs/${testGraph.id}/plan`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: ownerCookie,
+        'x-csrf-token': ownerCsrfToken
+      },
+      body: JSON.stringify(payload)
+    });
+    assert.strictEqual(res2.status, 200);
+    const body2 = await res2.json();
+    assert.strictEqual(body2.status, 'success');
+    assert.strictEqual(body2.data.idempotentReplay, true);
+
+    // Check database to ensure no duplicate transition was created
+    const transitions = await prisma.deceptionGraphTransition.findMany({
+      where: { tenantId: tenantApexId, idempotencyKey }
+    });
+    assert.strictEqual(transitions.length, 1, 'Only one transition record must exist for the idempotency key');
+  });
+
+  it('24. Reusing idempotency key with conflicting payload returns 409 IDEMPOTENCY_KEY_REUSE_PAYLOAD_MISMATCH', async () => {
+    const idempotencyKey = `idemp-conflict-${Date.now()}`;
+    const initialPayload = {
+      strategyIdentifier: 'strat-recon-honey-endpoints-01',
+      idempotencyKey,
+      baseGraphVersion: testGraph.graphVersion
+    };
+
+    // First request
+    const res1 = await fetch(`${baseUrl}/tenants/${tenantApexId}/deception/graphs/${testGraph.id}/plan`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: ownerCookie,
+        'x-csrf-token': ownerCsrfToken
+      },
+      body: JSON.stringify(initialPayload)
+    });
+    assert.strictEqual(res1.status, 200);
+
+    // Second request with SAME idempotency key but DIFFERENT payload (different strategy)
+    const conflictingPayload = {
+      strategyIdentifier: 'strat-api-shadow-facade-01',
+      idempotencyKey,
+      baseGraphVersion: testGraph.graphVersion
+    };
+
+    const res2 = await fetch(`${baseUrl}/tenants/${tenantApexId}/deception/graphs/${testGraph.id}/plan`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: ownerCookie,
+        'x-csrf-token': ownerCsrfToken
+      },
+      body: JSON.stringify(conflictingPayload)
+    });
+
+    assert.strictEqual(res2.status, 409);
+    const body2 = await res2.json();
+    assert.strictEqual(body2.code, 'IDEMPOTENCY_KEY_REUSE_PAYLOAD_MISMATCH');
+    assert.match(body2.message, /mismatched request payload/i);
+  });
+
+  it('25. Multi-stage attack progression (Recon -> Auth -> Data Exfil) and rejection of conflicting 4th stage', () => {
+    const planner = new DSGPlannerService();
+
+    // Stage 1: API Reconnaissance -> API_DECEPTION proposal
+    const reconStrategy = BASELINE_STRATEGIES.find((s) => s.strategyIdentifier === 'strat-api-shadow-facade-01');
+    const stage1Plan = planner.planMutation({
+      currentGraph: testGraph,
+      strategy: reconStrategy,
+      policy: testPolicy,
+      tenantId: tenantApexId
+    });
+    assert.strictEqual(stage1Plan.status, TRANSITION_STATUSES.PROPOSED);
+
+    // Stage 2: Attacker progresses to Auth Probing -> CREDENTIAL_DECEPTION
+    const credStrategy = BASELINE_STRATEGIES.find((s) => s.strategyIdentifier === 'strat-credential-canary-token-01');
+    const stage2Reassessment = planner.reassessStrategy({
+      currentGraph: testGraph,
+      activeProposal: stage1Plan,
+      newStrategy: credStrategy,
+      policy: testPolicy,
+      tenantId: tenantApexId
+    });
+    assert.strictEqual(stage2Reassessment.consistent, true);
+    assert.strictEqual(stage2Reassessment.reassessmentStatus, 'COMPATIBLE_MUTATION');
+
+    // Stage 3: Attacker attempts Data Exfiltration -> DATA_ACCESS_DECEPTION
+    const dataStrategy = BASELINE_STRATEGIES.find((s) => s.strategyIdentifier === 'strat-data-honey-records-01');
+    const stage3Reassessment = planner.reassessStrategy({
+      currentGraph: testGraph,
+      activeProposal: stage2Reassessment.mergedPlan,
+      newStrategy: dataStrategy,
+      policy: testPolicy,
+      tenantId: tenantApexId
+    });
+    assert.strictEqual(stage3Reassessment.consistent, true);
+    assert.strictEqual(stage3Reassessment.reassessmentStatus, 'COMPATIBLE_MUTATION');
+    assert.strictEqual(stage3Reassessment.mergedPlan.status, TRANSITION_STATUSES.PROPOSED);
+
+    // Stage 4: Incompatible mutant attempting colliding routes and broken isolation
+    const incompatibleStage4 = {
+      strategyIdentifier: 'strat-conflict-stage4',
+      strategyType: 'SERVICE_INTERACTION_DECEPTION',
+      dsgBlueprint: { nodes: [], edges: [] },
+      isolationRequirements: { strictNamespaceIsolation: true, noOutboundEgress: false },
+      permittedStateChangeProposal: {
+        routes: [{ path: '/api/v1/auth/login', method: 'POST', simulatedStatus: 500 }]
+      }
+    };
+    const stage4Reassessment = planner.reassessStrategy({
+      currentGraph: testGraph,
+      activeProposal: stage3Reassessment.mergedPlan,
+      newStrategy: incompatibleStage4,
+      tenantId: tenantApexId
+    });
+    assert.strictEqual(stage4Reassessment.consistent, false);
+    assert.strictEqual(stage4Reassessment.reassessmentStatus, 'INCONSISTENT_SYNTHETIC_STATE');
+    assert.match(stage4Reassessment.rejectionReason, /INCONSISTENT_SYNTHETIC_STATE/);
   });
 });
