@@ -477,6 +477,36 @@ export const apiClient = {
 
   updateRuntimeQuotas: async (tenantId, payload) => {
     return apiClient.patch(`/tenants/${tenantId}/runtime/quotas`, payload);
+  },
+
+  // ---------------------------------------------------------------------------
+  // Isolated Synthetic Container Provisioning (Stage 5B.2)
+  // ---------------------------------------------------------------------------
+
+  getApprovedImages: async (tenantId) => {
+    return apiClient.get(`/tenants/${tenantId}/runtime/images`);
+  },
+
+  getSyntheticTemplates: async (tenantId) => {
+    return apiClient.get(`/tenants/${tenantId}/runtime/templates`);
+  },
+
+  submitProvisioningJob: async (tenantId, payload) => {
+    return apiClient.post(`/tenants/${tenantId}/runtime/environments/provision`, payload);
+  },
+
+  getProvisioningJobs: async (tenantId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/runtime/jobs${qs}`);
+  },
+
+  getProvisioningJobById: async (tenantId, jobId) => {
+    return apiClient.get(`/tenants/${tenantId}/runtime/jobs/${jobId}`);
+  },
+
+  getRuntimeEnvironmentEvidence: async (tenantId, environmentId) => {
+    return apiClient.get(`/tenants/${tenantId}/runtime/environments/${environmentId}/evidence`);
   }
 };
 

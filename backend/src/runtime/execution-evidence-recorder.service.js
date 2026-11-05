@@ -21,6 +21,12 @@ export const EXECUTION_EVENT_TYPES = {
   PROVISIONING_REQUESTED: 'PROVISIONING_REQUESTED',
   PROVISIONING_SUCCEEDED: 'PROVISIONING_SUCCEEDED',
   PROVISIONING_FAILED: 'PROVISIONING_FAILED',
+  CONTAINER_CREATED: 'CONTAINER_CREATED',
+  IMAGE_VERIFIED: 'IMAGE_VERIFIED',
+  SECURITY_CONFIG_APPLIED: 'SECURITY_CONFIG_APPLIED',
+  NETWORK_ISOLATION_VERIFIED: 'NETWORK_ISOLATION_VERIFIED',
+  HEALTH_CHECK_PASSED: 'HEALTH_CHECK_PASSED',
+  EGRESS_QUARANTINE_VERIFIED: 'EGRESS_QUARANTINE_VERIFIED',
   ENVIRONMENT_HEALTH_VERIFIED: 'ENVIRONMENT_HEALTH_VERIFIED',
   DSG_TRANSITION_APPLIED: 'DSG_TRANSITION_APPLIED',
   DSG_TRANSITION_REJECTED: 'DSG_TRANSITION_REJECTED',
@@ -66,13 +72,10 @@ export class ExecutionEvidenceRecorder {
     actorIdentifier = 'RUNTIME_ORCHESTRATOR',
     actorRole = 'SYSTEM',
     outcomeStatus = 'RECORDED',
+    evidenceStatus = 'MISSING',
     eventPayload = {}
   }) {
     const prisma = this.getDb();
-
-    // Stage 5B.1 Research Invariant:
-    // Live execution is strictly NOT implemented. Evidence status is unconditionally MISSING.
-    const evidenceStatus = 'MISSING';
 
     const event = await prisma.deceptionExecutionEvent.create({
       data: {
@@ -88,7 +91,6 @@ export class ExecutionEvidenceRecorder {
         evidenceStatus,
         eventPayload: {
           ...eventPayload,
-          stage5b1Notice: 'STAGE_5B1_PLANNING_ONLY: Live deception execution not verified. Evidence status strictly MISSING.',
           recordedTimestamp: new Date().toISOString()
         }
       }
@@ -98,20 +100,67 @@ export class ExecutionEvidenceRecorder {
     await recordSecurityAudit({
       prisma,
       tenantId,
-      actorIdentifier,
       action: `RUNTIME_${eventType}`,
-      targetEntityType: authorizationId ? 'DeceptionExecutionAuthorization' : 'DeceptionRuntimeEnvironment',
-      targetEntityId: authorizationId || environmentId || event.id,
-      metadata: {
+      actorType: actorRole === 'USER' ? 'USER' : 'SYSTEM',
+      actorId: actorIdentifier,
+      targetType: environmentId ? 'RUNTIME_ENVIRONMENT' : 'EXECUTION_AUTHORIZATION',
+      targetId: environmentId || authorizationId || tenantId,
+      details: {
         eventType,
         severity,
-        outcomeStatus,
+        message,
         evidenceStatus,
-        message
+        outcomeStatus
       }
-    });
+    }).catch(() => {});
 
     return event;
+  }
+
+  /**
+   * Record verified execution evidence emitted by the Dedicated Runtime Worker
+   * after actual container / network inspection.
+   *
+   * @param {Object} params
+   * @param {string} params.tenantId
+   * @param {string} [params.authorizationId]
+   * @param {string} [params.environmentId]
+   * @param {string} params.eventType
+   * @param {string} [params.severity='INFO']
+   * @param {string} params.message
+   * @param {string} [params.actorIdentifier='DEDICATED_RUNTIME_WORKER']
+   * @param {string} [params.actorRole='SYSTEM']
+   * @param {Object} [params.evidencePayload]
+   * @returns {Promise<Object>}
+   */
+  async recordVerifiedEvidence({
+    tenantId,
+    authorizationId = null,
+    environmentId = null,
+    eventType,
+    severity = 'INFO',
+    message,
+    actorIdentifier = 'DEDICATED_RUNTIME_WORKER',
+    actorRole = 'SYSTEM',
+    evidencePayload = {}
+  }) {
+    return this.recordEvent({
+      tenantId,
+      authorizationId,
+      environmentId,
+      eventType,
+      severity,
+      message,
+      actorIdentifier,
+      actorRole,
+      outcomeStatus: 'CONFIRMED',
+      evidenceStatus: 'VERIFIED',
+      eventPayload: {
+        ...evidencePayload,
+        verificationTimestamp: new Date().toISOString(),
+        verifiedBy: 'DEDICATED_RUNTIME_WORKER'
+      }
+    });
   }
 
   /**

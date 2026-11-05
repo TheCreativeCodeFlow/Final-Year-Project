@@ -14,7 +14,8 @@ import {
   Filter,
   Lock,
   Layers,
-  Key
+  Key,
+  Server
 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import LoadingState from '../../components/common/LoadingState';
@@ -42,6 +43,15 @@ export default function ExecutionAuthorizationsPage() {
   const [actionReason, setActionReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState(null);
+
+  // Stage 5B.2 Container Provisioning Modal state
+  const [isProvisionModalOpen, setIsProvisionModalOpen] = useState(false);
+  const [provisionAuth, setProvisionAuth] = useState(null);
+  const [selectedTemplate, setSelectedTemplate] = useState('tpl-synthetic-api-01');
+  const [selectedImage, setSelectedImage] = useState('img-syn-alpine-node-01');
+  const [provisionLoading, setProvisionLoading] = useState(false);
+  const [provisionError, setProvisionError] = useState(null);
+  const [provisionSuccess, setProvisionSuccess] = useState(null);
 
   const fetchAuthorizations = useCallback(async () => {
     setLoading(true);
@@ -102,6 +112,40 @@ export default function ExecutionAuthorizationsPage() {
       setActionError(err.message || `Failed to ${actionType} authorization.`);
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleOpenProvision = (auth) => {
+    setProvisionAuth(auth);
+    setSelectedTemplate('tpl-synthetic-api-01');
+    setSelectedImage('img-syn-alpine-node-01');
+    setProvisionError(null);
+    setProvisionSuccess(null);
+    setIsProvisionModalOpen(true);
+  };
+
+  const handleExecuteProvision = async () => {
+    if (!provisionAuth) return;
+    setProvisionLoading(true);
+    setProvisionError(null);
+    setProvisionSuccess(null);
+    try {
+      const res = await apiClient.submitProvisioningJob(tenantIdentifier, {
+        authorizationId: provisionAuth.id,
+        templateIdentifier: selectedTemplate,
+        imageIdentifier: selectedImage,
+        idempotencyKey: `prov-${provisionAuth.id}-${Date.now()}`
+      });
+      if (res && res.success && res.data) {
+        setProvisionSuccess(res.data);
+        fetchAuthorizations();
+      } else {
+        throw new Error(res?.error?.message || 'Provisioning failed.');
+      }
+    } catch (err) {
+      setProvisionError(err.message || 'Failed to submit provisioning job.');
+    } finally {
+      setProvisionLoading(false);
     }
   };
 
@@ -280,15 +324,26 @@ export default function ExecutionAuthorizationsPage() {
                       )}
 
                       {isOwner && auth.authorizationStatus === 'APPROVED' && (
-                        <button
-                          className="btn btn-secondary"
-                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', color: '#f59e0b' }}
-                          onClick={() => handleOpenAction(auth, 'revoke')}
-                          title="Revoke Authorization"
-                        >
-                          <RotateCcw size={13} />
-                          <span>Revoke</span>
-                        </button>
+                        <>
+                          <button
+                            className="btn btn-primary"
+                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', background: '#0284c7', borderColor: '#38bdf8' }}
+                            onClick={() => handleOpenProvision(auth)}
+                            title="Provision Isolated Synthetic Container"
+                          >
+                            <Server size={13} />
+                            <span>Provision</span>
+                          </button>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', color: '#f59e0b' }}
+                            onClick={() => handleOpenAction(auth, 'revoke')}
+                            title="Revoke Authorization"
+                          >
+                            <RotateCcw size={13} />
+                            <span>Revoke</span>
+                          </button>
+                        </>
                       )}
                     </div>
                   </td>
@@ -433,6 +488,139 @@ export default function ExecutionAuthorizationsPage() {
               >
                 {actionLoading ? 'Processing...' : `Confirm ${actionType}`}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stage 5B.2 Container Provisioning Modal */}
+      {isProvisionModalOpen && provisionAuth && (
+        <div className="runtime-modal-backdrop" onClick={() => setIsProvisionModalOpen(false)}>
+          <div className="runtime-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '580px' }}>
+            <div className="runtime-modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Server size={18} color="#38bdf8" />
+                <h3 style={{ margin: 0, fontSize: '1rem', color: '#f8fafc' }}>
+                  Provision Isolated Synthetic Container
+                </h3>
+              </div>
+              <button
+                className="btn btn-secondary"
+                style={{ padding: '0.2rem 0.5rem' }}
+                onClick={() => setIsProvisionModalOpen(false)}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="runtime-modal-body">
+              {provisionSuccess ? (
+                <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+                  <CheckCircle2 size={40} color="#10b981" style={{ margin: '0 auto 0.75rem' }} />
+                  <h4 style={{ color: '#f8fafc', margin: '0 0 0.5rem' }}>Synthetic Container Provisioned</h4>
+                  <p style={{ fontSize: '0.8125rem', color: '#94a3b8', margin: '0 0 1rem' }}>
+                    Container successfully created on isolated internal bridge network. Egress quarantined, health verified.
+                  </p>
+                  <div style={{ background: '#090f1d', padding: '0.75rem', borderRadius: '6px', textAlign: 'left', fontSize: '0.75rem', fontFamily: 'monospace' }}>
+                    <div><strong>Job ID:</strong> {provisionSuccess.id}</div>
+                    {provisionSuccess.environmentId && (
+                      <div><strong>Environment ID:</strong> {provisionSuccess.environmentId}</div>
+                    )}
+                    <div><strong>Status:</strong> {provisionSuccess.jobStatus}</div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p style={{ fontSize: '0.8125rem', color: '#cbd5e1', margin: 0 }}>
+                    Provisioning container under approved authorization <code>{provisionAuth.id.slice(0, 16)}...</code>.
+                  </p>
+
+                  {provisionError && (
+                    <div className="runtime-notice-banner warning">
+                      <AlertTriangle size={16} />
+                      <div>{provisionError}</div>
+                    </div>
+                  )}
+
+                  {/* Security Invariant Highlights */}
+                  <div style={{ background: '#090f1d', border: '1px solid #1e293b', borderRadius: '6px', padding: '0.75rem' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 600, marginBottom: '0.35rem' }}>
+                      Security Hardening &amp; Isolation Invariants
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.725rem', color: '#94a3b8', lineHeight: 1.5 }}>
+                      <li>Dedicated Docker bridge network with <code>Internal: true</code> (Zero Internet Egress).</li>
+                      <li>Drop all Linux capabilities (<code>cap_drop: ALL</code>) and <code>no-new-privileges: true</code>.</li>
+                      <li>Read-only root filesystem with memory-backed tmpfs for <code>/tmp</code>.</li>
+                      <li>Non-root execution (UID 1000:1000).</li>
+                      <li>Zero published host ports; negative connectivity test (8.8.8.8:53 blocked) enforced.</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                      Synthetic Service Template:
+                    </label>
+                    <select
+                      className="input"
+                      style={{ width: '100%', fontSize: '0.8125rem', background: '#090f1d' }}
+                      value={selectedTemplate}
+                      onChange={(e) => setSelectedTemplate(e.target.value)}
+                    >
+                      <option value="tpl-synthetic-api-01">Synthetic API Service (tpl-synthetic-api-01) - 0.25 CPU, 128 MB</option>
+                      <option value="tpl-synthetic-auth-01">Synthetic Auth Service (tpl-synthetic-auth-01) - 0.25 CPU, 128 MB</option>
+                      <option value="tpl-synthetic-data-01">Synthetic Data Service (tpl-synthetic-data-01) - 0.50 CPU, 256 MB</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                      Approved Container Image:
+                    </label>
+                    <select
+                      className="input"
+                      style={{ width: '100%', fontSize: '0.8125rem', background: '#090f1d' }}
+                      value={selectedImage}
+                      onChange={(e) => setSelectedImage(e.target.value)}
+                    >
+                      <option value="img-syn-alpine-node-01">
+                        deception-synthetic-service:1.0.0 (Node 20 Alpine - Approved)
+                      </option>
+                      <option value="img-syn-node-base-01">
+                        node:20-alpine (Base Node.js Runtime - Approved)
+                      </option>
+                    </select>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="runtime-modal-footer">
+              {provisionSuccess ? (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setIsProvisionModalOpen(false)}
+                >
+                  Close
+                </button>
+              ) : (
+                <>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => setIsProvisionModalOpen(false)}
+                    disabled={provisionLoading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleExecuteProvision}
+                    disabled={provisionLoading}
+                    style={{ background: '#0284c7', borderColor: '#38bdf8' }}
+                  >
+                    {provisionLoading ? 'Provisioning Container...' : 'Execute Provisioning'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

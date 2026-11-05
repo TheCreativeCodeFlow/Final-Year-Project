@@ -23,7 +23,13 @@ import {
   terminateEnvironment,
   listExecutionEvents,
   getQuotas,
-  updateQuotas
+  updateQuotas,
+  getApprovedImagesHandler,
+  getServiceTemplatesHandler,
+  submitProvisioningJob,
+  listProvisioningJobs,
+  getProvisioningJob,
+  getEnvironmentEvidence
 } from '../controllers/runtime.controller.js';
 
 export const runtimeRouter = Router({ mergeParams: true });
@@ -107,10 +113,60 @@ runtimeRouter.get(
   checkEnvironmentHealth
 );
 
+runtimeRouter.get(
+  '/environments/:environmentId/evidence',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  getEnvironmentEvidence
+);
+
 runtimeRouter.post(
   '/environments/:environmentId/terminate',
   requireRole('APPLICATION_OWNER'),
   terminateEnvironment
+);
+
+// -----------------------------------------------------------------------------
+// Approved Image Catalogue & Service Templates (Stage 5B.2)
+// -----------------------------------------------------------------------------
+
+runtimeRouter.get(
+  '/images',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  getApprovedImagesHandler
+);
+
+runtimeRouter.get(
+  '/templates',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  getServiceTemplatesHandler
+);
+
+// -----------------------------------------------------------------------------
+// Provisioning Dispatcher & Job Queue (Stage 5B.2)
+// -----------------------------------------------------------------------------
+
+runtimeRouter.post(
+  '/environments/provision',
+  requireRole('APPLICATION_OWNER'),
+  submitProvisioningJob
+);
+
+runtimeRouter.post(
+  '/jobs',
+  requireRole('APPLICATION_OWNER'),
+  submitProvisioningJob
+);
+
+runtimeRouter.get(
+  '/jobs',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  listProvisioningJobs
+);
+
+runtimeRouter.get(
+  '/jobs/:jobId',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  getProvisioningJob
 );
 
 // -----------------------------------------------------------------------------

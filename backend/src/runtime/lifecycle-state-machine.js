@@ -176,14 +176,14 @@ export class LifecycleStateMachine {
       );
     }
 
-    // Stage 5B.1 Invariant Guard: Live execution states prohibited in 5B.1
+    // Stage 5B.1 / 5B.2 Invariant Guard: Live execution states require explicit worker authorization
     if (
       context.enforceSafetyBoundary !== false &&
       (targetState === RUNTIME_LIFECYCLE_STATES.PROVISIONING ||
         targetState === RUNTIME_LIFECYCLE_STATES.ACTIVE ||
         targetState === RUNTIME_LIFECYCLE_STATES.UPDATING)
     ) {
-      if (!context.allowSimulatedExecution) {
+      if (!context.allowSimulatedExecution && !context.allowExecution) {
         throw new IllegalStateTransitionError(
           currentState,
           targetState,

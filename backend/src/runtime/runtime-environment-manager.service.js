@@ -23,6 +23,7 @@ import {
 import { ResourceGovernanceService } from './resource-governance.service.js';
 import { ExecutionEvidenceRecorder, EXECUTION_EVENT_TYPES } from './execution-evidence-recorder.service.js';
 import { AUTHORIZATION_STATUSES } from './execution-authorization.service.js';
+import { ContainerRuntimeAdapter } from './container-runtime-adapter.js';
 
 export class RuntimeEnvironmentManager {
   /**
@@ -30,11 +31,13 @@ export class RuntimeEnvironmentManager {
    * @param {Object} [dependencies.prismaClient]
    * @param {ResourceGovernanceService} [dependencies.resourceGovernance]
    * @param {ExecutionEvidenceRecorder} [dependencies.evidenceRecorder]
+   * @param {ContainerRuntimeAdapter} [dependencies.adapter]
    */
-  constructor({ prismaClient = null, resourceGovernance = null, evidenceRecorder = null } = {}) {
+  constructor({ prismaClient = null, resourceGovernance = null, evidenceRecorder = null, adapter = null } = {}) {
     this.prisma = prismaClient;
     this.resourceGovernance = resourceGovernance || new ResourceGovernanceService(this.prisma);
     this.evidenceRecorder = evidenceRecorder || new ExecutionEvidenceRecorder(this.prisma);
+    this.adapter = adapter || new ContainerRuntimeAdapter();
   }
 
   getDb() {
@@ -153,8 +156,8 @@ export class RuntimeEnvironmentManager {
       eventType: EXECUTION_EVENT_TYPES.PROVISIONING_REQUESTED,
       severity: 'INFO',
       message: `Environment record "${envId}" created in state AUTHORIZED from authorization ${auth.id}. Live execution is strictly simulated in Stage 5B.1.`,
-      actorIdentifier: actor.email,
-      actorRole: actor.role,
+      actorIdentifier: actor?.email || 'SYSTEM_OPERATOR',
+      actorRole: actor?.role || 'OPERATOR',
       outcomeStatus: 'RECORDED',
       eventPayload: {
         environmentId: environment.id,
@@ -188,6 +191,28 @@ export class RuntimeEnvironmentManager {
       err.code = 'ENVIRONMENT_NOT_FOUND';
       err.statusCode = 404;
       throw err;
+    }
+
+    // Real Docker container health check if unsimulated
+    if (!env.isSimulated && env.containerId) {
+      const realHealth = await this.adapter.checkContainerHealth({ containerId: env.containerId });
+      return {
+        environmentId: env.id,
+        environmentIdentifier: env.environmentIdentifier,
+        lifecycleState: env.lifecycleState,
+        healthStatus: realHealth.healthy ? 'HEALTHY' : 'DEGRADED',
+        runtimeEvidence: 'VERIFIED',
+        isSimulated: false,
+        containerProvisioned: true,
+        containerId: env.containerId,
+        latencyMs: realHealth.latencyMs,
+        statusCode: realHealth.statusCode,
+        allocatedResources: {
+          cpu: env.allocatedCpu,
+          memoryMb: env.allocatedMemoryMb,
+          storageMb: env.allocatedStorageMb
+        }
+      };
     }
 
     const isTerminated = env.lifecycleState === RUNTIME_LIFECYCLE_STATES.TERMINATED;
@@ -284,8 +309,8 @@ export class RuntimeEnvironmentManager {
       eventType: EXECUTION_EVENT_TYPES.DSG_TRANSITION_APPLIED,
       severity: 'INFO',
       message: `Proposed runtime mutation recorded: ${mutationType} from v${env.dsgGraphVersion} to v${targetGraphVersion}.`,
-      actorIdentifier: actor.email,
-      actorRole: actor.role,
+      actorIdentifier: actor?.email || 'SYSTEM_OPERATOR',
+      actorRole: actor?.role || 'OPERATOR',
       outcomeStatus: 'RECORDED',
       eventPayload: { mutationId: mutation.id, targetGraphVersion }
     });
@@ -337,11 +362,21 @@ export class RuntimeEnvironmentManager {
       { allowSimulatedExecution: true }
     );
 
+    // If live container was provisioned, clean it up via Adapter
+    if (env.containerId) {
+      await this.adapter.stopAndRemoveContainer(env.containerId).catch(() => {});
+    }
+    if (env.networkId) {
+      await this.adapter.removeIsolatedNetwork(env.networkId).catch(() => {});
+    }
+
     // Update state to TERMINATED
     const terminated = await prisma.deceptionRuntimeEnvironment.update({
       where: { id: env.id },
       data: {
         lifecycleState: RUNTIME_LIFECYCLE_STATES.TERMINATED,
+        containerId: null,
+        networkId: null,
         statusReason: reason,
         terminatedAt: new Date()
       }
@@ -363,8 +398,8 @@ export class RuntimeEnvironmentManager {
       eventType: EXECUTION_EVENT_TYPES.ENVIRONMENT_TERMINATED,
       severity: 'INFO',
       message: `Environment "${env.environmentIdentifier}" terminated: ${reason}`,
-      actorIdentifier: actor.email,
-      actorRole: actor.role,
+      actorIdentifier: actor?.email || 'SYSTEM_OPERATOR',
+      actorRole: actor?.role || 'OPERATOR',
       outcomeStatus: 'CONFIRMED',
       eventPayload: { environmentId: env.id, reason }
     });

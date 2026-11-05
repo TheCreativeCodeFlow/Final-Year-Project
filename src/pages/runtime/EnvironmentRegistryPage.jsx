@@ -200,12 +200,19 @@ export default function EnvironmentRegistryPage() {
                     <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{env.allocatedStorageMb} MB Disk</div>
                   </td>
                   <td>
-                    <span className="status-pill provisioning" style={{ fontSize: '0.7rem' }}>
-                      {env.isSimulated ? 'SIMULATED' : 'LIVE'}
+                    <span className={`status-pill ${env.isSimulated ? 'provisioning' : 'authorized'}`} style={{ fontSize: '0.7rem' }}>
+                      {env.isSimulated ? 'SIMULATED' : 'LIVE DOCKER'}
                     </span>
+                    {env.containerId && (
+                      <div style={{ fontSize: '0.675rem', fontFamily: 'monospace', color: '#38bdf8', marginTop: '0.2rem' }}>
+                        {env.containerId.substring(0, 12)}
+                      </div>
+                    )}
                   </td>
                   <td>
-                    <span className="evidence-pill-missing">{env.executionEvidenceStatus}</span>
+                    <span className={env.executionEvidenceStatus === 'VERIFIED' ? 'status-pill authorized' : 'evidence-pill-missing'} style={{ fontSize: '0.7rem' }}>
+                      {env.executionEvidenceStatus}
+                    </span>
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -278,15 +285,29 @@ export default function EnvironmentRegistryPage() {
                 </div>
               </div>
 
-              <div>
-                <label style={{ fontSize: '0.725rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Security Hardening Boundaries</label>
-                <div style={{ fontSize: '0.8125rem', color: '#cbd5e1', background: '#090f1d', padding: '0.75rem', borderRadius: '6px', lineHeight: 1.5 }}>
-                  <div>• UID: 10001 (Non-root deception daemon)</div>
-                  <div>• Rootfs: Read-Only (tmpfs mounts for /tmp only)</div>
-                  <div>• Capabilities: ALL dropped (no NET_ADMIN, no SYS_ADMIN)</div>
-                  <div>• Network Isolation: {selectedEnv.networkIsolationMode || 'SANDBOX_ISOLATED'}</div>
+              {selectedEnv.containerId ? (
+                <div>
+                  <label style={{ fontSize: '0.725rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Live Container &amp; Network Quarantine</label>
+                  <div style={{ fontSize: '0.8125rem', color: '#cbd5e1', background: '#090f1d', padding: '0.75rem', borderRadius: '6px', lineHeight: 1.6, fontFamily: 'monospace' }}>
+                    <div><span style={{ color: '#38bdf8' }}>Container ID:</span> {selectedEnv.containerId}</div>
+                    <div><span style={{ color: '#38bdf8' }}>Container Name:</span> {selectedEnv.containerName || 'N/A'}</div>
+                    <div><span style={{ color: '#38bdf8' }}>Network:</span> {selectedEnv.networkName || selectedEnv.networkId} (Internal: true, Zero Egress)</div>
+                    <div><span style={{ color: '#38bdf8' }}>Image Digest:</span> {selectedEnv.imageDigest || 'N/A'}</div>
+                    <div><span style={{ color: '#38bdf8' }}>Template:</span> {selectedEnv.templateIdentifier}</div>
+                    <div><span style={{ color: '#38bdf8' }}>Health Status:</span> {selectedEnv.healthStatus || 'HEALTHY'}</div>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div>
+                  <label style={{ fontSize: '0.725rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Security Hardening Boundaries</label>
+                  <div style={{ fontSize: '0.8125rem', color: '#cbd5e1', background: '#090f1d', padding: '0.75rem', borderRadius: '6px', lineHeight: 1.5 }}>
+                    <div>• UID: 1000 (Non-root deception daemon)</div>
+                    <div>• Rootfs: Read-Only (tmpfs mounts for /tmp only)</div>
+                    <div>• Capabilities: ALL dropped (cap_drop: ALL)</div>
+                    <div>• Network Isolation: {selectedEnv.networkIsolationMode || 'SANDBOX_ISOLATED'}</div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label style={{ fontSize: '0.725rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Synthetic State Snapshot</label>
@@ -335,9 +356,13 @@ export default function EnvironmentRegistryPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', background: '#090f1d', borderRadius: '6px' }}>
                     <CheckCircle2 size={24} color="#34d399" />
                     <div>
-                      <div style={{ fontWeight: 600, color: '#f8fafc' }}>{healthResult.healthStatus || 'SIMULATED_HEALTHY'}</div>
+                      <div style={{ fontWeight: 600, color: '#f8fafc' }}>{healthResult.healthStatus || 'HEALTHY'}</div>
                       <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                        Container Provisioned: <strong>{String(healthResult.containerProvisioned)}</strong> (Zero Live Footprint)
+                        {healthResult.containerProvisioned ? (
+                          <>Live Container: <strong>Verified Responsive ({healthResult.details?.latencyMs || 0} ms)</strong></>
+                        ) : (
+                          <>Container Provisioned: <strong>false</strong> (Simulation Baseline)</>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -345,7 +370,9 @@ export default function EnvironmentRegistryPage() {
                   <div>
                     <label style={{ fontSize: '0.725rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Execution Evidence Status</label>
                     <div>
-                      <span className="evidence-pill-missing">{healthResult.runtimeEvidence || 'MISSING'}</span>
+                      <span className={healthResult.runtimeEvidence === 'VERIFIED' ? 'status-pill authorized' : 'evidence-pill-missing'}>
+                        {healthResult.runtimeEvidence || 'MISSING'}
+                      </span>
                     </div>
                   </div>
 

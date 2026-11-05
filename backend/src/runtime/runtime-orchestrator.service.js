@@ -78,6 +78,8 @@ export class RuntimeOrchestrator {
       expiredAuths,
       activeEnvironments,
       totalEnvironments,
+      liveContainersCount,
+      queuedJobsCount,
       recentEvents
     ] = await Promise.all([
       this.resourceGovernance.getQuota({ tenantId }),
@@ -101,6 +103,19 @@ export class RuntimeOrchestrator {
         }
       }),
       prisma.deceptionRuntimeEnvironment.count({ where: { tenantId } }),
+      prisma.deceptionRuntimeEnvironment.count({
+        where: {
+          tenantId,
+          isSimulated: false,
+          lifecycleState: RUNTIME_LIFECYCLE_STATES.ACTIVE
+        }
+      }),
+      prisma.deceptionProvisioningJob.count({
+        where: {
+          tenantId,
+          jobStatus: { in: ['QUEUED', 'PROCESSING'] }
+        }
+      }),
       prisma.deceptionExecutionEvent.findMany({
         where: { tenantId },
         orderBy: { recordedAt: 'desc' },
@@ -108,10 +123,16 @@ export class RuntimeOrchestrator {
       })
     ]);
 
+    const isLiveActive = liveContainersCount > 0;
+
     return {
-      runtimeArchitectureStatus: 'STAGE_5B1_ARCHITECTURE_READY',
-      executionSafetyStatus: 'SAFE_UNPROVISIONED',
-      executionEvidenceStatus: 'MISSING',
+      runtimeArchitectureStatus: isLiveActive
+        ? 'STAGE_5B2_PROVISIONING_ACTIVE'
+        : 'STAGE_5B1_ARCHITECTURE_READY',
+      executionSafetyStatus: isLiveActive
+        ? 'ISOLATED_SYNTHETIC_ACTIVE'
+        : 'SAFE_UNPROVISIONED',
+      executionEvidenceStatus: isLiveActive ? 'VERIFIED' : 'MISSING',
       authorizationsSummary: {
         total: totalAuths,
         pending: pendingAuths,
@@ -122,7 +143,11 @@ export class RuntimeOrchestrator {
       environmentsSummary: {
         active: activeEnvironments,
         total: totalEnvironments,
-        verifiedContainersLive: 0 // Invariant: exactly 0
+        liveContainers: liveContainersCount,
+        verifiedContainersLive: liveContainersCount
+      },
+      jobsSummary: {
+        activeJobs: queuedJobsCount
       },
       capacityStatus: quota.capacityStatus, // "UNKNOWN"
       resourceQuota: {
@@ -134,8 +159,9 @@ export class RuntimeOrchestrator {
         currentAllocatedMemoryMb: quota.currentAllocatedMemoryMb
       },
       recentEvents,
-      nonExecutionNotice:
-        'STAGE_5B1_PLANNING_ONLY: Deception runtime architecture established for simulation and authorization. Live execution containers remain unprovisioned.'
+      nonExecutionNotice: isLiveActive
+        ? 'STAGE_5B2_ACTIVE: Isolated synthetic deception containers active on internal networks. Zero gateway traffic diversion.'
+        : 'STAGE_5B1_PLANNING_ONLY: Deception runtime architecture established for simulation and authorization. Live execution containers remain unprovisioned.'
     };
   }
 

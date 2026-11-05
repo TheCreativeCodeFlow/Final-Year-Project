@@ -76,6 +76,7 @@ describe('Stage 5B.1: Adaptive Deception Runtime Architecture & Execution Safety
     baseUrl = `http://127.0.0.1:${port}/api/v1`;
 
     // Clean up any previous test runtime records
+    await prisma.deceptionProvisioningJob.deleteMany();
     await prisma.deceptionRuntimeMutation.deleteMany();
     await prisma.deceptionRuntimeEnvironment.deleteMany();
     await prisma.deceptionExecutionEvent.deleteMany();

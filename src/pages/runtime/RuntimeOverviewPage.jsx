@@ -56,7 +56,7 @@ export default function RuntimeOverviewPage() {
     <div className="runtime-page">
       <PageHeader
         title="Deception Runtime Operations"
-        subtitle="Stage 5B.1 foundational runtime execution architecture, lifecycle state machine, and resource governance"
+        subtitle="Stage 5B.2 isolated synthetic container provisioning, lifecycle state machine, and resource governance"
         actions={
           <div className="runtime-header-actions">
             <button
@@ -84,7 +84,15 @@ export default function RuntimeOverviewPage() {
       <div className="runtime-notice-banner">
         <Info size={20} style={{ flexShrink: 0, color: '#38bdf8' }} />
         <div>
-          <strong>Stage 5B.1 Architecture &amp; Simulation Mode:</strong> Live deception containers, real-time traffic diversion, and network honeypot pods are strictly disabled in this milestone. All registered environments run with <span className="evidence-pill-missing">MISSING</span> verified execution evidence and zero host infrastructure footprint.
+          {overview?.runtimeArchitectureStatus === 'STAGE_5B2_PROVISIONING_ACTIVE' ? (
+            <>
+              <strong>Stage 5B.2 Isolated Synthetic Container Provisioning Active:</strong> Real local Docker containers provisioned within isolated, internal-only bridge networks with negative egress quarantine, non-root execution (UID 1000), read-only root filesystems, and zero host port mapping. Live gateway traffic diversion remains strictly prohibited.
+            </>
+          ) : (
+            <>
+              <strong>Stage 5B.1 Architecture &amp; Simulation Mode:</strong> Foundational execution framework ready. Synthetic container provisioning is available for approved authorizations. Real-time traffic diversion to deception containers remains strictly disabled.
+            </>
+          )}
         </div>
       </div>
 
@@ -108,23 +116,32 @@ export default function RuntimeOverviewPage() {
                 <span>Architecture Status</span>
                 <CheckCircle2 size={16} color="#34d399" />
               </div>
-              <div className="runtime-card-value" style={{ fontSize: '1.25rem', color: '#34d399' }}>
-                STAGE_5B1_READY
+              <div className="runtime-card-value" style={{ fontSize: '1.15rem', color: '#34d399' }}>
+                {overview.runtimeArchitectureStatus || 'STAGE_5B2_PROVISIONING_ACTIVE'}
               </div>
-              <div className="runtime-card-subtitle">Foundational execution framework enabled</div>
+              <div className="runtime-card-subtitle">Isolated synthetic provisioning enabled</div>
             </div>
 
             <div className="runtime-card">
               <div className="runtime-card-title">
                 <span>Execution Evidence</span>
-                <AlertTriangle size={16} color="#facc15" />
+                {overview.executionEvidenceStatus === 'VERIFIED' ? (
+                  <CheckCircle2 size={16} color="#34d399" />
+                ) : (
+                  <AlertTriangle size={16} color="#facc15" />
+                )}
               </div>
               <div className="runtime-card-value">
-                <span className="evidence-pill-missing" style={{ fontSize: '1rem', padding: '0.35rem 0.65rem' }}>
+                <span
+                  className={overview.executionEvidenceStatus === 'VERIFIED' ? 'status-pill authorized' : 'evidence-pill-missing'}
+                  style={{ fontSize: '1rem', padding: '0.35rem 0.65rem' }}
+                >
                   {overview.executionEvidenceStatus}
                 </span>
               </div>
-              <div className="runtime-card-subtitle">Zero unverified live execution allowed</div>
+              <div className="runtime-card-subtitle">
+                {overview.executionEvidenceStatus === 'VERIFIED' ? 'Verified container evidence logged' : 'Zero unverified live execution allowed'}
+              </div>
             </div>
 
             <div className="runtime-card">
@@ -164,12 +181,12 @@ export default function RuntimeOverviewPage() {
             <div className="runtime-card">
               <div className="runtime-card-title">
                 <span>Verified Live Containers</span>
-                <Server size={16} color="#94a3b8" />
+                <Server size={16} color="#38bdf8" />
               </div>
               <div className="runtime-card-value" style={{ color: '#38bdf8' }}>
-                {overview.environmentsSummary?.verifiedContainersLive || 0}
+                {overview.environmentsSummary?.liveContainers ?? overview.environmentsSummary?.verifiedContainersLive ?? 0}
               </div>
-              <div className="runtime-card-subtitle">Safety Invariant: strictly 0 in Stage 5B.1</div>
+              <div className="runtime-card-subtitle">Zero public exposure, egress quarantined</div>
             </div>
           </div>
 

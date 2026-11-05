@@ -51,6 +51,7 @@ model Tenant {
   executionEvents         DeceptionExecutionEvent[]
   resourceQuotas          DeceptionResourceQuota[]
   runtimeMutations        DeceptionRuntimeMutation[]
+  provisioningJobs        DeceptionProvisioningJob[]
 
   @@map("tenants")
 }
@@ -779,6 +780,7 @@ model DeceptionExecutionAuthorization {
   environments     DeceptionRuntimeEnvironment[]
   executionEvents  DeceptionExecutionEvent[]
   runtimeMutations DeceptionRuntimeMutation[]
+  provisioningJobs DeceptionProvisioningJob[]
 
   @@unique([id, tenantId])
   @@index([tenantId])
@@ -808,19 +810,32 @@ model DeceptionRuntimeEnvironment {
   networkIsolationMode    String    @default("SANDBOX_ISOLATED") // SANDBOX_ISOLATED, STRICT_AIRGAP
   ingressPort             Int?
   syntheticStateSnapshot  Json?     // Mock routes, identities, schema snapshot
-  isSimulated             Boolean   @default(true) // Invariant: true in Stage 5B.1
-  executionEvidenceStatus String    @default("MISSING") // Invariant: strictly MISSING in Stage 5B.1
+  isSimulated             Boolean   @default(true) // true for simulated, false for real Docker container
+  executionEvidenceStatus String    @default("MISSING") // MISSING, PARTIAL, VERIFIED
+  containerId             String?   // Docker container ID
+  containerName           String?   // Docker container name
+  networkId               String?   // Isolated bridge network ID
+  networkName             String?   // Isolated bridge network name
+  imageIdentifier         String?   // Approved catalogue image ID
+  imageDigest             String?   // Verified sha256 digest
+  templateIdentifier      String?   // Synthetic service template ID
+  healthStatus            String?   @default("UNKNOWN") // UNKNOWN, HEALTHY, UNHEALTHY, DEGRADED
+  healthCheckedAt         DateTime?
+  healthCheckDetails      Json?
+  runtimeEvidence         Json?     // Granular verified evidence dictionary
+  actualMeasuredUsage     Json?     // Measured CPU/memory usage
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
   expiresAt               DateTime?
   terminatedAt            DateTime?
 
-  tenant        Tenant                          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  application   ProtectedApplication?          @relation(fields: [applicationId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  authorization DeceptionExecutionAuthorization @relation(fields: [authorizationId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  graph         DeceptionGraph                  @relation(fields: [dsgGraphId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  events        DeceptionExecutionEvent[]
-  mutations     DeceptionRuntimeMutation[]
+  tenant           Tenant                          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application      ProtectedApplication?          @relation(fields: [applicationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  authorization    DeceptionExecutionAuthorization @relation(fields: [authorizationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  graph            DeceptionGraph                  @relation(fields: [dsgGraphId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  events           DeceptionExecutionEvent[]
+  mutations        DeceptionRuntimeMutation[]
+  provisioningJobs DeceptionProvisioningJob[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, environmentIdentifier])
@@ -828,6 +843,7 @@ model DeceptionRuntimeEnvironment {
   @@index([applicationId])
   @@index([authorizationId])
   @@index([lifecycleState])
+  @@index([containerId])
   @@map("deception_runtime_environments")
 }
 
@@ -915,4 +931,46 @@ model DeceptionRuntimeMutation {
   @@index([mutationStatus])
   @@index([idempotencyKey])
   @@map("deception_runtime_mutations")
+}
+
+model DeceptionProvisioningJob {
+  id                       String    @id @default(uuid())
+  tenantId                 String
+  applicationId            String?
+  authorizationId          String
+  policyDecisionId         String
+  dsgGraphId               String
+  dsgGraphVersion          Int
+  policyVersion            Int
+  selectedStrategyId       String?
+  templateIdentifier       String
+  imageIdentifier          String
+  imageDigest              String
+  resourceReservation      Json
+  requestingOperatorId     String?
+  requestingOperatorEmail  String?
+  approvingOperatorId      String?
+  approvingOperatorEmail   String?
+  authorizationExpiresAt   DateTime
+  idempotencyKey           String?
+  jobStatus                String    @default("QUEUED") // QUEUED, PROCESSING, COMPLETED, FAILED, REJECTED, CANCELLED
+  attempts                 Int       @default(0)
+  maxAttempts              Int       @default(3)
+  environmentId            String?
+  errorDetails             Json?
+  resultEvidence           Json?
+  queuedAt                 DateTime  @default(now())
+  startedAt                DateTime?
+  completedAt              DateTime?
+
+  tenant        Tenant                          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  authorization DeceptionExecutionAuthorization @relation(fields: [authorizationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  environment   DeceptionRuntimeEnvironment?    @relation(fields: [environmentId, tenantId], references: [id, tenantId], onDelete: SetNull)
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId])
+  @@index([authorizationId])
+  @@index([jobStatus])
+  @@index([queuedAt])
+  @@map("deception_provisioning_jobs")
 }
