@@ -46,6 +46,11 @@ model Tenant {
   detectionModelVersions DetectionModelVersion[]
   modelTrainingRuns      ModelTrainingRun[]
   detectionRuleVersions  DetectionRuleVersion[]
+  executionAuthorizations DeceptionExecutionAuthorization[]
+  runtimeEnvironments     DeceptionRuntimeEnvironment[]
+  executionEvents         DeceptionExecutionEvent[]
+  resourceQuotas          DeceptionResourceQuota[]
+  runtimeMutations        DeceptionRuntimeMutation[]
 
   @@map("tenants")
 }
@@ -76,6 +81,9 @@ model ProtectedApplication {
   deceptionPolicies      DeceptionPolicy[]
   policyDecisions        PolicyDecision[]
   deceptionGraphs        DeceptionGraph[]
+  executionAuthorizations DeceptionExecutionAuthorization[]
+  runtimeEnvironments     DeceptionRuntimeEnvironment[]
+  resourceQuotas          DeceptionResourceQuota[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, applicationIdentifier])
@@ -331,6 +339,7 @@ model PolicyDecision {
   graph            DeceptionGraph?       @relation(fields: [dsgGraphId], references: [id], onDelete: SetNull)
   routingDecisions RoutingDecision[]
   transitions      DeceptionGraphTransition[]
+  executionAuthorizations DeceptionExecutionAuthorization[]
 
   @@unique([id, tenantId])
   @@index([tenantId])
@@ -428,6 +437,9 @@ model DeceptionGraph {
   edges           DeceptionGraphEdge[]
   transitions     DeceptionGraphTransition[]
   policyDecisions PolicyDecision[]
+  executionAuthorizations DeceptionExecutionAuthorization[]
+  runtimeEnvironments     DeceptionRuntimeEnvironment[]
+  runtimeMutations        DeceptionRuntimeMutation[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, graphIdentifier, graphVersion])
@@ -727,4 +739,180 @@ model DetectionRuleVersion {
   @@index([tenantId])
   @@index([ruleIdentifier])
   @@map("detection_rule_versions")
+}
+
+// ------------------------------------------------------------------------------
+// J. Adaptive Deception Runtime Architecture & Execution Safety (Stage 5B.1)
+// ------------------------------------------------------------------------------
+
+model DeceptionExecutionAuthorization {
+  id                       String    @id @default(uuid())
+  tenantId                 String
+  applicationId            String?
+  policyDecisionId         String
+  dsgGraphId               String
+  dsgGraphVersion          Int
+  selectedStrategyId       String?
+  requestingOperatorId     String?
+  requestingOperatorEmail  String?
+  requestingOperatorRole   String?
+  approvingOperatorId      String?
+  approvingOperatorEmail   String?
+  authorizationStatus      String    @default("PENDING") // PENDING, APPROVED, DENIED, EXPIRED, REVOKED
+  authorizationReasonCodes Json      // Array of reason codes
+  decisionRationale        String?
+  requestedAt              DateTime  @default(now())
+  authorizedAt             DateTime?
+  expiresAt                DateTime
+  evaluatorVersion         String    @default("5B.1")
+  idempotencyKey           String?
+  requestPayloadHash       String?
+  revocationReason         String?
+  revokedAt                DateTime?
+  revokedBy                String?
+  metadata                 Json?
+
+  tenant           Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application      ProtectedApplication?         @relation(fields: [applicationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  policyDecision   PolicyDecision                @relation(fields: [policyDecisionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  graph            DeceptionGraph                @relation(fields: [dsgGraphId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  environments     DeceptionRuntimeEnvironment[]
+  executionEvents  DeceptionExecutionEvent[]
+  runtimeMutations DeceptionRuntimeMutation[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([applicationId])
+  @@index([policyDecisionId])
+  @@index([dsgGraphId])
+  @@index([authorizationStatus])
+  @@index([idempotencyKey])
+  @@map("deception_execution_authorizations")
+}
+
+model DeceptionRuntimeEnvironment {
+  id                      String    @id @default(uuid())
+  tenantId                String
+  applicationId           String?
+  authorizationId         String
+  environmentIdentifier   String    // e.g. "env-rt-apex-01"
+  name                    String
+  lifecycleState          String    @default("AUTHORIZED") // DRAFT, VALIDATING, REJECTED, AUTHORIZED, PROVISIONING, ACTIVE, UPDATING, DEGRADED, TERMINATING, TERMINATED, FAILED, EXPIRED
+  statusReason            String?
+  dsgGraphId              String
+  dsgGraphVersion         Int
+  strategyIdentifier      String?
+  allocatedCpu            Float     @default(0.5)
+  allocatedMemoryMb       Int       @default(256)
+  allocatedStorageMb      Int       @default(512)
+  networkIsolationMode    String    @default("SANDBOX_ISOLATED") // SANDBOX_ISOLATED, STRICT_AIRGAP
+  ingressPort             Int?
+  syntheticStateSnapshot  Json?     // Mock routes, identities, schema snapshot
+  isSimulated             Boolean   @default(true) // Invariant: true in Stage 5B.1
+  executionEvidenceStatus String    @default("MISSING") // Invariant: strictly MISSING in Stage 5B.1
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  expiresAt               DateTime?
+  terminatedAt            DateTime?
+
+  tenant        Tenant                          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application   ProtectedApplication?          @relation(fields: [applicationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  authorization DeceptionExecutionAuthorization @relation(fields: [authorizationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  graph         DeceptionGraph                  @relation(fields: [dsgGraphId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  events        DeceptionExecutionEvent[]
+  mutations     DeceptionRuntimeMutation[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, environmentIdentifier])
+  @@index([tenantId])
+  @@index([applicationId])
+  @@index([authorizationId])
+  @@index([lifecycleState])
+  @@map("deception_runtime_environments")
+}
+
+model DeceptionExecutionEvent {
+  id              String    @id @default(uuid())
+  tenantId        String
+  authorizationId String?
+  environmentId   String?
+  eventType       String    // AUTHORIZATION_REQUESTED, AUTHORIZATION_APPROVED, AUTHORIZATION_DENIED, AUTHORIZATION_REVOKED, AUTHORIZATION_EXPIRED, PROVISIONING_REQUESTED, PROVISIONING_FAILED, ENVIRONMENT_HEALTH_VERIFIED, DSG_TRANSITION_APPLIED, DSG_TRANSITION_REJECTED, ENVIRONMENT_TERMINATED, CLEANUP_COMPLETED
+  severity        String    @default("INFO") // INFO, WARN, ERROR, CRITICAL
+  message         String
+  actorIdentifier String?
+  actorRole       String?
+  outcomeStatus   String    @default("RECORDED") // RECORDED, REJECTED, UNVERIFIED, CONFIRMED
+  evidenceStatus  String    @default("MISSING") // Invariant: strictly MISSING for Stage 5B.1
+  eventPayload    Json?
+  recordedAt      DateTime  @default(now())
+
+  tenant        Tenant                           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  authorization DeceptionExecutionAuthorization? @relation(fields: [authorizationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  environment   DeceptionRuntimeEnvironment?     @relation(fields: [environmentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([authorizationId])
+  @@index([environmentId])
+  @@index([eventType])
+  @@index([recordedAt])
+  @@map("deception_execution_events")
+}
+
+model DeceptionResourceQuota {
+  id                            String    @id @default(uuid())
+  tenantId                      String
+  applicationId                 String?
+  maxActiveEnvironments         Int       @default(3)
+  maxCpuAllocation              Float     @default(2.0)
+  maxMemoryMb                   Int       @default(1024)
+  maxStorageMb                  Int       @default(2048)
+  maxEnvironmentLifetimeMinutes Int       @default(120)
+  maxConcurrentProvisioning     Int       @default(1)
+  maxNetworkConnections         Int       @default(50)
+  maxExecutionRequestsPerHour   Int       @default(20)
+  isCapacityTracked             Boolean   @default(false)
+  capacityStatus                String    @default("UNKNOWN") // UNKNOWN, NORMAL, CONSTRAINED, EXHAUSTED
+  currentActiveEnvironments     Int       @default(0)
+  currentAllocatedCpu           Float     @default(0.0)
+  currentAllocatedMemoryMb      Int       @default(0)
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
+
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application ProtectedApplication?  @relation(fields: [applicationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, applicationId])
+  @@index([tenantId])
+  @@index([applicationId])
+  @@map("deception_resource_quotas")
+}
+
+model DeceptionRuntimeMutation {
+  id                 String    @id @default(uuid())
+  tenantId           String
+  authorizationId    String
+  environmentId      String
+  dsgGraphId         String
+  baseGraphVersion   Int
+  targetGraphVersion Int
+  mutationType       String    // TOPOLOGY_EXPANSION, CREDENTIAL_MUTATION, SCHEMA_MUTATION, ISOLATION_UPDATE
+  mutationStatus     String    @default("PROPOSED") // PROPOSED, VALIDATED, REJECTED, SUPERSEDED
+  syntheticDiff      Json?
+  rejectionReason    String?
+  idempotencyKey     String?
+  appliedAt          DateTime?
+  proposedAt         DateTime  @default(now())
+
+  tenant        Tenant                          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  authorization DeceptionExecutionAuthorization @relation(fields: [authorizationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  environment   DeceptionRuntimeEnvironment     @relation(fields: [environmentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  graph         DeceptionGraph                  @relation(fields: [dsgGraphId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([authorizationId])
+  @@index([environmentId])
+  @@index([dsgGraphId])
+  @@index([mutationStatus])
+  @@index([idempotencyKey])
+  @@map("deception_runtime_mutations")
 }

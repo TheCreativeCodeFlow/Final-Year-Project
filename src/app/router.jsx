@@ -56,6 +56,13 @@ import StrategyCatalogPage from '../pages/deception/StrategyCatalogPage';
 import PolicyDecisionExplorerPage from '../pages/deception/PolicyDecisionExplorerPage';
 import DSGPlannerPage from '../pages/deception/DSGPlannerPage';
 
+// Deception Runtime Operations Pages (Stage 5B.1)
+import RuntimeOverviewPage from '../pages/runtime/RuntimeOverviewPage';
+import ExecutionAuthorizationsPage from '../pages/runtime/ExecutionAuthorizationsPage';
+import EnvironmentRegistryPage from '../pages/runtime/EnvironmentRegistryPage';
+import RuntimeEventsPage from '../pages/runtime/RuntimeEventsPage';
+import ResourceGovernancePage from '../pages/runtime/ResourceGovernancePage';
+
 export default function AppRouter() {
   const { isAuthenticated, role, ROLES } = useAuth();
 
@@ -499,7 +506,65 @@ export default function AppRouter() {
         }
       />
 
+      {/* Deception Runtime Operations (Stage 5B.1) */}
+      <Route
+        path="/runtime/overview"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <RuntimeOverviewPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/runtime/authorizations"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <ExecutionAuthorizationsPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/runtime/environments"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <EnvironmentRegistryPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/runtime/events"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <RuntimeEventsPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
+      <Route
+        path="/runtime/quotas"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <ResourceGovernancePage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
       {/* Convenience redirects */}
+      <Route path="/owner/runtime" element={<Navigate to="/runtime/overview" replace />} />
+      <Route path="/admin/runtime" element={<Navigate to="/runtime/overview" replace />} />
       <Route path="/owner/detection" element={<Navigate to="/detection/overview" replace />} />
       <Route path="/admin/detection" element={<Navigate to="/detection/overview" replace />} />
       <Route path="/owner/deception" element={<Navigate to="/deception/policies" replace />} />

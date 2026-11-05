@@ -229,6 +229,63 @@ export default function Sidebar({ isOpen, onClose }) {
             </ul>
           </div>
 
+          {/* Deception Runtime Operations (Stage 5B.1) */}
+          <div style={{ marginTop: '1.25rem' }}>
+            <div className="nav-section-title">Runtime Operations (Stage 5B.1)</div>
+            <ul className="nav-list">
+              <li>
+                <NavLink
+                  to="/runtime/overview"
+                  className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                  onClick={onClose}
+                >
+                  <Cpu size={18} />
+                  <span>Runtime Overview</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/runtime/authorizations"
+                  className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                  onClick={onClose}
+                >
+                  <ShieldCheck size={18} />
+                  <span>Authorizations</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/runtime/environments"
+                  className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                  onClick={onClose}
+                >
+                  <Layers size={18} />
+                  <span>Environment Registry</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/runtime/events"
+                  className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                  onClick={onClose}
+                >
+                  <Activity size={18} />
+                  <span>Execution Events</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/runtime/quotas"
+                  className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
+                  onClick={onClose}
+                >
+                  <Sliders size={18} />
+                  <span>Resource Governance</span>
+                </NavLink>
+              </li>
+            </ul>
+          </div>
+
           {/* Admin Navigation */}
           {isAdmin && (
             <div style={{ marginTop: isOwner ? '1.5rem' : '0' }}>

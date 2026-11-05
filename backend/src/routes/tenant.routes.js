@@ -20,6 +20,7 @@ import { attackerProfilesRouter } from './attacker-profiles.routes.js';
 import { behavioralFeaturesRouter, behavioralBaselinesRouter } from './behavioral-features.routes.js';
 import { detectionRouter } from './detection.routes.js';
 import { deceptionRouter } from './deception.routes.js';
+import { runtimeRouter } from './runtime.routes.js';
 
 export const tenantRouter = Router({ mergeParams: true });
 
@@ -37,3 +38,4 @@ tenantRouter.use('/behavioral-features', behavioralFeaturesRouter);
 tenantRouter.use('/behavioral-baselines', behavioralBaselinesRouter);
 tenantRouter.use('/detection', detectionRouter);
 tenantRouter.use('/deception', deceptionRouter);
+tenantRouter.use('/runtime', runtimeRouter);

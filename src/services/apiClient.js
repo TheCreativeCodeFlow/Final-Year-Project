@@ -405,6 +405,78 @@ export const apiClient = {
 
   reassessDeceptionGraphMutation: async (tenantId, graphId, payload) => {
     return apiClient.post(`/tenants/${tenantId}/deception/graphs/${graphId}/reassess`, payload);
+  },
+
+  // ---------------------------------------------------------------------------
+  // Runtime Operations (Stage 5B.1)
+  // ---------------------------------------------------------------------------
+
+  getRuntimeOverview: async (tenantId) => {
+    return apiClient.get(`/tenants/${tenantId}/runtime/overview`);
+  },
+
+  getRuntimeAuthorizations: async (tenantId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/runtime/authorizations${qs}`);
+  },
+
+  getRuntimeAuthorizationById: async (tenantId, authorizationId) => {
+    return apiClient.get(`/tenants/${tenantId}/runtime/authorizations/${authorizationId}`);
+  },
+
+  createRuntimeAuthorization: async (tenantId, payload) => {
+    return apiClient.post(`/tenants/${tenantId}/runtime/authorizations`, payload);
+  },
+
+  approveRuntimeAuthorization: async (tenantId, authorizationId, payload = {}) => {
+    return apiClient.post(`/tenants/${tenantId}/runtime/authorizations/${authorizationId}/approve`, payload);
+  },
+
+  denyRuntimeAuthorization: async (tenantId, authorizationId, payload = {}) => {
+    return apiClient.post(`/tenants/${tenantId}/runtime/authorizations/${authorizationId}/deny`, payload);
+  },
+
+  revokeRuntimeAuthorization: async (tenantId, authorizationId, payload = {}) => {
+    return apiClient.post(`/tenants/${tenantId}/runtime/authorizations/${authorizationId}/revoke`, payload);
+  },
+
+  getRuntimeEnvironments: async (tenantId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/runtime/environments${qs}`);
+  },
+
+  getRuntimeEnvironmentById: async (tenantId, environmentId) => {
+    return apiClient.get(`/tenants/${tenantId}/runtime/environments/${environmentId}`);
+  },
+
+  createRuntimeEnvironment: async (tenantId, payload) => {
+    return apiClient.post(`/tenants/${tenantId}/runtime/environments`, payload);
+  },
+
+  checkRuntimeEnvironmentHealth: async (tenantId, environmentId) => {
+    return apiClient.get(`/tenants/${tenantId}/runtime/environments/${environmentId}/health`);
+  },
+
+  terminateRuntimeEnvironment: async (tenantId, environmentId, payload = {}) => {
+    return apiClient.post(`/tenants/${tenantId}/runtime/environments/${environmentId}/terminate`, payload);
+  },
+
+  getRuntimeEvents: async (tenantId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/runtime/events${qs}`);
+  },
+
+  getRuntimeQuotas: async (tenantId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/runtime/quotas${qs}`);
+  },
+
+  updateRuntimeQuotas: async (tenantId, payload) => {
+    return apiClient.patch(`/tenants/${tenantId}/runtime/quotas`, payload);
   }
 };
 
