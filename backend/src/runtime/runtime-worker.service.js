@@ -19,6 +19,25 @@ import { LifecycleStateMachine, RUNTIME_LIFECYCLE_STATES } from './lifecycle-sta
 import { getApprovedImage } from './image-catalogue.js';
 import { getSyntheticTemplate } from './synthetic-templates.js';
 
+/**
+ * Deterministic JSON stringification using recursive key sorting (RFC 8785 style).
+ * Ensures cryptographic digest reproducibility across platforms and memory layouts.
+ *
+ * @param {any} obj
+ * @returns {string}
+ */
+export function canonicalJsonStringify(obj) {
+  if (obj === null || typeof obj !== 'object') {
+    return JSON.stringify(obj);
+  }
+  if (Array.isArray(obj)) {
+    return `[${obj.map((item) => canonicalJsonStringify(item)).join(',')}]`;
+  }
+  const sortedKeys = Object.keys(obj).sort();
+  const pairs = sortedKeys.map((k) => `${JSON.stringify(k)}:${canonicalJsonStringify(obj[k])}`);
+  return `{${pairs.join(',')}}`;
+}
+
 export class RuntimeWorkerService {
   /**
    * @param {Object} [options]
@@ -377,8 +396,11 @@ export class RuntimeWorkerService {
         { allowExecution: true }
       );
 
-      const evidenceHash = crypto.createHash('sha256').update(JSON.stringify(evidenceMap)).digest('hex');
+      // Deterministic canonical hash computation
+      const canonicalPayload = canonicalJsonStringify(evidenceMap);
+      const evidenceHash = crypto.createHash('sha256').update(canonicalPayload).digest('hex');
       evidenceMap.evidenceHash = evidenceHash;
+      evidenceMap.canonicalPayloadSha256 = evidenceHash;
       evidenceMap.quarantineVerified = Boolean(egressCheck.egressBlocked);
       evidenceMap.healthCheckPassed = Boolean(healthResult.healthy);
 
@@ -671,8 +693,18 @@ export class RuntimeWorkerService {
     }
 
     // Query all active environment IDs to protect them during orphan cleanup
+    // Strictly shield only actively running / initializing states (FAILED/TERMINATING do not shield orphans)
     const activeEnvs = await prisma.deceptionRuntimeEnvironment.findMany({
-      where: { lifecycleState: { not: RUNTIME_LIFECYCLE_STATES.TERMINATED } },
+      where: {
+        lifecycleState: {
+          in: [
+            RUNTIME_LIFECYCLE_STATES.ACTIVE,
+            RUNTIME_LIFECYCLE_STATES.PROVISIONING,
+            RUNTIME_LIFECYCLE_STATES.VALIDATING,
+            RUNTIME_LIFECYCLE_STATES.AUTHORIZED
+          ]
+        }
+      },
       select: { id: true }
     });
     const activeIds = activeEnvs.map((e) => e.id);

@@ -292,11 +292,91 @@ export class ContainerRuntimeAdapter {
     const imageRef = `${imageConfig.repository}:${imageConfig.tag}`;
     const containerName = `dec-env-${tenantId.slice(0, 8)}-${environmentId.slice(0, 8)}`;
 
-    // 2. Resource limit calculations
+    // 2. Strict networkMode and network isolation validation
+    if (!networkName || typeof networkName !== 'string') {
+      const err = new Error('A valid networkName is required for synthetic container isolation.');
+      err.code = 'INVALID_NETWORK_PARAMETER';
+      err.statusCode = 400;
+      throw err;
+    }
+    const cleanNet = networkName.trim();
+    if (['host', 'bridge', 'none', 'default'].includes(cleanNet.toLowerCase())) {
+      const err = new Error(`Insecure networkMode "${cleanNet}" rejected. Host and default bridge networking are strictly forbidden.`);
+      err.code = 'INSECURE_NETWORK_MODE_REJECTED';
+      err.statusCode = 403;
+      throw err;
+    }
+    if (!/^dec-net-[a-zA-Z0-9_-]{1,64}$/.test(cleanNet)) {
+      const err = new Error(`Invalid network name format "${cleanNet}". Must match dedicated deception pattern.`);
+      err.code = 'INVALID_NETWORK_NAME_FORMAT';
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // Inspect target network to confirm Internal: true
+    const targetNet = await this.inspectNetwork(cleanNet);
+    if (!targetNet) {
+      const err = new Error(`Target network "${cleanNet}" does not exist in Docker.`);
+      err.code = 'NETWORK_NOT_FOUND';
+      err.statusCode = 404;
+      throw err;
+    }
+    if (!targetNet.Internal) {
+      const err = new Error(`Network "${cleanNet}" is not configured with Internal: true. Non-isolated networks are strictly rejected.`);
+      err.code = 'NON_INTERNAL_NETWORK_REJECTED';
+      err.statusCode = 403;
+      throw err;
+    }
+
+    // 3. Environment variable sanitization & security filtering
+    const FORBIDDEN_ENV_KEYS = new Set([
+      'NODE_OPTIONS',
+      'LD_PRELOAD',
+      'LD_LIBRARY_PATH',
+      'BASH_ENV',
+      'ENV',
+      'IFS',
+      'SHELL',
+      'PYTHONPATH',
+      'RUBYOPT',
+      'PERL5OPT',
+      'JAVA_TOOL_OPTIONS',
+      'DYLD_INSERT_LIBRARIES',
+      'DYLD_LIBRARY_PATH'
+    ]);
+
+    const sanitizedExtraEnv = [];
+    if (extraEnv && typeof extraEnv === 'object') {
+      for (const [k, v] of Object.entries(extraEnv)) {
+        const cleanKey = String(k).trim().toUpperCase();
+        if (FORBIDDEN_ENV_KEYS.has(cleanKey)) {
+          const err = new Error(`Forbidden environment variable "${cleanKey}" rejected for security isolation.`);
+          err.code = 'FORBIDDEN_ENV_VARIABLE';
+          err.statusCode = 400;
+          throw err;
+        }
+        if (!/^[A-Z0-9_]{1,64}$/.test(cleanKey)) {
+          const err = new Error(`Invalid environment variable key format: "${k}".`);
+          err.code = 'INVALID_ENV_KEY_FORMAT';
+          err.statusCode = 400;
+          throw err;
+        }
+        const valStr = String(v ?? '');
+        if (/[\x00\r\n]/.test(valStr)) {
+          const err = new Error(`Environment variable value for "${cleanKey}" contains illegal control characters.`);
+          err.code = 'ILLEGAL_ENV_VALUE_CHARS';
+          err.statusCode = 400;
+          throw err;
+        }
+        sanitizedExtraEnv.push(`${cleanKey}=${valStr}`);
+      }
+    }
+
+    // 4. Resource limit calculations
     const memoryBytes = Math.max(64, Math.min(1024, memoryMb)) * 1024 * 1024;
     const cpuQuota = Math.floor(Math.max(0.1, Math.min(2.0, cpuLimit)) * 100000);
 
-    // 3. Security context assembly (Enforces fail-secure defaults)
+    // 5. Security context assembly (Enforces fail-secure defaults)
     const envVars = [
       `SYNTHETIC_SERVICE_TYPE=${serviceType}`,
       `DECEPTION_ENVIRONMENT_ID=${environmentId}`,
@@ -304,7 +384,7 @@ export class ContainerRuntimeAdapter {
       'PORT=8080',
       'HOST=0.0.0.0',
       'NODE_ENV=production',
-      ...Object.entries(extraEnv).map(([k, v]) => `${k}=${v}`)
+      ...sanitizedExtraEnv
     ];
 
     const body = {
@@ -324,7 +404,9 @@ export class ContainerRuntimeAdapter {
         'deception.milestone': '5B.2'
       },
       HostConfig: {
-        NetworkMode: networkName,
+        NetworkMode: cleanNet,
+        IpcMode: 'private',
+        PidMode: '',
         PortBindings: {}, // STRICT: Zero published host ports!
         ReadonlyRootfs: true, // STRICT: Read-only image filesystem
         CapDrop: ['ALL'], // STRICT: Drop all Linux capabilities
@@ -537,6 +619,45 @@ export class ContainerRuntimeAdapter {
         latencyMs: Date.now() - startTime
       };
     }
+  }
+
+  /**
+   * Executes a command inside the container and returns exit code and output.
+   *
+   * @param {string} containerId
+   * @param {string[]} cmd
+   * @returns {Promise<{ exitCode: number, output: string, rawOutput: string }>}
+   */
+  async execCommand(containerId, cmd) {
+    if (!containerId) throw new Error('Container ID required.');
+    if (!Array.isArray(cmd) || cmd.length === 0) throw new Error('Command array required.');
+
+    const execCreate = await this._request({
+      path: `/containers/${encodeURIComponent(containerId)}/exec`,
+      method: 'POST',
+      body: {
+        AttachStdout: true,
+        AttachStderr: true,
+        Cmd: cmd
+      }
+    });
+    const execId = execCreate.data.Id;
+    const startRes = await this._request({
+      path: `/exec/${encodeURIComponent(execId)}/start`,
+      method: 'POST',
+      body: { Detach: false, Tty: false }
+    });
+    const inspectRes = await this._request({
+      path: `/exec/${encodeURIComponent(execId)}/json`,
+      method: 'GET'
+    });
+    const rawOutput = typeof startRes.data === 'string' ? startRes.data : '';
+    const cleanOutput = rawOutput.replace(/[\x00-\x1F\x7F-\x9F]/g, ' ').trim();
+    return {
+      exitCode: inspectRes.data.ExitCode,
+      output: cleanOutput,
+      rawOutput
+    };
   }
 
   /**

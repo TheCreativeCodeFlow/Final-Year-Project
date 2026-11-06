@@ -9,8 +9,65 @@
  * verified outcome exists. In Stage 5B.1, all execution evidence status remains strictly MISSING.
  */
 
+import crypto from 'node:crypto';
 import { getPrismaClient } from '../db/client.js';
 import { recordSecurityAudit } from '../utils/audit.js';
+
+/**
+ * Deterministic JSON stringification using recursive key sorting (RFC 8785 style).
+ */
+export function canonicalStringify(obj) {
+  if (obj === null || typeof obj !== 'object') {
+    return JSON.stringify(obj);
+  }
+  if (Array.isArray(obj)) {
+    return `[${obj.map((item) => canonicalStringify(item)).join(',')}]`;
+  }
+  const sortedKeys = Object.keys(obj).sort();
+  const pairs = sortedKeys.map((k) => `${JSON.stringify(k)}:${canonicalStringify(obj[k])}`);
+  return `{${pairs.join(',')}}`;
+}
+
+/**
+ * Verifies the cryptographic integrity of an execution evidence map.
+ * Recomputes SHA-256 over canonicalized payload and checks match.
+ *
+ * @param {Object} evidenceMap
+ * @returns {{ valid: boolean, calculatedHash: string, recordedHash: string, reason?: string }}
+ */
+export function verifyEvidenceIntegrity(evidenceMap) {
+  if (!evidenceMap || typeof evidenceMap !== 'object') {
+    return { valid: false, calculatedHash: null, recordedHash: null, reason: 'Invalid evidence map object.' };
+  }
+
+  const recordedHash = evidenceMap.evidenceHash || evidenceMap.canonicalPayloadSha256;
+  if (!recordedHash) {
+    return { valid: false, calculatedHash: null, recordedHash: null, reason: 'Evidence map lacks recorded evidenceHash.' };
+  }
+
+  // Clone evidence map excluding hash fields
+  const cleanPayload = {};
+  for (const [k, v] of Object.entries(evidenceMap)) {
+    if (k !== 'evidenceHash' && k !== 'canonicalPayloadSha256') {
+      cleanPayload[k] = v;
+    }
+  }
+
+  const canonical = canonicalStringify(cleanPayload);
+  const calculatedHash = crypto.createHash('sha256').update(canonical).digest('hex');
+
+  // Also verify against original unstripped payload if hashed that way
+  const matches = calculatedHash === recordedHash ||
+    crypto.createHash('sha256').update(canonicalStringify(evidenceMap)).digest('hex') === recordedHash;
+
+  return {
+    valid: matches,
+    calculatedHash,
+    recordedHash,
+    canonicalLength: canonical.length,
+    reason: matches ? undefined : `Hash mismatch: expected ${recordedHash}, calculated ${calculatedHash}`
+  };
+}
 
 export const EXECUTION_EVENT_TYPES = {
   AUTHORIZATION_REQUESTED: 'AUTHORIZATION_REQUESTED',

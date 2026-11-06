@@ -226,40 +226,65 @@ export class ProvisioningDispatcher {
       memoryMb: requestedMemoryMb
     });
 
-    // 5. Persist Durable Provisioning Job
-    const job = await prisma.deceptionProvisioningJob.create({
-      data: {
-        tenantId,
-        applicationId: auth.applicationId,
-        authorizationId: auth.id,
-        policyDecisionId: auth.policyDecisionId,
-        dsgGraphId: auth.dsgGraphId,
-        dsgGraphVersion: auth.dsgGraphVersion,
-        policyVersion: auth.policyDecision?.policyVersion || 1,
-        selectedStrategyId: auth.selectedStrategyId,
-        templateIdentifier: template.templateIdentifier,
-        imageIdentifier: imageConfig.imageIdentifier,
-        imageDigest: imageConfig.immutableDigest,
-        resourceReservation: {
-          allocatedCpu: requestedCpu,
-          allocatedMemoryMb: requestedMemoryMb,
-          allocatedStorageMb: template.resourceDefaults.allocatedStorageMb,
-          isolationMode: template.isolationMode
-        },
-        requestingOperatorId: operator?.id || auth.requestingOperatorId,
-        requestingOperatorEmail: operator?.email || auth.requestingOperatorEmail,
-        approvingOperatorId: auth.approvingOperatorId,
-        approvingOperatorEmail: auth.approvingOperatorEmail,
-        authorizationExpiresAt: auth.expiresAt,
-        idempotencyKey,
-        jobStatus: PROVISIONING_JOB_STATUSES.QUEUED,
-        queuedAt: now,
-        resultEvidence: {
-          payloadHash: effectiveHash,
-          extraEnv
+    // 5. Persist Durable Provisioning Job (with atomic concurrency race protection)
+    let job;
+    try {
+      job = await prisma.deceptionProvisioningJob.create({
+        data: {
+          tenantId,
+          applicationId: auth.applicationId,
+          authorizationId: auth.id,
+          policyDecisionId: auth.policyDecisionId,
+          dsgGraphId: auth.dsgGraphId,
+          dsgGraphVersion: auth.dsgGraphVersion,
+          policyVersion: auth.policyDecision?.policyVersion || 1,
+          selectedStrategyId: auth.selectedStrategyId,
+          templateIdentifier: template.templateIdentifier,
+          imageIdentifier: imageConfig.imageIdentifier,
+          imageDigest: imageConfig.immutableDigest,
+          resourceReservation: {
+            allocatedCpu: requestedCpu,
+            allocatedMemoryMb: requestedMemoryMb,
+            allocatedStorageMb: template.resourceDefaults.allocatedStorageMb,
+            isolationMode: template.isolationMode
+          },
+          requestingOperatorId: operator?.id || auth.requestingOperatorId,
+          requestingOperatorEmail: operator?.email || auth.requestingOperatorEmail,
+          approvingOperatorId: auth.approvingOperatorId,
+          approvingOperatorEmail: auth.approvingOperatorEmail,
+          authorizationExpiresAt: auth.expiresAt,
+          idempotencyKey,
+          jobStatus: PROVISIONING_JOB_STATUSES.QUEUED,
+          queuedAt: now,
+          resultEvidence: {
+            payloadHash: effectiveHash,
+            extraEnv
+          }
+        }
+      });
+    } catch (createErr) {
+      // If unique constraint violation occurred (concurrent race on idempotencyKey)
+      if (createErr.code === 'P2002' && idempotencyKey) {
+        // Rollback speculative quota reservation to prevent resource leakage
+        await this.resourceGovernance.releaseResources({
+          tenantId,
+          applicationId: auth.applicationId,
+          cpu: requestedCpu,
+          memoryMb: requestedMemoryMb
+        }).catch(() => {});
+
+        // Fetch winning concurrent job
+        const existingJob = await prisma.deceptionProvisioningJob.findFirst({
+          where: { tenantId, idempotencyKey },
+          include: { environment: true }
+        });
+        if (existingJob) {
+          return { ...existingJob, idempotentReplay: true };
         }
       }
-    });
+      // Re-throw if unexpected error
+      throw createErr;
+    }
 
     // Record Event
     await this.evidenceRecorder.recordEvent({
