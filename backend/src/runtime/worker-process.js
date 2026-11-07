@@ -374,10 +374,29 @@ export class StandaloneRuntimeWorker {
         }
 
         if (env.containerId) {
+          const detailed = url.searchParams.get('detailed') === 'true';
+          if (detailed) {
+            const details = await this.adapter.getDetailedHealth(env.containerId);
+            return sendJson(200, {
+              status: 'success',
+              environmentId: env.id,
+              containerId: env.containerId,
+              lifecycleState: env.lifecycleState,
+              allocatedResources: {
+                cpu: env.allocatedCpu,
+                memoryMb: env.allocatedMemoryMb,
+                storageMb: env.allocatedStorageMb
+              },
+              ...details
+            });
+          }
+
           const probe = await this.adapter.checkContainerHealth({ containerId: env.containerId });
+          const healthState = probe.healthy ? 'HEALTHY' : 'UNHEALTHY';
           return sendJson(200, {
             status: 'success',
             healthy: probe.healthy,
+            healthState,
             environmentId: env.id,
             containerId: env.containerId,
             statusCode: probe.statusCode,
@@ -391,12 +410,125 @@ export class StandaloneRuntimeWorker {
           });
         }
 
+        const simHealthy = env.lifecycleState === RUNTIME_LIFECYCLE_STATES.ACTIVE;
+        const simHealthState = env.lifecycleState === RUNTIME_LIFECYCLE_STATES.ACTIVE
+          ? 'HEALTHY'
+          : ['TERMINATING', 'TERMINATED', 'EXPIRED'].includes(env.lifecycleState)
+          ? 'TERMINATED'
+          : env.lifecycleState === 'DEGRADED'
+          ? 'DEGRADED'
+          : 'UNKNOWN';
+
         return sendJson(200, {
           status: 'success',
-          healthy: env.lifecycleState === RUNTIME_LIFECYCLE_STATES.ACTIVE,
+          healthy: simHealthy,
+          healthState: simHealthState,
           environmentId: env.id,
           isSimulated: env.isSimulated,
           lifecycleState: env.lifecycleState
+        });
+      }
+
+      // Route 3b: GET /environments/:id/health-details
+      const detailsMatch = pathname.match(/^\/environments\/([^/]+)\/health-details$/);
+      if (method === 'GET' && detailsMatch) {
+        const environmentId = decodeURIComponent(detailsMatch[1]);
+        const tenantId = url.searchParams.get('tenantId');
+
+        if (!tenantId) {
+          return sendJson(400, { status: 'error', message: 'tenantId query parameter is required.' });
+        }
+
+        const env = await this.prisma.deceptionRuntimeEnvironment.findFirst({
+          where: { id: environmentId, tenantId }
+        });
+
+        if (!env) {
+          return sendJson(404, {
+            status: 'error',
+            message: `Environment "${environmentId}" not found for tenant "${tenantId}".`
+          });
+        }
+
+        if (env.containerId) {
+          const details = await this.adapter.getDetailedHealth(env.containerId);
+          if (env.lifecycleState === RUNTIME_LIFECYCLE_STATES.ACTIVE && (!details.container || !details.container.running)) {
+            details.healthState = 'UNHEALTHY';
+            details.healthy = false;
+            details.reasons = details.reasons || [];
+            details.reasons.push('Container stopped or crashed unexpectedly while environment lifecycle state is ACTIVE');
+          }
+          let networkDetails = null;
+          if (env.networkId) {
+            try {
+              const net = await this.adapter.inspectNetwork(env.networkId);
+              networkDetails = net ? { id: net.Id, name: net.Name, internal: Boolean(net.Internal) } : null;
+            } catch {
+              networkDetails = null;
+            }
+          }
+          return sendJson(200, {
+            status: 'success',
+            environmentId: env.id,
+            containerId: env.containerId,
+            lifecycleState: env.lifecycleState,
+            networkDetails,
+            allocatedResources: {
+              cpu: env.allocatedCpu,
+              memoryMb: env.allocatedMemoryMb,
+              storageMb: env.allocatedStorageMb
+            },
+            ...details
+          });
+        }
+
+        return sendJson(200, {
+          status: 'success',
+          healthState: env.lifecycleState === RUNTIME_LIFECYCLE_STATES.ACTIVE ? 'HEALTHY' : 'UNKNOWN',
+          environmentId: env.id,
+          isSimulated: true,
+          lifecycleState: env.lifecycleState,
+          reasons: ['Simulated environment with no container backing'],
+          container: null,
+          probe: null,
+          stats: null
+        });
+      }
+
+      // Route 3c: GET /reconciliation/snapshot
+      if (method === 'GET' && pathname === '/reconciliation/snapshot') {
+        const tenantId = url.searchParams.get('tenantId');
+        const containers = await this.adapter.listContainers({ all: true });
+        const networks = await this.adapter.listNetworks();
+
+        const managedContainers = containers.filter(
+          (c) => c.Labels && c.Labels['deception.managed'] === 'true' && (!tenantId || c.Labels['deception.tenant'] === tenantId)
+        );
+        const managedNetworks = networks.filter(
+          (n) => n.Labels && n.Labels['deception.managed'] === 'true' && (!tenantId || n.Labels['deception.tenant'] === tenantId)
+        );
+
+        return sendJson(200, {
+          status: 'success',
+          timestamp: new Date().toISOString(),
+          tenantId: tenantId || null,
+          containers: managedContainers.map((c) => ({
+            id: c.Id,
+            names: c.Names,
+            state: c.State,
+            status: c.Status,
+            environmentId: c.Labels?.['deception.environment'],
+            tenantId: c.Labels?.['deception.tenant'],
+            created: c.Created
+          })),
+          networks: managedNetworks.map((n) => ({
+            id: n.Id,
+            name: n.Name,
+            driver: n.Driver,
+            internal: Boolean(n.Internal),
+            environmentId: n.Labels?.['deception.environment'],
+            tenantId: n.Labels?.['deception.tenant']
+          }))
         });
       }
 

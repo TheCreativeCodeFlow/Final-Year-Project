@@ -254,26 +254,251 @@ export async function verifyEvidenceChain({
 }
 
 export const EXECUTION_EVENT_TYPES = {
+  // Authorization
   AUTHORIZATION_REQUESTED: 'AUTHORIZATION_REQUESTED',
   AUTHORIZATION_APPROVED: 'AUTHORIZATION_APPROVED',
   AUTHORIZATION_DENIED: 'AUTHORIZATION_DENIED',
   AUTHORIZATION_REVOKED: 'AUTHORIZATION_REVOKED',
   AUTHORIZATION_EXPIRED: 'AUTHORIZATION_EXPIRED',
+  AUTHORIZATION_VALIDATED: 'AUTHORIZATION_VALIDATED',
+
+  // Provisioning & Sandbox
   PROVISIONING_REQUESTED: 'PROVISIONING_REQUESTED',
   PROVISIONING_SUCCEEDED: 'PROVISIONING_SUCCEEDED',
   PROVISIONING_FAILED: 'PROVISIONING_FAILED',
-  CONTAINER_CREATED: 'CONTAINER_CREATED',
   IMAGE_VERIFIED: 'IMAGE_VERIFIED',
+  CONTAINER_CREATED: 'CONTAINER_CREATED',
+  NETWORK_CREATED: 'NETWORK_CREATED',
   SECURITY_CONFIG_APPLIED: 'SECURITY_CONFIG_APPLIED',
   NETWORK_ISOLATION_VERIFIED: 'NETWORK_ISOLATION_VERIFIED',
-  HEALTH_CHECK_PASSED: 'HEALTH_CHECK_PASSED',
+  SERVICE_STARTED: 'SERVICE_STARTED',
   EGRESS_QUARANTINE_VERIFIED: 'EGRESS_QUARANTINE_VERIFIED',
+
+  // Health & Telemetry
+  HEALTH_CHECK_PASSED: 'HEALTH_CHECK_PASSED',
+  HEALTH_CHECK_EXECUTED: 'HEALTH_CHECK_EXECUTED',
   ENVIRONMENT_HEALTH_VERIFIED: 'ENVIRONMENT_HEALTH_VERIFIED',
+  TELEMETRY_CAPTURED: 'TELEMETRY_CAPTURED',
+  RUNTIME_DEGRADED: 'RUNTIME_DEGRADED',
+  RUNTIME_RECOVERED: 'RUNTIME_RECOVERED',
+
+  // Mutation
+  MUTATION_REQUESTED: 'MUTATION_REQUESTED',
+  MUTATION_EXECUTED: 'MUTATION_EXECUTED',
+  MUTATION_REJECTED: 'MUTATION_REJECTED',
   DSG_TRANSITION_APPLIED: 'DSG_TRANSITION_APPLIED',
   DSG_TRANSITION_REJECTED: 'DSG_TRANSITION_REJECTED',
+
+  // Teardown & Cleanup
   ENVIRONMENT_TERMINATED: 'ENVIRONMENT_TERMINATED',
-  CLEANUP_COMPLETED: 'CLEANUP_COMPLETED'
+  RUNTIME_TERMINATED: 'RUNTIME_TERMINATED',
+  CLEANUP_COMPLETED: 'CLEANUP_COMPLETED',
+  CLEANUP_FAILED: 'CLEANUP_FAILED'
 };
+
+/**
+ * Evaluates the full execution evidence completeness and provenance across an environment's lifecycle.
+ *
+ * Checks:
+ * 1. Event-level cryptographic hash integrity.
+ * 2. Sequence continuity and unbroken hash chaining.
+ * 3. Chronological event order (non-decreasing timestamps).
+ * 4. Missing required lifecycle milestones.
+ * 5. Duplicate non-idempotent events.
+ * 6. Tenant and environment provenance consistency.
+ *
+ * @param {Object} params
+ * @param {string} params.tenantId
+ * @param {string} params.environmentId
+ * @param {Array<Object>} [params.events] - Optional in-memory events array
+ * @param {Object} [params.prismaClient]
+ * @returns {Promise<Object>}
+ */
+export async function verifyEvidenceCompleteness({
+  tenantId,
+  environmentId,
+  events = null,
+  prismaClient = null
+} = {}) {
+  const prisma = prismaClient || getPrismaClient();
+
+  if (!tenantId || !environmentId) {
+    throw new Error('tenantId and environmentId are required to verify evidence completeness.');
+  }
+
+  let chainEvents = events;
+  if (!chainEvents) {
+    chainEvents = await prisma.deceptionExecutionEvent.findMany({
+      where: { tenantId, environmentId },
+      orderBy: { recordedAt: 'asc' }
+    });
+  }
+
+  // Fetch environment record to inspect intended lifecycle state
+  let env = null;
+  try {
+    env = await prisma.deceptionRuntimeEnvironment.findFirst({
+      where: { id: environmentId, tenantId }
+    });
+  } catch {
+    // Non-fatal if DB query fails in purely in-memory test
+  }
+
+  // 1. Run base chain verification
+  const chainResult = await verifyEvidenceChain({
+    tenantId,
+    environmentId,
+    events: chainEvents,
+    prismaClient: prisma
+  });
+
+  const provenanceViolations = [];
+  const duplicateEvents = [];
+  const missingEvents = [];
+  const seenEventIds = new Set();
+  const seenSequences = new Set();
+  const presentTypes = new Set();
+
+  for (let idx = 0; idx < chainEvents.length; idx++) {
+    const ev = chainEvents[idx];
+    const payload = ev.eventPayload || {};
+    presentTypes.add(ev.eventType);
+
+    // Provenance Check: Tenant ID and Environment ID
+    if (ev.tenantId !== tenantId) {
+      provenanceViolations.push({
+        type: 'TENANT_PROVENANCE_VIOLATION',
+        index: idx,
+        eventId: ev.id,
+        expectedTenantId: tenantId,
+        recordedTenantId: ev.tenantId,
+        message: `Event ${ev.id} belongs to tenant "${ev.tenantId}", not "${tenantId}".`
+      });
+    }
+
+    if (ev.environmentId && ev.environmentId !== environmentId) {
+      provenanceViolations.push({
+        type: 'ENVIRONMENT_PROVENANCE_VIOLATION',
+        index: idx,
+        eventId: ev.id,
+        expectedEnvironmentId: environmentId,
+        recordedEnvironmentId: ev.environmentId,
+        message: `Event ${ev.id} belongs to environment "${ev.environmentId}", not "${environmentId}".`
+      });
+    }
+
+    // Chronological Timestamp Check
+    if (idx > 0) {
+      const prevTime = new Date(chainEvents[idx - 1].recordedAt).getTime();
+      const currTime = new Date(ev.recordedAt).getTime();
+      if (currTime < prevTime) {
+        provenanceViolations.push({
+          type: 'TIMESTAMP_OUT_OF_ORDER',
+          index: idx,
+          eventId: ev.id,
+          previousTimestamp: chainEvents[idx - 1].recordedAt,
+          currentTimestamp: ev.recordedAt,
+          message: `Event ${ev.id} timestamp (${ev.recordedAt}) precedes previous event timestamp (${chainEvents[idx - 1].recordedAt}).`
+        });
+      }
+    }
+
+    // Duplicate Check: Event ID
+    if (ev.id) {
+      if (seenEventIds.has(ev.id)) {
+        duplicateEvents.push(`Duplicate event ID "${ev.id}" at index ${idx}`);
+      }
+      seenEventIds.add(ev.id);
+    }
+
+    // Duplicate Check: Sequence Number
+    const seq = payload.sequenceNumber;
+    if (typeof seq === 'number') {
+      if (seenSequences.has(seq)) {
+        duplicateEvents.push(`Duplicate sequenceNumber #${seq} at index ${idx}`);
+      }
+      seenSequences.add(seq);
+    }
+  }
+
+  // 2. Expected Lifecycle Milestones Check
+  const isActive = env ? ['ACTIVE', 'VALIDATING', 'PROVISIONING'].includes(env.lifecycleState) : true;
+  const isTerminated = env ? ['TERMINATED', 'EXPIRED'].includes(env.lifecycleState) : false;
+
+  // Expected Active Lifecycle Milestones
+  const hasAuth =
+    presentTypes.has(EXECUTION_EVENT_TYPES.AUTHORIZATION_APPROVED) ||
+    presentTypes.has(EXECUTION_EVENT_TYPES.AUTHORIZATION_VALIDATED);
+  if (!hasAuth) missingEvents.push('AUTHORIZATION_VALIDATED');
+
+  if (!presentTypes.has(EXECUTION_EVENT_TYPES.PROVISIONING_REQUESTED)) {
+    missingEvents.push('PROVISIONING_REQUESTED');
+  }
+  if (!presentTypes.has(EXECUTION_EVENT_TYPES.IMAGE_VERIFIED)) {
+    missingEvents.push('IMAGE_VERIFIED');
+  }
+  if (!presentTypes.has(EXECUTION_EVENT_TYPES.CONTAINER_CREATED)) {
+    missingEvents.push('CONTAINER_CREATED');
+  }
+  if (
+    !presentTypes.has(EXECUTION_EVENT_TYPES.NETWORK_CREATED) &&
+    !presentTypes.has(EXECUTION_EVENT_TYPES.NETWORK_ISOLATION_VERIFIED)
+  ) {
+    missingEvents.push('NETWORK_CREATED');
+  }
+  if (!presentTypes.has(EXECUTION_EVENT_TYPES.SERVICE_STARTED)) {
+    missingEvents.push('SERVICE_STARTED');
+  }
+  if (
+    !presentTypes.has(EXECUTION_EVENT_TYPES.HEALTH_CHECK_EXECUTED) &&
+    !presentTypes.has(EXECUTION_EVENT_TYPES.HEALTH_CHECK_PASSED) &&
+    !presentTypes.has(EXECUTION_EVENT_TYPES.ENVIRONMENT_HEALTH_VERIFIED)
+  ) {
+    missingEvents.push('HEALTH_CHECK_EXECUTED');
+  }
+
+  // If environment was terminated, check for teardown events
+  if (isTerminated) {
+    if (
+      !presentTypes.has(EXECUTION_EVENT_TYPES.ENVIRONMENT_TERMINATED) &&
+      !presentTypes.has(EXECUTION_EVENT_TYPES.RUNTIME_TERMINATED)
+    ) {
+      missingEvents.push('ENVIRONMENT_TERMINATED');
+    }
+    if (!presentTypes.has(EXECUTION_EVENT_TYPES.CLEANUP_COMPLETED)) {
+      missingEvents.push('CLEANUP_COMPLETED');
+    }
+  }
+
+  // Determine overall completeness status
+  let completeness = 'COMPLETE';
+  if (!chainResult.valid || provenanceViolations.some((v) => v.type.includes('PROVENANCE'))) {
+    completeness = 'CORRUPTED';
+  } else if (missingEvents.length > 0) {
+    completeness = missingEvents.length > 3 ? 'INCOMPLETE' : 'PARTIAL';
+  }
+
+  return {
+    completeness,
+    chainValid: chainResult.valid,
+    provenanceValid: provenanceViolations.length === 0,
+    chainLength: chainEvents.length,
+    missingEvents,
+    duplicateEvents,
+    violations: [...chainResult.violations, ...provenanceViolations],
+    genesisHash: chainResult.genesisHash,
+    latestHash: chainResult.latestHash,
+    eventsSummary: chainEvents.map((e) => ({
+      id: e.id,
+      eventType: e.eventType,
+      recordedAt: e.recordedAt,
+      sequenceNumber: e.eventPayload?.sequenceNumber,
+      eventHash: e.eventPayload?.eventHash || e.eventPayload?.evidenceHash
+    })),
+    nonRepudiation: 'NOT_IMPLEMENTED',
+    independentTrustAnchor: 'NOT_IMPLEMENTED'
+  };
+}
 
 export class ExecutionEvidenceRecorder {
   /**

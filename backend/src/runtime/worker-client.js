@@ -230,6 +230,68 @@ export class WorkerClient {
   }
 
   /**
+   * Queries the dedicated worker for granular container health metrics, cgroups, stats, and probe results.
+   *
+   * @param {Object} params
+   * @param {string} params.environmentId
+   * @param {string} params.tenantId
+   * @returns {Promise<{ ok: boolean, data?: Object, error?: string }>}
+   */
+  async getEnvironmentHealthDetails({ environmentId, tenantId }) {
+    if (!environmentId || !tenantId) {
+      throw new Error('environmentId and tenantId are required to check environment health details.');
+    }
+
+    try {
+      const res = await this._request({
+        path: `/environments/${encodeURIComponent(environmentId)}/health-details?tenantId=${encodeURIComponent(tenantId)}`,
+        method: 'GET'
+      });
+
+      if (res.status === 200 && res.data) {
+        return { ok: true, data: res.data };
+      }
+      return {
+        ok: false,
+        error: res.data?.message || `Worker returned HTTP ${res.status}`
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: `Worker IPC health details failed: ${err.message}`
+      };
+    }
+  }
+
+  /**
+   * Retrieves a live snapshot of all deception-managed containers and networks from the worker.
+   *
+   * @param {Object} [params]
+   * @param {string} [params.tenantId]
+   * @returns {Promise<{ ok: boolean, data?: Object, error?: string }>}
+   */
+  async getReconciliationSnapshot({ tenantId = null } = {}) {
+    try {
+      const path = tenantId
+        ? `/reconciliation/snapshot?tenantId=${encodeURIComponent(tenantId)}`
+        : '/reconciliation/snapshot';
+      const res = await this._request({ path, method: 'GET' });
+      if (res.status === 200 && res.data) {
+        return { ok: true, data: res.data };
+      }
+      return {
+        ok: false,
+        error: res.data?.message || `Worker returned HTTP ${res.status}`
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: `Worker IPC reconciliation snapshot failed: ${err.message}`
+      };
+    }
+  }
+
+  /**
    * Triggers orphan container and isolated network reconciliation.
    *
    * @param {number} [timeoutMs=30000]

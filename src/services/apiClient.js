@@ -507,6 +507,56 @@ export const apiClient = {
 
   getRuntimeEnvironmentEvidence: async (tenantId, environmentId) => {
     return apiClient.get(`/tenants/${tenantId}/runtime/environments/${environmentId}/evidence`);
+  },
+
+  // ---------------------------------------------------------------------------
+  // Runtime Health, Telemetry & Evidence Verification (Stage 5B.3)
+  // ---------------------------------------------------------------------------
+
+  getRuntimeHealthOverview: async (tenantId) => {
+    return apiClient.get(`/tenants/${tenantId}/runtime/health/overview`);
+  },
+
+  getEnvironmentHealthDetails: async (tenantId, environmentId, live = false) => {
+    const qs = live ? '?live=true' : '';
+    return apiClient.get(`/tenants/${tenantId}/runtime/environments/${environmentId}/health-details${qs}`);
+  },
+
+  getRuntimeTelemetrySummary: async (tenantId, environmentId = null) => {
+    const qs = environmentId ? `?environmentId=${encodeURIComponent(environmentId)}` : '';
+    return apiClient.get(`/tenants/${tenantId}/runtime/telemetry/summary${qs}`);
+  },
+
+  getEnvironmentTelemetryEvents: async (tenantId, environmentId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/runtime/environments/${environmentId}/telemetry${qs}`);
+  },
+
+  getRuntimeReconciliation: async (tenantId) => {
+    return apiClient.get(`/tenants/${tenantId}/runtime/reconciliation`);
+  },
+
+  runRuntimeReconciliation: async (tenantId, payload = {}) => {
+    return apiClient.post(`/tenants/${tenantId}/runtime/reconciliation/run`, payload);
+  },
+
+  verifyEnvironmentEvidence: async (tenantId, environmentId) => {
+    return apiClient.get(`/tenants/${tenantId}/runtime/environments/${environmentId}/evidence/verify`);
+  },
+
+  getEvidenceCompleteness: async (tenantId, environmentId) => {
+    return apiClient.get(`/tenants/${tenantId}/runtime/environments/${environmentId}/evidence/completeness`);
+  },
+
+  getRuntimeMutations: async (tenantId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/runtime/mutations${qs}`);
+  },
+
+  proposeRuntimeMutation: async (tenantId, payload) => {
+    return apiClient.post(`/tenants/${tenantId}/runtime/mutations`, payload);
   }
 };
 

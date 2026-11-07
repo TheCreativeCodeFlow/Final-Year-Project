@@ -59,8 +59,9 @@ export function errorHandlerMiddleware(err, req, res, _next) {
   }
 
   // 4. General / Unhandled internal server error
-  const statusCode = typeof err.status === 'number' && err.status >= 400 && err.status < 600
-    ? err.status
+  const rawStatus = typeof err.status === 'number' ? err.status : err.statusCode;
+  const statusCode = typeof rawStatus === 'number' && rawStatus >= 400 && rawStatus < 600
+    ? rawStatus
     : 500;
 
   // Log full error internally for investigation, redacting secrets

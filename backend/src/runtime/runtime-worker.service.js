@@ -340,6 +340,18 @@ export class RuntimeWorkerService {
       // Step D: Start Container
       await this.adapter.startContainer(createdContainer.containerId);
 
+      await this.evidenceRecorder.recordVerifiedEvidence({
+        tenantId: job.tenantId,
+        authorizationId: job.authorizationId,
+        environmentId: environment.id,
+        eventType: EXECUTION_EVENT_TYPES.SERVICE_STARTED,
+        message: `Synthetic service process started inside container "${createdContainer.containerName}".`,
+        evidencePayload: {
+          containerId: createdContainer.containerId,
+          startedAt: new Date().toISOString()
+        }
+      });
+
       // Brief delay to allow HTTP server initialization inside container
       await new Promise((r) => setTimeout(r, 1200));
 

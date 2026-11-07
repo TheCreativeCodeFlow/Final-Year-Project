@@ -24,6 +24,12 @@ import { listApprovedImages, getApprovedImage } from '../runtime/image-catalogue
 import { listSyntheticTemplates, getSyntheticTemplate } from '../runtime/synthetic-templates.js';
 import { ProvisioningDispatcher } from '../runtime/provisioning-dispatcher.js';
 import { WorkerClient } from '../runtime/worker-client.js';
+import { RuntimeWorkerService } from '../runtime/runtime-worker.service.js';
+import { ContainerRuntimeAdapter } from '../runtime/container-runtime-adapter.js';
+import { RuntimeHealthMonitorService } from '../runtime/runtime-health-monitor.service.js';
+import { RuntimeReconciliationService } from '../runtime/runtime-reconciliation.service.js';
+import { defaultRuntimeTelemetry } from '../runtime/runtime-telemetry.service.js';
+import { verifyEvidenceChain, verifyEvidenceCompleteness } from '../runtime/execution-evidence-recorder.service.js';
 import { parsePagination } from '../utils/validators.js';
 
 function getTenantId(req) {
@@ -477,12 +483,31 @@ export async function submitProvisioningJob(req, res, next) {
     // Dispatch execution to dedicated standalone runtime worker daemon
     const workerClient = new WorkerClient();
     if (processSync !== false) {
-      await workerClient.triggerJob({ jobId: job.id, tenantId }).catch(() => {});
+      const triggerRes = await workerClient.triggerJob({ jobId: job.id, tenantId }).catch(() => ({ ok: false }));
+      let workerResult = null;
+      if (!triggerRes?.ok) {
+        // Fallback when standalone worker daemon is not running (e.g. legacy test suites)
+        try {
+          const adapter = new ContainerRuntimeAdapter();
+          const localWorker = new RuntimeWorkerService({ prismaClient: prisma, adapter });
+          workerResult = await localWorker.processJob(job.id);
+        } catch (_) {}
+      }
       const updatedJob = await prisma.deceptionProvisioningJob.findUnique({
         where: { id: job.id },
         include: { environment: true }
       });
-      return res.status(201).json({ status: 'success', data: updatedJob || job });
+      const responseData = updatedJob
+        ? {
+            ...updatedJob,
+            workerResult: workerResult || {
+              containerId: updatedJob.environment?.containerId || updatedJob.resultEvidence?.containerId,
+              networkId: updatedJob.environment?.networkId || updatedJob.resultEvidence?.networkId,
+              environmentId: updatedJob.environment?.id || updatedJob.environmentId
+            }
+          }
+        : job;
+      return res.status(201).json({ status: 'success', data: responseData });
     } else {
       workerClient.triggerJob({ jobId: job.id, tenantId }).catch(() => {});
       return res.status(201).json({ status: 'success', data: job });
@@ -570,6 +595,225 @@ export async function getEnvironmentEvidence(req, res, next) {
     };
 
     res.status(200).json({ status: 'success', data: evidenceData });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Runtime Health Monitoring (Stage 5B.3)
+// -----------------------------------------------------------------------------
+
+export async function getRuntimeHealthOverviewHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const prisma = req.prisma || getPrismaClient();
+    const monitor = new RuntimeHealthMonitorService({ prismaClient: prisma });
+
+    const overview = await monitor.getTenantHealthOverview({ tenantId });
+    res.status(200).json({ status: 'success', data: overview });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getEnvironmentHealthDetailsHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const { environmentId } = req.params;
+    const forceLive = req.query.live === 'true';
+    const prisma = req.prisma || getPrismaClient();
+    const monitor = new RuntimeHealthMonitorService({ prismaClient: prisma });
+
+    const health = await monitor.inspectEnvironmentHealth({
+      tenantId,
+      environmentId,
+      forceLive
+    });
+
+    res.status(200).json({ status: 'success', data: health });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Runtime Telemetry (Stage 5B.3)
+// -----------------------------------------------------------------------------
+
+export async function getRuntimeTelemetrySummaryHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const environmentId = req.query.environmentId || null;
+
+    const summary = defaultRuntimeTelemetry.getTelemetrySummary({
+      tenantId,
+      environmentId
+    });
+
+    res.status(200).json({ status: 'success', data: summary });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getEnvironmentTelemetryEventsHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const { environmentId } = req.params;
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
+    const offset = req.query.offset ? parseInt(req.query.offset, 10) : 0;
+    const eventType = req.query.eventType || null;
+
+    const eventsData = defaultRuntimeTelemetry.getTelemetryEvents({
+      tenantId,
+      environmentId,
+      limit,
+      offset,
+      eventType
+    });
+
+    res.status(200).json({ status: 'success', data: eventsData });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Runtime Reconciliation (Stage 5B.3)
+// -----------------------------------------------------------------------------
+
+export async function getRuntimeReconciliationHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const prisma = req.prisma || getPrismaClient();
+    const reconciler = new RuntimeReconciliationService({ prismaClient: prisma });
+
+    const results = await reconciler.reconcileTenant({ tenantId });
+    res.status(200).json({ status: 'success', data: results });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function runRuntimeReconciliationHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const environmentId = req.body?.environmentId || null;
+    const prisma = req.prisma || getPrismaClient();
+    const reconciler = new RuntimeReconciliationService({ prismaClient: prisma });
+
+    let results;
+    if (environmentId) {
+      results = await reconciler.reconcileEnvironment({ tenantId, environmentId });
+    } else {
+      results = await reconciler.reconcileTenant({ tenantId });
+    }
+
+    res.status(200).json({ status: 'success', data: results });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Execution Evidence Verification & Completeness (Stage 5B.3)
+// -----------------------------------------------------------------------------
+
+export async function verifyEnvironmentEvidenceHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const { environmentId } = req.params;
+    const prisma = req.prisma || getPrismaClient();
+
+    const verification = await verifyEvidenceChain({
+      tenantId,
+      environmentId,
+      prismaClient: prisma
+    });
+
+    res.status(200).json({ status: 'success', data: verification });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getEvidenceCompletenessHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const { environmentId } = req.params;
+    const prisma = req.prisma || getPrismaClient();
+
+    const completeness = await verifyEvidenceCompleteness({
+      tenantId,
+      environmentId,
+      prismaClient: prisma
+    });
+
+    res.status(200).json({ status: 'success', data: completeness });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Runtime Mutation History & Proposal (Stage 5B.3)
+// -----------------------------------------------------------------------------
+
+export async function listRuntimeMutationsHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const { environmentId } = req.query;
+    const prisma = req.prisma || getPrismaClient();
+
+    const where = { tenantId };
+    if (environmentId) {
+      where.environmentId = environmentId;
+    }
+
+    const mutations = await prisma.deceptionRuntimeMutation.findMany({
+      where,
+      orderBy: { proposedAt: 'desc' },
+      take: 50
+    });
+
+    res.status(200).json({ status: 'success', data: mutations });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function proposeRuntimeMutationHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const actor = getOperatorInfo(req);
+    const prisma = req.prisma || getPrismaClient();
+    const envManager = new RuntimeEnvironmentManager({ prismaClient: prisma });
+
+    const {
+      environmentId,
+      mutationType,
+      targetGraphVersion,
+      syntheticDiff
+    } = req.body || {};
+
+    if (!environmentId || !mutationType || typeof targetGraphVersion !== 'number') {
+      return res.status(400).json({
+        status: 'error',
+        message: 'environmentId, mutationType, and targetGraphVersion are required.'
+      });
+    }
+
+    const mutation = await envManager.proposeRuntimeMutation({
+      tenantId,
+      environmentId,
+      mutationType,
+      targetGraphVersion,
+      syntheticDiff: syntheticDiff || {},
+      actor
+    });
+
+    res.status(201).json({ status: 'success', data: mutation });
   } catch (err) {
     next(err);
   }

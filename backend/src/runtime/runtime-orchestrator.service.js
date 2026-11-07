@@ -23,6 +23,9 @@ import { RuntimeStateManager } from './runtime-state-manager.service.js';
 import { ExecutionEvidenceRecorder, EXECUTION_EVENT_TYPES } from './execution-evidence-recorder.service.js';
 import { RUNTIME_LIFECYCLE_STATES } from './lifecycle-state-machine.js';
 import { WorkerClient } from './worker-client.js';
+import { RuntimeHealthMonitorService } from './runtime-health-monitor.service.js';
+import { RuntimeReconciliationService } from './runtime-reconciliation.service.js';
+import { defaultRuntimeTelemetry } from './runtime-telemetry.service.js';
 
 export class RuntimeOrchestrator {
   /**
@@ -34,9 +37,14 @@ export class RuntimeOrchestrator {
     resourceGovernance = null,
     environmentManager = null,
     stateManager = null,
-    evidenceRecorder = null
+    evidenceRecorder = null,
+    workerClient = null,
+    healthMonitor = null,
+    reconciliationService = null,
+    telemetryService = null
   } = {}) {
     this.prisma = prismaClient;
+    this.workerClient = workerClient || new WorkerClient();
     this.resourceGovernance = resourceGovernance || new ResourceGovernanceService(this.prisma);
     this.evidenceRecorder = evidenceRecorder || new ExecutionEvidenceRecorder(this.prisma);
     this.authorizationService =
@@ -54,6 +62,21 @@ export class RuntimeOrchestrator {
         evidenceRecorder: this.evidenceRecorder
       });
     this.stateManager = stateManager || new RuntimeStateManager(this.prisma);
+    this.healthMonitor =
+      healthMonitor ||
+      new RuntimeHealthMonitorService({
+        prismaClient: this.prisma,
+        workerClient: this.workerClient,
+        evidenceRecorder: this.evidenceRecorder
+      });
+    this.reconciliationService =
+      reconciliationService ||
+      new RuntimeReconciliationService({
+        prismaClient: this.prisma,
+        workerClient: this.workerClient,
+        evidenceRecorder: this.evidenceRecorder
+      });
+    this.telemetryService = telemetryService || defaultRuntimeTelemetry;
   }
 
   getDb() {
@@ -126,8 +149,15 @@ export class RuntimeOrchestrator {
 
     const isLiveActive = liveContainersCount > 0;
 
-    const workerClient = new WorkerClient();
-    const workerHealth = await workerClient.getHealth().catch(() => ({ ok: false, status: 'OFFLINE' }));
+    const [workerHealth, healthOverview, telemetrySummary, reconciliationOverview] = await Promise.all([
+      this.workerClient.getHealth().catch(() => ({ ok: false, status: 'OFFLINE' })),
+      this.healthMonitor.getTenantHealthOverview({ tenantId }).catch(() => ({ summary: {} })),
+      Promise.resolve(this.telemetryService.getTelemetrySummary({ tenantId })),
+      this.reconciliationService.reconcileTenant({ tenantId }).catch(() => ({
+        overallStatus: 'UNKNOWN',
+        summary: { consistentCount: 0, mismatchCount: 0, orphanContainersCount: 0 }
+      }))
+    ]);
 
     return {
       runtimeArchitectureStatus: isLiveActive
@@ -171,6 +201,28 @@ export class RuntimeOrchestrator {
         total: totalEnvironments,
         liveContainers: liveContainersCount,
         verifiedContainersLive: liveContainersCount
+      },
+      healthSummary: {
+        healthy: healthOverview.summary?.healthyCount ?? 0,
+        degraded: healthOverview.summary?.degradedCount ?? 0,
+        unhealthy: healthOverview.summary?.unhealthyCount ?? 0,
+        unknown: healthOverview.summary?.unknownCount ?? 0,
+        terminated: healthOverview.summary?.terminatedCount ?? 0,
+        lastHealthCheckTimestamp: healthOverview.summary?.lastHealthCheckTimestamp ?? null
+      },
+      telemetrySummary: {
+        totalObserved: telemetrySummary.totalObserved,
+        requestCount: telemetrySummary.requestCount,
+        errorCount: telemetrySummary.errorCount,
+        avgLatencyMs: telemetrySummary.avgLatencyMs,
+        droppedCount: telemetrySummary.droppedCount,
+        telemetryQuality: telemetrySummary.telemetryQuality
+      },
+      reconciliationSummary: {
+        overallStatus: reconciliationOverview.overallStatus,
+        consistentCount: reconciliationOverview.summary?.consistentCount ?? 0,
+        mismatchCount: reconciliationOverview.summary?.mismatchCount ?? 0,
+        orphanContainersCount: reconciliationOverview.summary?.orphanContainersCount ?? 0
       },
       jobsSummary: {
         activeJobs: queuedJobsCount

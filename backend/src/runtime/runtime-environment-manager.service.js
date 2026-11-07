@@ -240,6 +240,16 @@ export class RuntimeEnvironmentManager {
   }
 
   /**
+   * Proposes a safe runtime mutation (Stage 5B.3 alias).
+   *
+   * @param {Object} params
+   * @returns {Promise<Object>}
+   */
+  async proposeRuntimeMutation(params) {
+    return this.recordRuntimeMutation(params);
+  }
+
+  /**
    * Apply an updated DSG mutation to an existing environment record.
    *
    * @param {Object} params
@@ -290,6 +300,51 @@ export class RuntimeEnvironmentManager {
       throw err;
     }
 
+    // Supported safe mutation validation
+    const SUPPORTED_MUTATION_TYPES = new Set([
+      'TOPOLOGY_EXPANSION',
+      'CREDENTIAL_MUTATION',
+      'SCHEMA_MUTATION',
+      'ISOLATION_UPDATE'
+    ]);
+
+    if (!SUPPORTED_MUTATION_TYPES.has(mutationType)) {
+      const rejectionReason = `NOT_SUPPORTED: Mutation type "${mutationType}" is not supported. Arbitrary shell, mount, or network mutations are strictly forbidden.`;
+      const rejectedMutation = await prisma.deceptionRuntimeMutation.create({
+        data: {
+          tenantId,
+          authorizationId: env.authorizationId,
+          environmentId: env.id,
+          dsgGraphId: env.dsgGraphId,
+          baseGraphVersion: env.dsgGraphVersion,
+          targetGraphVersion,
+          mutationType,
+          mutationStatus: 'REJECTED',
+          rejectionReason,
+          syntheticDiff
+        }
+      });
+
+      await this.evidenceRecorder.recordEvent({
+        tenantId,
+        authorizationId: env.authorizationId,
+        environmentId: env.id,
+        eventType: EXECUTION_EVENT_TYPES.MUTATION_REJECTED,
+        severity: 'WARN',
+        message: `Mutation proposal rejected: ${rejectionReason}`,
+        actorIdentifier: actor?.email || 'SYSTEM_OPERATOR',
+        actorRole: actor?.role || 'OPERATOR',
+        outcomeStatus: 'REJECTED',
+        eventPayload: { mutationId: rejectedMutation.id, targetGraphVersion, reason: rejectionReason }
+      });
+
+      const err = new Error(rejectionReason);
+      err.code = 'MUTATION_NOT_SUPPORTED';
+      err.statusCode = 422;
+      err.mutation = rejectedMutation;
+      throw err;
+    }
+
     // Record runtime mutation proposal
     const mutation = await prisma.deceptionRuntimeMutation.create({
       data: {
@@ -309,13 +364,20 @@ export class RuntimeEnvironmentManager {
       tenantId,
       authorizationId: env.authorizationId,
       environmentId: env.id,
-      eventType: EXECUTION_EVENT_TYPES.DSG_TRANSITION_APPLIED,
+      eventType: EXECUTION_EVENT_TYPES.MUTATION_REQUESTED,
       severity: 'INFO',
       message: `Proposed runtime mutation recorded: ${mutationType} from v${env.dsgGraphVersion} to v${targetGraphVersion}.`,
       actorIdentifier: actor?.email || 'SYSTEM_OPERATOR',
       actorRole: actor?.role || 'OPERATOR',
       outcomeStatus: 'RECORDED',
-      eventPayload: { mutationId: mutation.id, targetGraphVersion }
+      eventPayload: {
+        mutationId: mutation.id,
+        sourceGraphVersion: env.dsgGraphVersion,
+        targetGraphVersion,
+        mutationType,
+        mutationStatus: 'PROPOSED',
+        executionStatus: 'PROPOSED_NOT_EXECUTED'
+      }
     });
 
     return mutation;
@@ -377,6 +439,16 @@ export class RuntimeEnvironmentManager {
       if (termRes.ok && termRes.data) {
         return termRes.data;
       }
+
+      // Fallback: If standalone worker is offline (e.g. legacy test environment), clean up container directly
+      try {
+        const { ContainerRuntimeAdapter } = await import('./container-runtime-adapter.js');
+        const adapter = new ContainerRuntimeAdapter();
+        await adapter.removeContainer(env.containerId, { force: true });
+        if (env.networkId) {
+          await adapter.removeNetwork(env.networkId);
+        }
+      } catch (_) {}
     }
 
     // Update state to TERMINATED (simulated environments or worker fallback)

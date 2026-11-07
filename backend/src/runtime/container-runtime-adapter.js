@@ -640,6 +640,189 @@ export class ContainerRuntimeAdapter {
   }
 
   /**
+   * Retrieves real container resource metrics from Docker Engine API stats endpoint.
+   *
+   * @param {string} containerId
+   * @returns {Promise<Object>}
+   */
+  async getContainerStats(containerId) {
+    if (!containerId) throw new Error('Container ID required.');
+    try {
+      const res = await this._request({
+        path: `/containers/${encodeURIComponent(containerId)}/stats?stream=false`,
+        method: 'GET'
+      });
+      const data = res.data || {};
+      const memUsageBytes = data.memory_stats?.usage || 0;
+      const memLimitBytes = data.memory_stats?.limit || 268435456;
+      const memUsageMb = Math.round((memUsageBytes / (1024 * 1024)) * 100) / 100;
+      const memLimitMb = Math.round((memLimitBytes / (1024 * 1024)) * 100) / 100;
+      const memPercent = memLimitBytes > 0 ? Math.round((memUsageBytes / memLimitBytes) * 10000) / 100 : 0;
+
+      const pidsCurrent = data.pids_stats?.current || 0;
+
+      // CPU percentage calculation
+      let cpuPercent = 0;
+      const cpuDelta = (data.cpu_stats?.cpu_usage?.total_usage || 0) - (data.precpu_stats?.cpu_usage?.total_usage || 0);
+      const systemDelta = (data.cpu_stats?.system_cpu_usage || 0) - (data.precpu_stats?.system_cpu_usage || 0);
+      const onlineCpus = data.cpu_stats?.online_cpus || 1;
+      if (systemDelta > 0 && cpuDelta > 0) {
+        cpuPercent = Math.round(((cpuDelta / systemDelta) * onlineCpus * 100) * 100) / 100;
+      }
+
+      return {
+        measuredAt: data.read || new Date().toISOString(),
+        memory: {
+          usageBytes: memUsageBytes,
+          limitBytes: memLimitBytes,
+          usageMb: memUsageMb,
+          limitMb: memLimitMb,
+          percent: memPercent
+        },
+        cpu: {
+          percent: cpuPercent,
+          totalUsage: data.cpu_stats?.cpu_usage?.total_usage || 0
+        },
+        pids: {
+          current: pidsCurrent,
+          limit: 100
+        }
+      };
+    } catch (err) {
+      return {
+        error: err.message,
+        memory: { usageBytes: 0, limitBytes: 268435456, usageMb: 0, limitMb: 256, percent: 0 },
+        cpu: { percent: 0, totalUsage: 0 },
+        pids: { current: 0, limit: 100 }
+      };
+    }
+  }
+
+  /**
+   * Performs an authoritative composite health evaluation of a container:
+   * 1. Inspects container existence and running state.
+   * 2. Checks cgroup stats (memory, CPU, PIDs).
+   * 3. Probes internal synthetic HTTP service (/health).
+   * 4. Computes deterministic health state: HEALTHY, DEGRADED, UNHEALTHY, UNKNOWN, TERMINATED.
+   *
+   * @param {string} containerId
+   * @param {string} [pathArg='/health']
+   * @returns {Promise<Object>}
+   */
+  async getDetailedHealth(containerId, pathArg = '/health') {
+    if (!containerId) {
+      return {
+        healthState: 'UNKNOWN',
+        reasons: ['Container ID not provided'],
+        container: null,
+        probe: null,
+        stats: null
+      };
+    }
+
+    let container;
+    try {
+      container = await this.inspectContainer(containerId);
+    } catch (err) {
+      return {
+        healthy: false,
+        healthState: 'UNKNOWN',
+        reasons: [`Failed to inspect container: ${err.message}`],
+        container: null,
+        probe: null,
+        stats: null
+      };
+    }
+
+    if (!container) {
+      return {
+        healthy: false,
+        healthState: 'UNHEALTHY',
+        reasons: ['Container does not exist in Docker engine'],
+        container: null,
+        probe: null,
+        stats: null
+      };
+    }
+
+    if (!container.running) {
+      const isExpectedTerminated = ['exited', 'dead'].includes(container.state);
+      return {
+        healthy: false,
+        healthState: isExpectedTerminated ? 'TERMINATED' : 'UNHEALTHY',
+        reasons: [`Container is not running (state: ${container.state})`],
+        container: {
+          id: container.id,
+          name: container.name,
+          state: container.state,
+          running: container.running,
+          exitCode: container.raw?.State?.ExitCode ?? null
+        },
+        probe: null,
+        stats: null
+      };
+    }
+
+    // Measure live stats and probe internal HTTP service in parallel
+    const [stats, probe] = await Promise.all([
+      this.getContainerStats(containerId),
+      this.checkContainerHealth(containerId, pathArg)
+    ]);
+
+    let healthState = 'HEALTHY';
+    const reasons = [];
+
+    if (!probe.healthy) {
+      healthState = 'UNHEALTHY';
+      reasons.push(`Internal HTTP health probe failed: ${probe.error || `HTTP ${probe.statusCode}`}`);
+    } else {
+      const restartCount = container.raw?.RestartCount || 0;
+      if (restartCount > 0) {
+        healthState = 'DEGRADED';
+        reasons.push(`Container restart count is ${restartCount}`);
+      }
+      if (stats.memory.percent > 85) {
+        healthState = 'DEGRADED';
+        reasons.push(`Memory utilization is high (${stats.memory.percent}%)`);
+      }
+      if (stats.pids.current > 80) {
+        healthState = 'DEGRADED';
+        reasons.push(`PID consumption is high (${stats.pids.current}/100)`);
+      }
+      if (probe.latencyMs > 1500) {
+        healthState = 'DEGRADED';
+        reasons.push(`Health probe response latency is high (${probe.latencyMs}ms)`);
+      }
+    }
+
+    return {
+      healthy: healthState === 'HEALTHY',
+      healthState,
+      reasons,
+      container: {
+        id: container.id,
+        name: container.name,
+        state: container.state,
+        running: container.running,
+        pid: container.pid,
+        restartCount: container.raw?.RestartCount || 0,
+        startedAt: container.raw?.State?.StartedAt,
+        networkName: container.networkName,
+        ipAddress: container.ipAddress,
+        memoryLimitBytes: container.raw?.HostConfig?.Memory || stats.memory?.limitBytes,
+        cpuQuota: container.raw?.HostConfig?.CpuQuota || 0
+      },
+      probe: {
+        healthy: probe.healthy,
+        statusCode: probe.statusCode,
+        latencyMs: probe.latencyMs,
+        body: probe.body
+      },
+      stats
+    };
+  }
+
+  /**
    * Executes a command inside the container and returns exit code and output.
    *
    * @param {string|Object} containerIdOrOpts
@@ -802,6 +985,20 @@ export class ContainerRuntimeAdapter {
   }
 
   /**
+   * Stops a running container.
+   *
+   * @param {string} containerId
+   * @returns {Promise<void>}
+   */
+  async stopContainer(containerId) {
+    if (!containerId) return;
+    await this._request({
+      path: `/containers/${encodeURIComponent(containerId)}/stop?t=1`,
+      method: 'POST'
+    });
+  }
+
+  /**
    * Safely stops and removes a container.
    *
    * @param {string} containerId
@@ -828,6 +1025,20 @@ export class ContainerRuntimeAdapter {
         throw err;
       }
     }
+  }
+
+  /**
+   * Alias for stopAndRemoveContainer.
+   */
+  async removeContainer(containerId, options = {}) {
+    return this.stopAndRemoveContainer(containerId);
+  }
+
+  /**
+   * Alias for removeIsolatedNetwork.
+   */
+  async removeNetwork(networkIdOrName) {
+    return this.removeIsolatedNetwork(networkIdOrName);
   }
 
   /**

@@ -29,7 +29,17 @@ import {
   submitProvisioningJob,
   listProvisioningJobs,
   getProvisioningJob,
-  getEnvironmentEvidence
+  getEnvironmentEvidence,
+  getRuntimeHealthOverviewHandler,
+  getEnvironmentHealthDetailsHandler,
+  getRuntimeTelemetrySummaryHandler,
+  getEnvironmentTelemetryEventsHandler,
+  getRuntimeReconciliationHandler,
+  runRuntimeReconciliationHandler,
+  verifyEnvironmentEvidenceHandler,
+  getEvidenceCompletenessHandler,
+  listRuntimeMutationsHandler,
+  proposeRuntimeMutationHandler
 } from '../controllers/runtime.controller.js';
 
 export const runtimeRouter = Router({ mergeParams: true });
@@ -193,4 +203,68 @@ runtimeRouter.patch(
   '/quotas',
   requireRole('APPLICATION_OWNER'),
   updateQuotas
+);
+
+// -----------------------------------------------------------------------------
+// Runtime Observability, Telemetry & Evidence (Stage 5B.3)
+// -----------------------------------------------------------------------------
+
+runtimeRouter.get(
+  '/health/overview',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  getRuntimeHealthOverviewHandler
+);
+
+runtimeRouter.get(
+  '/environments/:environmentId/health-details',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  getEnvironmentHealthDetailsHandler
+);
+
+runtimeRouter.get(
+  '/telemetry/summary',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  getRuntimeTelemetrySummaryHandler
+);
+
+runtimeRouter.get(
+  '/environments/:environmentId/telemetry',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  getEnvironmentTelemetryEventsHandler
+);
+
+runtimeRouter.get(
+  '/reconciliation',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  getRuntimeReconciliationHandler
+);
+
+runtimeRouter.post(
+  '/reconciliation/run',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  runRuntimeReconciliationHandler
+);
+
+runtimeRouter.get(
+  '/environments/:environmentId/evidence/verify',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  verifyEnvironmentEvidenceHandler
+);
+
+runtimeRouter.get(
+  '/environments/:environmentId/evidence/completeness',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  getEvidenceCompletenessHandler
+);
+
+runtimeRouter.get(
+  '/mutations',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  listRuntimeMutationsHandler
+);
+
+runtimeRouter.post(
+  '/mutations',
+  requireRole('APPLICATION_OWNER'),
+  proposeRuntimeMutationHandler
 );
