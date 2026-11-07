@@ -138,6 +138,36 @@
   border: 1px solid rgba(168, 85, 247, 0.3);
 }
 
+.status-pill.verified {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.status-pill.partially-verified {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.status-pill.blocked {
+  background: rgba(249, 115, 22, 0.15);
+  color: #fb923c;
+  border: 1px solid rgba(249, 115, 22, 0.35);
+}
+
+.status-pill.not-tested {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.status-pill.not-implemented {
+  background: rgba(100, 116, 139, 0.2);
+  color: #cbd5e1;
+  border: 1px dashed rgba(148, 163, 184, 0.4);
+}
+
 /* Evidence Pill (Strictly MISSING) */
 .evidence-pill-missing {
   display: inline-flex;

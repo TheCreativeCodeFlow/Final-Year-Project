@@ -20,6 +20,8 @@
 
 import http from 'node:http';
 import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
 import { getApprovedImage, verifyImageDigest } from './image-catalogue.js';
 
 export class ContainerRuntimeAdapter {
@@ -29,11 +31,12 @@ export class ContainerRuntimeAdapter {
    * @param {number} [options.timeoutMs=15000]
    */
   constructor(options = {}) {
+    const defaultColimaSock = process.env.HOME ? path.join(process.env.HOME, '.colima/default/docker.sock') : null;
     this.socketPath =
       options.socketPath ||
       process.env.DOCKER_SOCKET_PATH ||
-      (fs.existsSync('/Users/rahulseervi/.colima/default/docker.sock')
-        ? '/Users/rahulseervi/.colima/default/docker.sock'
+      (defaultColimaSock && fs.existsSync(defaultColimaSock)
+        ? defaultColimaSock
         : '/var/run/docker.sock');
     this.timeoutMs = options.timeoutMs || 15000;
   }
@@ -156,6 +159,7 @@ export class ContainerRuntimeAdapter {
     }
 
     const networkName = `dec-net-${tenantId.slice(0, 8)}-${environmentId.slice(0, 8)}`;
+    const bridgeDevName = 'decbr' + crypto.randomBytes(4).toString('hex'); // 13 chars, within Linux IFNAMSIZ 15-char limit
     const body = {
       Name: networkName,
       CheckDuplicate: true,
@@ -163,6 +167,7 @@ export class ContainerRuntimeAdapter {
       Internal: true, // STRICT ISOLATION: No default gateway, no outbound routing
       EnableIPv6: false,
       Options: {
+        'com.docker.network.bridge.name': bridgeDevName,
         'com.docker.network.bridge.enable_icc': 'true',
         'com.docker.network.bridge.enable_ip_masquerade': 'false' // Do not masquerade outbound packets
       },
@@ -280,7 +285,7 @@ export class ContainerRuntimeAdapter {
     tenantId,
     environmentId,
     jobId,
-    imageIdentifier,
+    imageIdentifier = 'img-syn-alpine-node-01',
     networkName,
     serviceType = 'SYNTHETIC_API',
     cpuLimit = 0.5,
@@ -290,7 +295,8 @@ export class ContainerRuntimeAdapter {
     // 1. Strict catalogue validation
     const { imageConfig } = await this.verifyImage({ imageIdentifier });
     const imageRef = `${imageConfig.repository}:${imageConfig.tag}`;
-    const containerName = `dec-env-${tenantId.slice(0, 8)}-${environmentId.slice(0, 8)}`;
+    const envHash = crypto.createHash('sha256').update(environmentId).digest('hex').slice(0, 10);
+    const containerName = `dec-env-${tenantId.slice(0, 8)}-${envHash}`;
 
     // 2. Strict networkMode and network isolation validation
     if (!networkName || typeof networkName !== 'string') {
@@ -310,21 +316,6 @@ export class ContainerRuntimeAdapter {
       const err = new Error(`Invalid network name format "${cleanNet}". Must match dedicated deception pattern.`);
       err.code = 'INVALID_NETWORK_NAME_FORMAT';
       err.statusCode = 400;
-      throw err;
-    }
-
-    // Inspect target network to confirm Internal: true
-    const targetNet = await this.inspectNetwork(cleanNet);
-    if (!targetNet) {
-      const err = new Error(`Target network "${cleanNet}" does not exist in Docker.`);
-      err.code = 'NETWORK_NOT_FOUND';
-      err.statusCode = 404;
-      throw err;
-    }
-    if (!targetNet.Internal) {
-      const err = new Error(`Network "${cleanNet}" is not configured with Internal: true. Non-isolated networks are strictly rejected.`);
-      err.code = 'NON_INTERNAL_NETWORK_REJECTED';
-      err.statusCode = 403;
       throw err;
     }
 
@@ -370,6 +361,21 @@ export class ContainerRuntimeAdapter {
         }
         sanitizedExtraEnv.push(`${cleanKey}=${valStr}`);
       }
+    }
+
+    // Inspect target network to confirm Internal: true
+    const targetNet = await this.inspectNetwork(cleanNet);
+    if (!targetNet) {
+      const err = new Error(`Target network "${cleanNet}" does not exist in Docker.`);
+      err.code = 'NETWORK_NOT_FOUND';
+      err.statusCode = 404;
+      throw err;
+    }
+    if (!targetNet.Internal) {
+      const err = new Error(`Network "${cleanNet}" is not configured with Internal: true. Non-isolated networks are strictly rejected.`);
+      err.code = 'NON_INTERNAL_NETWORK_REJECTED';
+      err.statusCode = 403;
+      throw err;
     }
 
     // 4. Resource limit calculations
@@ -460,6 +466,18 @@ export class ContainerRuntimeAdapter {
       path: `/containers/${encodeURIComponent(containerId)}/start`,
       method: 'POST'
     });
+  }
+
+  /**
+   * Convenience helper to create and immediately start a hardened synthetic container.
+   *
+   * @param {Object} params
+   * @returns {Promise<{ containerId: string, containerName: string, imageRef: string }>}
+   */
+  async createAndStartSyntheticContainer(params) {
+    const cont = await this.createSyntheticContainer(params);
+    await this.startContainer(cont.containerId);
+    return cont;
   }
 
   /**
@@ -624,11 +642,20 @@ export class ContainerRuntimeAdapter {
   /**
    * Executes a command inside the container and returns exit code and output.
    *
-   * @param {string} containerId
-   * @param {string[]} cmd
-   * @returns {Promise<{ exitCode: number, output: string, rawOutput: string }>}
+   * @param {string|Object} containerIdOrOpts
+   * @param {string[]} [maybeCmd]
+   * @returns {Promise<{ exitCode: number, output: string, stdout: string, stderr: string, rawOutput: string }>}
    */
-  async execCommand(containerId, cmd) {
+  async execCommand(containerIdOrOpts, maybeCmd) {
+    let containerId, cmd;
+    if (typeof containerIdOrOpts === 'object' && containerIdOrOpts !== null && !Array.isArray(containerIdOrOpts)) {
+      containerId = containerIdOrOpts.containerId;
+      cmd = containerIdOrOpts.cmd;
+    } else {
+      containerId = containerIdOrOpts;
+      cmd = maybeCmd;
+    }
+
     if (!containerId) throw new Error('Container ID required.');
     if (!Array.isArray(cmd) || cmd.length === 0) throw new Error('Command array required.');
 
@@ -656,8 +683,50 @@ export class ContainerRuntimeAdapter {
     return {
       exitCode: inspectRes.data.ExitCode,
       output: cleanOutput,
+      stdout: cleanOutput,
+      stderr: '',
       rawOutput
     };
+  }
+
+  /**
+   * List all containers on the host Docker Engine.
+   *
+   * @param {Object} [opts]
+   * @param {boolean} [opts.all=true]
+   * @returns {Promise<Array<Object>>}
+   */
+  async listContainers({ all = true } = {}) {
+    const res = await this._request({
+      path: `/containers/json?all=${all ? 'true' : 'false'}`,
+      method: 'GET'
+    });
+    return Array.isArray(res.data) ? res.data : [];
+  }
+
+  /**
+   * List all Docker networks on the host.
+   *
+   * @returns {Promise<Array<Object>>}
+   */
+  async listNetworks() {
+    const res = await this._request({
+      path: '/networks',
+      method: 'GET'
+    });
+    return Array.isArray(res.data) ? res.data : [];
+  }
+
+  /**
+   * Check whether a container exists.
+   *
+   * @param {string} containerId
+   * @returns {Promise<boolean>}
+   */
+  async containerExists(containerId) {
+    if (!containerId) return false;
+    const c = await this.inspectContainer(containerId);
+    return c !== null;
   }
 
   /**
@@ -742,9 +811,9 @@ export class ContainerRuntimeAdapter {
     if (!containerId) return;
 
     try {
-      // 1. Attempt graceful stop with 5-second timeout
+      // 1. Attempt graceful stop with 1-second timeout
       await this._request({
-        path: `/containers/${encodeURIComponent(containerId)}/stop?t=5`,
+        path: `/containers/${encodeURIComponent(containerId)}/stop?t=1`,
         method: 'POST'
       }).catch(() => {});
 

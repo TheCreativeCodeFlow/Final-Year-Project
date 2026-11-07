@@ -397,6 +397,8 @@ export class RuntimeWorkerService {
       );
 
       // Deterministic canonical hash computation
+      evidenceMap.nonRepudiation = 'NOT_IMPLEMENTED';
+      evidenceMap.independentTrustAnchor = 'NOT_IMPLEMENTED';
       const canonicalPayload = canonicalJsonStringify(evidenceMap);
       const evidenceHash = crypto.createHash('sha256').update(canonicalPayload).digest('hex');
       evidenceMap.evidenceHash = evidenceHash;

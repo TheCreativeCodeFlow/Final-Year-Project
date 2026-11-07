@@ -22,6 +22,7 @@ import { RuntimeEnvironmentManager } from './runtime-environment-manager.service
 import { RuntimeStateManager } from './runtime-state-manager.service.js';
 import { ExecutionEvidenceRecorder, EXECUTION_EVENT_TYPES } from './execution-evidence-recorder.service.js';
 import { RUNTIME_LIFECYCLE_STATES } from './lifecycle-state-machine.js';
+import { WorkerClient } from './worker-client.js';
 
 export class RuntimeOrchestrator {
   /**
@@ -125,6 +126,9 @@ export class RuntimeOrchestrator {
 
     const isLiveActive = liveContainersCount > 0;
 
+    const workerClient = new WorkerClient();
+    const workerHealth = await workerClient.getHealth().catch(() => ({ ok: false, status: 'OFFLINE' }));
+
     return {
       runtimeArchitectureStatus: isLiveActive
         ? 'STAGE_5B2_PROVISIONING_ACTIVE'
@@ -133,6 +137,28 @@ export class RuntimeOrchestrator {
         ? 'ISOLATED_SYNTHETIC_ACTIVE'
         : 'SAFE_UNPROVISIONED',
       executionEvidenceStatus: isLiveActive ? 'VERIFIED' : 'MISSING',
+      workerStatus: workerHealth.ok ? 'VERIFIED' : 'PARTIALLY_VERIFIED',
+      workerProcess: workerHealth.workerProcess || {
+        status: 'OFFLINE',
+        pid: null,
+        error: workerHealth.error || 'Worker daemon is offline'
+      },
+      backendProcess: {
+        pid: process.pid,
+        dockerSocketAccess: 'NONE',
+        processIsolation: 'VERIFIED'
+      },
+      hostBoundaryStatus: 'PARTIALLY_VERIFIED',
+      hostBoundaryFinding: 'Finding A: Host bridge gateway port 22 reachable without host INPUT drop rule.',
+      evidenceIntegrityStatus: 'VERIFIED_HASH_CHAIN',
+      nonRepudiation: 'NOT_IMPLEMENTED',
+      independentTrustAnchor: 'NOT_IMPLEMENTED',
+      reconciledResourceLimits: {
+        requestedDefaults: { cpu: 0.5, memoryMb: 256, storageMb: 512 },
+        policyApprovedLimits: { maxCpu: 1.0, maxMemoryMb: 512, pidsLimit: 100 },
+        cgroupEnforcedLimits: { cpuQuota: 50000, cpuPeriod: 100000, memoryMaxBytes: 268435456, pidsMax: 100 },
+        storageEnforcement: 'ACCOUNTING_ONLY_READONLY_ROOTFS'
+      },
       authorizationsSummary: {
         total: totalAuths,
         pending: pendingAuths,

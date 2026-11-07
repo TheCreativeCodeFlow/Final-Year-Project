@@ -23,7 +23,7 @@ import {
 import { ResourceGovernanceService } from './resource-governance.service.js';
 import { ExecutionEvidenceRecorder, EXECUTION_EVENT_TYPES } from './execution-evidence-recorder.service.js';
 import { AUTHORIZATION_STATUSES } from './execution-authorization.service.js';
-import { ContainerRuntimeAdapter } from './container-runtime-adapter.js';
+import { WorkerClient } from './worker-client.js';
 
 export class RuntimeEnvironmentManager {
   /**
@@ -31,13 +31,13 @@ export class RuntimeEnvironmentManager {
    * @param {Object} [dependencies.prismaClient]
    * @param {ResourceGovernanceService} [dependencies.resourceGovernance]
    * @param {ExecutionEvidenceRecorder} [dependencies.evidenceRecorder]
-   * @param {ContainerRuntimeAdapter} [dependencies.adapter]
+   * @param {WorkerClient} [dependencies.workerClient]
    */
-  constructor({ prismaClient = null, resourceGovernance = null, evidenceRecorder = null, adapter = null } = {}) {
+  constructor({ prismaClient = null, resourceGovernance = null, evidenceRecorder = null, workerClient = null } = {}) {
     this.prisma = prismaClient;
     this.resourceGovernance = resourceGovernance || new ResourceGovernanceService(this.prisma);
     this.evidenceRecorder = evidenceRecorder || new ExecutionEvidenceRecorder(this.prisma);
-    this.adapter = adapter || new ContainerRuntimeAdapter();
+    this.workerClient = workerClient || new WorkerClient();
   }
 
   getDb() {
@@ -193,25 +193,28 @@ export class RuntimeEnvironmentManager {
       throw err;
     }
 
-    // Real Docker container health check if unsimulated
+    // Real Docker container health check if unsimulated via dedicated Worker
     if (!env.isSimulated && env.containerId) {
-      const realHealth = await this.adapter.checkContainerHealth({ containerId: env.containerId });
+      const probeRes = await this.workerClient.getEnvironmentHealth({ environmentId: env.id, tenantId });
+      const healthy = probeRes.ok && probeRes.health?.healthy;
       return {
         environmentId: env.id,
         environmentIdentifier: env.environmentIdentifier,
         lifecycleState: env.lifecycleState,
-        healthStatus: realHealth.healthy ? 'HEALTHY' : 'DEGRADED',
-        runtimeEvidence: 'VERIFIED',
+        healthStatus: healthy ? 'HEALTHY' : 'DEGRADED',
+        runtimeEvidence: probeRes.ok ? 'VERIFIED' : 'PARTIAL',
         isSimulated: false,
         containerProvisioned: true,
         containerId: env.containerId,
-        latencyMs: realHealth.latencyMs,
-        statusCode: realHealth.statusCode,
+        latencyMs: probeRes.health?.latencyMs || null,
+        statusCode: probeRes.health?.statusCode || null,
         allocatedResources: {
           cpu: env.allocatedCpu,
           memoryMb: env.allocatedMemoryMb,
           storageMb: env.allocatedStorageMb
-        }
+        },
+        workerStatus: probeRes.ok ? 'CONNECTED' : 'OFFLINE',
+        workerError: probeRes.error || null
       };
     }
 
@@ -362,15 +365,21 @@ export class RuntimeEnvironmentManager {
       { allowSimulatedExecution: true }
     );
 
-    // If live container was provisioned, clean it up via Adapter
+    // If live container was provisioned, request teardown via dedicated Worker process
     if (env.containerId) {
-      await this.adapter.stopAndRemoveContainer(env.containerId).catch(() => {});
-    }
-    if (env.networkId) {
-      await this.adapter.removeIsolatedNetwork(env.networkId).catch(() => {});
+      const termRes = await this.workerClient.terminateEnvironment({
+        environmentId: env.id,
+        tenantId,
+        reason,
+        actor
+      }).catch((e) => ({ ok: false, error: e.message }));
+
+      if (termRes.ok && termRes.data) {
+        return termRes.data;
+      }
     }
 
-    // Update state to TERMINATED
+    // Update state to TERMINATED (simulated environments or worker fallback)
     const terminated = await prisma.deceptionRuntimeEnvironment.update({
       where: { id: env.id },
       data: {

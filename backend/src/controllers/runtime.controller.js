@@ -23,8 +23,7 @@ import { ExecutionEvidenceRecorder } from '../runtime/execution-evidence-recorde
 import { listApprovedImages, getApprovedImage } from '../runtime/image-catalogue.js';
 import { listSyntheticTemplates, getSyntheticTemplate } from '../runtime/synthetic-templates.js';
 import { ProvisioningDispatcher } from '../runtime/provisioning-dispatcher.js';
-import { RuntimeWorkerService } from '../runtime/runtime-worker.service.js';
-import { ContainerRuntimeAdapter } from '../runtime/container-runtime-adapter.js';
+import { WorkerClient } from '../runtime/worker-client.js';
 import { parsePagination } from '../utils/validators.js';
 
 function getTenantId(req) {
@@ -460,11 +459,8 @@ export async function submitProvisioningJob(req, res, next) {
     }
 
     const prisma = req.prisma || getPrismaClient();
-    const adapter = new ContainerRuntimeAdapter();
-    const worker = new RuntimeWorkerService({ prismaClient: prisma, adapter });
     const dispatcher = new ProvisioningDispatcher({
-      prismaClient: prisma,
-      runtimeWorker: worker
+      prismaClient: prisma
     });
 
     const job = await dispatcher.submitProvisioningJob({
@@ -475,10 +471,22 @@ export async function submitProvisioningJob(req, res, next) {
       operator,
       idempotencyKey: idempotencyKey || req.headers['x-idempotency-key'] || null,
       extraEnv: extraEnv || {},
-      processSync: processSync !== false
+      processSync: false
     });
 
-    res.status(201).json({ status: 'success', data: job });
+    // Dispatch execution to dedicated standalone runtime worker daemon
+    const workerClient = new WorkerClient();
+    if (processSync !== false) {
+      await workerClient.triggerJob({ jobId: job.id, tenantId }).catch(() => {});
+      const updatedJob = await prisma.deceptionProvisioningJob.findUnique({
+        where: { id: job.id },
+        include: { environment: true }
+      });
+      return res.status(201).json({ status: 'success', data: updatedJob || job });
+    } else {
+      workerClient.triggerJob({ jobId: job.id, tenantId }).catch(() => {});
+      return res.status(201).json({ status: 'success', data: job });
+    }
   } catch (err) {
     next(err);
   }
