@@ -39,7 +39,14 @@ import {
   verifyEnvironmentEvidenceHandler,
   getEvidenceCompletenessHandler,
   listRuntimeMutationsHandler,
-  proposeRuntimeMutationHandler
+  proposeRuntimeMutationHandler,
+  generateDsgPlanHandler,
+  validateDsgMutationHandler,
+  executeDsgMutationHandler,
+  getDsgMutationStatusHandler,
+  rollbackDsgMutationHandler,
+  getDsgVersionHistoryHandler,
+  getEnvironmentDsgLiveStateHandler
 } from '../controllers/runtime.controller.js';
 
 export const runtimeRouter = Router({ mergeParams: true });
@@ -267,4 +274,50 @@ runtimeRouter.post(
   '/mutations',
   requireRole('APPLICATION_OWNER'),
   proposeRuntimeMutationHandler
+);
+
+// -----------------------------------------------------------------------------
+// Dynamic DSG Execution Engine & Rollback (Stage 5B.4)
+// -----------------------------------------------------------------------------
+
+runtimeRouter.post(
+  '/dsg/plans',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  generateDsgPlanHandler
+);
+
+runtimeRouter.post(
+  '/dsg/mutations/validate',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  validateDsgMutationHandler
+);
+
+runtimeRouter.post(
+  '/dsg/mutations/execute',
+  requireRole('APPLICATION_OWNER'),
+  executeDsgMutationHandler
+);
+
+runtimeRouter.get(
+  '/dsg/mutations/:mutationId',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  getDsgMutationStatusHandler
+);
+
+runtimeRouter.post(
+  '/dsg/mutations/:mutationId/rollback',
+  requireRole('APPLICATION_OWNER'),
+  rollbackDsgMutationHandler
+);
+
+runtimeRouter.get(
+  '/dsg/versions',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  getDsgVersionHistoryHandler
+);
+
+runtimeRouter.get(
+  '/environments/:environmentId/dsg-state',
+  requireRole('APPLICATION_OWNER', 'SECURITY_ANALYST'),
+  getEnvironmentDsgLiveStateHandler
 );

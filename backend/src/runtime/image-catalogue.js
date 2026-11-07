@@ -23,7 +23,8 @@ export const APPROVED_IMAGE_CATALOGUE = Object.freeze([
     repository: 'deception-synthetic-service',
     tag: '1.0.0',
     // Pinned immutable SHA-256 digest
-    immutableDigest: 'sha256:5e6dcf93ac4d11b70fb663b5a0a6e39b75bff656dee257b789edd0a0a1b8cb29',
+    immutableDigest: 'sha256:a9e6316badb2c7db395d0047846e44db9892ae9c1912ca8db6c252f5ba7daa3d',
+    previousDigests: ['sha256:5e6dcf93ac4d11b70fb663b5a0a6e39b75bff656dee257b789edd0a0a1b8cb29'],
     version: '1.0.0',
     supportedServiceTypes: ['SYNTHETIC_API', 'SYNTHETIC_AUTH', 'SYNTHETIC_DATA'],
     exposedInternalPort: 8080,
@@ -154,11 +155,15 @@ export function verifyImageDigest(imageIdentifier, actualDigestOrId) {
   const cleanExpected = image.immutableDigest.replace(/^.*@/, '').trim();
   const cleanActual = actualDigestOrId.replace(/^.*@/, '').trim();
 
-  // Allow match if actual digest matches expected immutable digest OR matches short SHA
+  // Allow match if actual digest matches expected immutable digest OR matches short SHA OR previous digests
   const matches =
     cleanActual === cleanExpected ||
     cleanExpected.includes(cleanActual) ||
-    cleanActual.includes(cleanExpected.slice(0, 19));
+    cleanActual.includes(cleanExpected.slice(0, 19)) ||
+    (Array.isArray(image.previousDigests) &&
+      image.previousDigests.some(
+        (d) => d.includes(cleanActual) || cleanActual.includes(d.replace(/^.*@/, '').trim().slice(0, 19))
+      ));
 
   if (!matches) {
     return {

@@ -309,6 +309,139 @@ export class WorkerClient {
       return { ok: false, error: err.message };
     }
   }
+
+  /**
+   * Dispatches a structured DSG mutation to the target environment's synthetic daemon.
+   *
+   * @param {Object} params
+   * @param {string} params.environmentId
+   * @param {string} params.tenantId
+   * @param {string} params.mutationType
+   * @param {string} params.operation
+   * @param {Object} params.payload
+   * @param {number} params.targetGraphVersion
+   * @returns {Promise<{ ok: boolean, data?: Object, error?: string, code?: string }>}
+   */
+  async mutateEnvironment(params, timeoutMs = 15000) {
+    const {
+      environmentId,
+      tenantId,
+      mutationType,
+      operation,
+      payload = {},
+      targetGraphVersion
+    } = params;
+    if (!environmentId || !tenantId) {
+      throw new Error('environmentId and tenantId are required for mutation execution.');
+    }
+
+    try {
+      const res = await this._request({
+        path: `/environments/${encodeURIComponent(environmentId)}/mutate`,
+        method: 'POST',
+        body: {
+          tenantId,
+          mutationType,
+          operation,
+          payload,
+          targetGraphVersion
+        },
+        timeoutMs
+      });
+
+      if (res.status === 200 && res.data?.status === 'success') {
+        return { ok: true, data: res.data };
+      }
+
+      return {
+        ok: false,
+        code: res.data?.code || 'MUTATION_REJECTED',
+        error: res.data?.message || `Worker returned HTTP ${res.status}`,
+        data: res.data
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        code: 'WORKER_COMMUNICATION_ERROR',
+        error: `Worker IPC mutation failed: ${err.message}`
+      };
+    }
+  }
+
+  /**
+   * Dispatches a state rollback request for an environment.
+   *
+   * @param {Object} params
+   * @param {string} params.environmentId
+   * @param {string} params.tenantId
+   * @param {number} params.targetGraphVersion
+   * @returns {Promise<{ ok: boolean, data?: Object, error?: string, code?: string }>}
+   */
+  async rollbackEnvironment({ environmentId, tenantId, targetGraphVersion }, timeoutMs = 15000) {
+    if (!environmentId || !tenantId || targetGraphVersion === undefined) {
+      throw new Error('environmentId, tenantId, and targetGraphVersion are required for rollback.');
+    }
+
+    try {
+      const res = await this._request({
+        path: `/environments/${encodeURIComponent(environmentId)}/rollback`,
+        method: 'POST',
+        body: { tenantId, targetGraphVersion },
+        timeoutMs
+      });
+
+      if (res.status === 200 && res.data?.status === 'success') {
+        return { ok: true, data: res.data };
+      }
+
+      return {
+        ok: false,
+        code: res.data?.code || 'ROLLBACK_REJECTED',
+        error: res.data?.message || `Worker returned HTTP ${res.status}`
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        code: 'WORKER_COMMUNICATION_ERROR',
+        error: `Worker IPC rollback failed: ${err.message}`
+      };
+    }
+  }
+
+  /**
+   * Retrieves live DSG state from the synthetic container/environment daemon.
+   *
+   * @param {Object} params
+   * @param {string} params.environmentId
+   * @param {string} params.tenantId
+   * @returns {Promise<{ ok: boolean, data?: Object, error?: string }>}
+   */
+  async getEnvironmentDsgState({ environmentId, tenantId }) {
+    if (!environmentId || !tenantId) {
+      throw new Error('environmentId and tenantId are required.');
+    }
+
+    try {
+      const res = await this._request({
+        path: `/environments/${encodeURIComponent(environmentId)}/dsg-state?tenantId=${encodeURIComponent(tenantId)}`,
+        method: 'GET'
+      });
+
+      if (res.status === 200 && res.data?.status === 'success') {
+        return { ok: true, data: res.data };
+      }
+
+      return {
+        ok: false,
+        error: res.data?.message || `Worker returned HTTP ${res.status}`
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: `Worker IPC dsg-state query failed: ${err.message}`
+      };
+    }
+  }
 }
 
 export default WorkerClient;

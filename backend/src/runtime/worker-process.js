@@ -532,6 +532,167 @@ export class StandaloneRuntimeWorker {
         });
       }
 
+      // Route 3d: POST /environments/:id/mutate
+      const mutateMatch = pathname.match(/^\/environments\/([^/]+)\/mutate$/);
+      if (method === 'POST' && mutateMatch) {
+        const environmentId = decodeURIComponent(mutateMatch[1]);
+        const body = await readBody();
+        const { tenantId, mutationType, operation, payload, targetGraphVersion } = body;
+
+        if (!tenantId) {
+          return sendJson(400, { status: 'error', message: 'tenantId is required.' });
+        }
+
+        const env = await this.prisma.deceptionRuntimeEnvironment.findFirst({
+          where: { id: environmentId, tenantId }
+        });
+
+        if (!env) {
+          return sendJson(404, {
+            status: 'error',
+            message: `Environment "${environmentId}" not found for tenant "${tenantId}".`
+          });
+        }
+
+        let containerResult = null;
+        let verifiedState = null;
+        let healthState = 'HEALTHY';
+
+        if (env.containerId) {
+          // Check container health before mutation
+          const healthBefore = await this.adapter.checkContainerHealth(env.containerId);
+          if (!healthBefore.healthy) {
+            return sendJson(422, {
+              status: 'error',
+              code: 'RUNTIME_UNHEALTHY',
+              message: `Cannot mutate runtime: container probe failed (${healthBefore.error || `HTTP ${healthBefore.statusCode}`}).`
+            });
+          }
+
+          // Apply mutation to container daemon
+          containerResult = await this.adapter.applyContainerMutation(env.containerId, {
+            mutationType,
+            operation,
+            payload,
+            targetGraphVersion
+          });
+
+          if (!containerResult.ok) {
+            return sendJson(500, {
+              status: 'error',
+              code: 'CONTAINER_MUTATION_FAILED',
+              message: containerResult.error || 'Failed to apply mutation to synthetic container.',
+              containerResult
+            });
+          }
+
+          // Verify health post-mutation
+          const healthAfter = await this.adapter.checkContainerHealth(env.containerId);
+          healthState = healthAfter.healthy ? 'HEALTHY' : 'UNHEALTHY';
+
+          // Retrieve live synthetic state to verify state transition
+          const stateRes = await this.adapter.getContainerSyntheticState(env.containerId);
+          verifiedState = stateRes.data?.data || stateRes.data || null;
+        }
+
+        return sendJson(200, {
+          status: 'success',
+          environmentId: env.id,
+          applied: true,
+          mutationType,
+          operation,
+          targetGraphVersion,
+          healthState,
+          verifiedState,
+          containerResult
+        });
+      }
+
+      // Route 3e: POST /environments/:id/rollback
+      const rollbackMatch = pathname.match(/^\/environments\/([^/]+)\/rollback$/);
+      if (method === 'POST' && rollbackMatch) {
+        const environmentId = decodeURIComponent(rollbackMatch[1]);
+        const body = await readBody();
+        const { tenantId, targetGraphVersion } = body;
+
+        if (!tenantId || targetGraphVersion === undefined) {
+          return sendJson(400, { status: 'error', message: 'tenantId and targetGraphVersion are required.' });
+        }
+
+        const env = await this.prisma.deceptionRuntimeEnvironment.findFirst({
+          where: { id: environmentId, tenantId }
+        });
+
+        if (!env) {
+          return sendJson(404, {
+            status: 'error',
+            message: `Environment "${environmentId}" not found for tenant "${tenantId}".`
+          });
+        }
+
+        let containerResult = null;
+        let verifiedState = null;
+
+        if (env.containerId) {
+          containerResult = await this.adapter.rollbackContainerState(env.containerId, targetGraphVersion);
+          if (!containerResult.ok) {
+            return sendJson(500, {
+              status: 'error',
+              code: 'CONTAINER_ROLLBACK_FAILED',
+              message: containerResult.error || 'Failed to rollback synthetic container state.',
+              containerResult
+            });
+          }
+
+          const stateRes = await this.adapter.getContainerSyntheticState(env.containerId);
+          verifiedState = stateRes.data?.data || stateRes.data || null;
+        }
+
+        return sendJson(200, {
+          status: 'success',
+          environmentId: env.id,
+          rolledBack: true,
+          targetGraphVersion,
+          verifiedState,
+          containerResult
+        });
+      }
+
+      // Route 3f: GET /environments/:id/dsg-state
+      const stateMatch = pathname.match(/^\/environments\/([^/]+)\/dsg-state$/);
+      if (method === 'GET' && stateMatch) {
+        const environmentId = decodeURIComponent(stateMatch[1]);
+        const tenantId = url.searchParams.get('tenantId');
+
+        if (!tenantId) {
+          return sendJson(400, { status: 'error', message: 'tenantId is required.' });
+        }
+
+        const env = await this.prisma.deceptionRuntimeEnvironment.findFirst({
+          where: { id: environmentId, tenantId }
+        });
+
+        if (!env) {
+          return sendJson(404, {
+            status: 'error',
+            message: `Environment "${environmentId}" not found for tenant "${tenantId}".`
+          });
+        }
+
+        let liveState = null;
+        if (env.containerId) {
+          const stateRes = await this.adapter.getContainerSyntheticState(env.containerId);
+          liveState = stateRes.data?.data || stateRes.data || null;
+        }
+
+        return sendJson(200, {
+          status: 'success',
+          environmentId: env.id,
+          graphVersion: env.dsgGraphVersion,
+          liveState
+        });
+      }
+
       // Route 4: POST /cleanup/orphans
       if (method === 'POST' && pathname === '/cleanup/orphans') {
         const cleaned = await this._cleanOrphans();

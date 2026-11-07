@@ -640,6 +640,173 @@ export class ContainerRuntimeAdapter {
   }
 
   /**
+   * Executes a safe loopback HTTP request to the synthetic daemon inside the container.
+   *
+   * @param {Object} params
+   * @param {string} params.containerId
+   * @param {string} [params.path='/health']
+   * @param {string} [params.method='GET']
+   * @param {Object} [params.body=null]
+   * @param {Object} [params.headers={}]
+   * @param {number} [params.timeoutMs=3000]
+   * @returns {Promise<{ ok: boolean, statusCode: number, data: any, raw: string, latencyMs: number }>}
+   */
+  async queryContainerHttp({
+    containerId,
+    path = '/health',
+    method = 'GET',
+    body = null,
+    headers = {},
+    timeoutMs = 3000
+  }) {
+    if (!containerId) throw new Error('Container ID required.');
+
+    const startTime = Date.now();
+    const cleanMethod = String(method || 'GET').toUpperCase();
+    const cleanPath = String(path || '/').startsWith('/') ? path : `/${path}`;
+    const payloadStr = body ? JSON.stringify(body) : '';
+
+    const reqScript = `
+      const http = require('http');
+      const payload = ${JSON.stringify(payloadStr)};
+      const options = {
+        hostname: '127.0.0.1',
+        port: 8080,
+        path: ${JSON.stringify(cleanPath)},
+        method: ${JSON.stringify(cleanMethod)},
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+          ${Object.entries(headers).map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(',')}
+        }
+      };
+      const req = http.request(options, (res) => {
+        let data = '';
+        res.on('data', c => data += c);
+        res.on('end', () => {
+          console.log(JSON.stringify({ statusCode: res.statusCode, body: data }));
+          process.exit(0);
+        });
+      });
+      req.on('error', (e) => {
+        console.error(JSON.stringify({ error: e.message }));
+        process.exit(2);
+      });
+      req.setTimeout(${timeoutMs}, () => { req.destroy(); process.exit(3); });
+      if (payload) req.write(payload);
+      req.end();
+    `.replace(/\n\s+/g, ' ');
+
+    try {
+      const execCreateRes = await this._request({
+        path: `/containers/${encodeURIComponent(containerId)}/exec`,
+        method: 'POST',
+        body: {
+          AttachStdout: true,
+          AttachStderr: true,
+          Cmd: ['node', '-e', reqScript]
+        }
+      });
+
+      const execId = execCreateRes.data.Id;
+      const execStartRes = await this._request({
+        path: `/exec/${encodeURIComponent(execId)}/start`,
+        method: 'POST',
+        body: { Detach: false, Tty: false }
+      });
+
+      const execInspectRes = await this._request({
+        path: `/exec/${encodeURIComponent(execId)}/json`,
+        method: 'GET'
+      });
+
+      const latencyMs = Date.now() - startTime;
+      const exitCode = execInspectRes.data.ExitCode;
+
+      if (exitCode === 0) {
+        let parsed = null;
+        try {
+          const rawOutput = typeof execStartRes.data === 'string' ? execStartRes.data : '';
+          const cleanStr = rawOutput.replace(/[\x00-\x1F\x7F-\x9F]/g, ' ').trim();
+          const match = cleanStr.match(/\{.*\}$/);
+          if (match) {
+            parsed = JSON.parse(match[0]);
+          }
+        } catch {}
+
+        let bodyData = null;
+        if (typeof parsed?.body === 'string') {
+          try {
+            bodyData = JSON.parse(parsed.body);
+          } catch {
+            bodyData = parsed.body;
+          }
+        } else if (parsed?.body) {
+          bodyData = parsed.body;
+        }
+
+        const statusCode = parsed?.statusCode || 200;
+        return {
+          ok: statusCode >= 200 && statusCode < 300,
+          statusCode,
+          data: bodyData,
+          raw: parsed?.body || '',
+          latencyMs
+        };
+      }
+
+      return {
+        ok: false,
+        statusCode: 500,
+        error: `Execution failed with exit code ${exitCode}`,
+        latencyMs
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        statusCode: 500,
+        error: err.message,
+        latencyMs: Date.now() - startTime
+      };
+    }
+  }
+
+  /**
+   * Applies a structured mutation to the live container's synthetic state daemon.
+   */
+  async applyContainerMutation(containerId, mutationPayload) {
+    return this.queryContainerHttp({
+      containerId,
+      path: '/internal/mutate',
+      method: 'POST',
+      body: mutationPayload
+    });
+  }
+
+  /**
+   * Retrieves the live synthetic state from the container daemon.
+   */
+  async getContainerSyntheticState(containerId) {
+    return this.queryContainerHttp({
+      containerId,
+      path: '/internal/state',
+      method: 'GET'
+    });
+  }
+
+  /**
+   * Restores a prior state snapshot on the live container daemon.
+   */
+  async rollbackContainerState(containerId, targetGraphVersion) {
+    return this.queryContainerHttp({
+      containerId,
+      path: '/internal/rollback',
+      method: 'POST',
+      body: { targetGraphVersion }
+    });
+  }
+
+  /**
    * Retrieves real container resource metrics from Docker Engine API stats endpoint.
    *
    * @param {string} containerId

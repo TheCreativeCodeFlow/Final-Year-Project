@@ -557,6 +557,37 @@ export const apiClient = {
 
   proposeRuntimeMutation: async (tenantId, payload) => {
     return apiClient.post(`/tenants/${tenantId}/runtime/mutations`, payload);
+  },
+
+  // Stage 5B.4 DSG Dynamic Execution & Rollback APIs
+  generateDsgPlan: async (tenantId, payload) => {
+    return apiClient.post(`/tenants/${tenantId}/runtime/dsg/plans`, payload);
+  },
+
+  validateDsgMutation: async (tenantId, payload) => {
+    return apiClient.post(`/tenants/${tenantId}/runtime/dsg/mutations/validate`, payload);
+  },
+
+  executeDsgMutation: async (tenantId, payload) => {
+    return apiClient.post(`/tenants/${tenantId}/runtime/dsg/mutations/execute`, payload);
+  },
+
+  getDsgMutationStatus: async (tenantId, mutationId) => {
+    return apiClient.get(`/tenants/${tenantId}/runtime/dsg/mutations/${mutationId}`);
+  },
+
+  rollbackDsgMutation: async (tenantId, mutationId, payload = {}) => {
+    return apiClient.post(`/tenants/${tenantId}/runtime/dsg/mutations/${mutationId}/rollback`, payload);
+  },
+
+  getDsgVersionHistory: async (tenantId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/runtime/dsg/versions${qs}`);
+  },
+
+  getEnvironmentDsgState: async (tenantId, environmentId) => {
+    return apiClient.get(`/tenants/${tenantId}/runtime/environments/${environmentId}/dsg-state`);
   }
 };
 

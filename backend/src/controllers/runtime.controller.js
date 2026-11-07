@@ -30,6 +30,8 @@ import { RuntimeHealthMonitorService } from '../runtime/runtime-health-monitor.s
 import { RuntimeReconciliationService } from '../runtime/runtime-reconciliation.service.js';
 import { defaultRuntimeTelemetry } from '../runtime/runtime-telemetry.service.js';
 import { verifyEvidenceChain, verifyEvidenceCompleteness } from '../runtime/execution-evidence-recorder.service.js';
+import { DSGConsistencyEngine } from '../deception/dsg-consistency-engine.service.js';
+import { DSGExecutionEngine } from '../deception/dsg-execution-engine.service.js';
 import { parsePagination } from '../utils/validators.js';
 
 function getTenantId(req) {
@@ -777,7 +779,7 @@ export async function listRuntimeMutationsHandler(req, res, next) {
       take: 50
     });
 
-    res.status(200).json({ status: 'success', data: mutations });
+    res.status(200).json({ status: 'success', success: true, data: mutations });
   } catch (err) {
     next(err);
   }
@@ -814,6 +816,197 @@ export async function proposeRuntimeMutationHandler(req, res, next) {
     });
 
     res.status(201).json({ status: 'success', data: mutation });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Stage 5B.4: Dynamic DSG Execution Engine & Rollback Handlers
+// -----------------------------------------------------------------------------
+
+export async function generateDsgPlanHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const { environmentId, assessmentId, observationId } = req.body || {};
+    const prisma = req.prisma || getPrismaClient();
+    const engine = new DSGExecutionEngine({ prismaClient: prisma });
+
+    const env = await prisma.deceptionRuntimeEnvironment.findFirst({
+      where: { id: environmentId, tenantId }
+    });
+
+    if (!env) {
+      return res.status(404).json({
+        status: 'error',
+        message: `Environment "${environmentId}" not found for this tenant.`
+      });
+    }
+
+    let assessment = null;
+    if (assessmentId) {
+      assessment = await prisma.behavioralAssessment.findUnique({ where: { id: assessmentId } });
+    } else if (observationId) {
+      assessment = await prisma.behavioralAssessment.findFirst({ where: { observationId } });
+    }
+
+    const plan = engine.deriveAdaptiveMutation({
+      assessment: assessment || {},
+      currentState: {},
+      currentVersion: env.dsgGraphVersion || 1
+    });
+
+    res.status(200).json({ status: 'success', data: plan });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function validateDsgMutationHandler(req, res, next) {
+  try {
+    const { currentState, proposedMutation, currentGraphVersion, targetGraphVersion } = req.body || {};
+    const result = DSGConsistencyEngine.validateConsistency({
+      currentState: currentState || {},
+      proposedMutation: proposedMutation || {},
+      currentGraphVersion: currentGraphVersion || 1,
+      targetGraphVersion: targetGraphVersion || 2
+    });
+
+    res.status(200).json({ status: 'success', data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function executeDsgMutationHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const operator = getOperatorInfo(req);
+    const prisma = req.prisma || getPrismaClient();
+    const engine = new DSGExecutionEngine({ prismaClient: prisma });
+
+    const {
+      environmentId,
+      authorizationId,
+      observationId,
+      assessmentId,
+      proposedMutation,
+      idempotencyKey,
+      forceLive
+    } = req.body || {};
+
+    if (!environmentId) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'environmentId is required to execute a DSG mutation.'
+      });
+    }
+
+    const result = await engine.executePipeline({
+      tenantId,
+      environmentId,
+      authorizationId,
+      observationId,
+      assessmentId,
+      proposedMutation,
+      operator,
+      idempotencyKey,
+      forceLive: Boolean(forceLive)
+    });
+
+    res.status(201).json({ status: 'success', data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getDsgMutationStatusHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const { mutationId } = req.params;
+    const prisma = req.prisma || getPrismaClient();
+
+    const mutation = await prisma.deceptionRuntimeMutation.findFirst({
+      where: { id: mutationId, tenantId },
+      include: { environment: true, graph: true }
+    });
+
+    if (!mutation) {
+      return res.status(404).json({
+        status: 'error',
+        message: `Mutation "${mutationId}" not found for this tenant.`
+      });
+    }
+
+    res.status(200).json({ status: 'success', data: mutation });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function rollbackDsgMutationHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const operator = getOperatorInfo(req);
+    const { mutationId } = req.params;
+    const { reason } = req.body || {};
+    const prisma = req.prisma || getPrismaClient();
+    const engine = new DSGExecutionEngine({ prismaClient: prisma });
+
+    const result = await engine.rollbackMutation({
+      tenantId,
+      mutationId,
+      operator,
+      reason: reason || 'Operator initiated state rollback.'
+    });
+
+    res.status(200).json({ status: 'success', data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getDsgVersionHistoryHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const { environmentId, graphId } = req.query;
+    const prisma = req.prisma || getPrismaClient();
+
+    const where = { tenantId };
+    if (environmentId) where.environmentId = environmentId;
+    if (graphId) where.dsgGraphId = graphId;
+
+    const mutations = await prisma.deceptionRuntimeMutation.findMany({
+      where,
+      orderBy: { targetGraphVersion: 'desc' },
+      take: 100
+    });
+
+    res.status(200).json({ status: 'success', success: true, data: mutations });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getEnvironmentDsgLiveStateHandler(req, res, next) {
+  try {
+    const tenantId = getTenantId(req);
+    const { environmentId } = req.params;
+    const workerClient = new WorkerClient();
+
+    const result = await workerClient.getEnvironmentDsgState({
+      environmentId,
+      tenantId
+    });
+
+    if (!result.ok) {
+      return res.status(502).json({
+        status: 'error',
+        message: result.error || 'Failed to retrieve live DSG state from runtime worker.'
+      });
+    }
+
+    res.status(200).json({ status: 'success', data: result.data });
   } catch (err) {
     next(err);
   }

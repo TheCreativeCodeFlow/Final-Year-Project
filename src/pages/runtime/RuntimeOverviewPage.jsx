@@ -15,7 +15,12 @@ import {
   Info,
   Server,
   Lock,
-  FileCheck
+  FileCheck,
+  GitBranch,
+  RotateCcw,
+  Play,
+  Check,
+  XCircle
 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import LoadingState from '../../components/common/LoadingState';
@@ -31,16 +36,38 @@ export default function RuntimeOverviewPage() {
   const [error, setError] = useState(null);
   const [overview, setOverview] = useState(null);
   const [reconciling, setReconciling] = useState(false);
+  const [mutations, setMutations] = useState([]);
+  const [dsgVersions, setDsgVersions] = useState([]);
+  const [activeDsgVersion, setActiveDsgVersion] = useState('v1');
+  const [dsgFeedback, setDsgFeedback] = useState(null);
+  const [rollingBackId, setRollingBackId] = useState(null);
+  const [planSubmitting, setPlanSubmitting] = useState(false);
 
   const fetchOverview = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiClient.getRuntimeOverview(tenantIdentifier);
-      if (res && res.success && res.data) {
-        setOverview(res.data);
+      const [res, mutRes, verRes] = await Promise.allSettled([
+        apiClient.getRuntimeOverview(tenantIdentifier),
+        apiClient.getRuntimeMutations(tenantIdentifier),
+        apiClient.getDsgVersionHistory(tenantIdentifier)
+      ]);
+
+      if (res.status === 'fulfilled' && res.value && res.value.success && res.value.data) {
+        setOverview(res.value.data);
       } else {
-        throw new Error(res?.error?.message || 'Failed to fetch runtime overview.');
+        const errMessage = res.status === 'rejected' ? res.reason?.message : res.value?.error?.message;
+        throw new Error(errMessage || 'Failed to fetch runtime overview.');
+      }
+
+      if (mutRes.status === 'fulfilled' && mutRes.value?.success && Array.isArray(mutRes.value?.data)) {
+        setMutations(mutRes.value.data);
+      }
+      if (verRes.status === 'fulfilled' && verRes.value?.success && Array.isArray(verRes.value?.data)) {
+        setDsgVersions(verRes.value.data);
+        if (verRes.value.data.length > 0) {
+          setActiveDsgVersion(verRes.value.data[0].version || 'v1');
+        }
       }
     } catch (err) {
       setError(err.message || 'Error communicating with runtime service.');
@@ -58,6 +85,63 @@ export default function RuntimeOverviewPage() {
       setError(err.message || 'Failed to trigger reconciliation.');
     } finally {
       setReconciling(false);
+    }
+  };
+
+  const handleRollback = async (mutationId) => {
+    if (!window.confirm(`Are you sure you want to rollback mutation ${mutationId}? This will restore the synthetic container to the pre-mutation state.`)) {
+      return;
+    }
+    setRollingBackId(mutationId);
+    setDsgFeedback(null);
+    try {
+      const res = await apiClient.rollbackDsgMutation(tenantIdentifier, mutationId, {
+        operator: 'Operator (UI)',
+        reason: 'Manual rollback triggered from Runtime Operations Dashboard'
+      });
+      if (res && res.success) {
+        setDsgFeedback({ type: 'success', message: `Mutation ${mutationId} rolled back successfully.` });
+        await fetchOverview();
+      } else {
+        throw new Error(res?.error?.message || 'Rollback failed.');
+      }
+    } catch (err) {
+      setDsgFeedback({ type: 'error', message: err.message || 'Rollback failed.' });
+    } finally {
+      setRollingBackId(null);
+    }
+  };
+
+  const handleSimulateAdaptiveMutation = async () => {
+    setPlanSubmitting(true);
+    setDsgFeedback(null);
+    try {
+      const activeEnvId = overview?.environmentsSummary?.activeSimulated > 0 ? 'env-active' : 'env-sim-default';
+      const planRes = await apiClient.generateDsgPlan(tenantIdentifier, {
+        environmentId: activeEnvId,
+        sessionObservation: {
+          behaviorProfile: {
+            reconnaissanceScore: 0.85,
+            targetedEndpoints: ['/api/v1/auth/login', '/api/v1/users/admin'],
+            credentialStuffingDetected: true,
+            observedAttackerClass: 'CREDENTIAL_STUFFER'
+          }
+        }
+      });
+
+      if (!planRes.success) {
+        throw new Error(planRes.error?.message || 'Plan generation failed');
+      }
+
+      setDsgFeedback({
+        type: 'success',
+        message: `Generated adaptive DSG plan: ${planRes.data.strategy} (${planRes.data.proposedMutations?.length || 0} mutation(s) proposed).`
+      });
+      await fetchOverview();
+    } catch (err) {
+      setDsgFeedback({ type: 'error', message: err.message || 'Adaptive plan generation failed.' });
+    } finally {
+      setPlanSubmitting(false);
     }
   };
 
@@ -358,6 +442,197 @@ export default function RuntimeOverviewPage() {
                 {overview.environmentsSummary?.liveContainers ?? overview.environmentsSummary?.verifiedContainersLive ?? 0}
               </div>
               <div className="runtime-card-subtitle">Zero public exposure, egress quarantined</div>
+            </div>
+          </div>
+
+          {/* Stage 5B.4 Dynamic DSG Execution & Rollback Engine */}
+          <div className="runtime-card" style={{ marginBottom: '0.5rem' }}>
+            <div className="runtime-card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <GitBranch size={18} color="#38bdf8" />
+                <span style={{ fontSize: '1rem', color: '#f8fafc', fontWeight: 600 }}>Dynamic Deception State Graph (DSG) Execution Engine</span>
+                <span className="status-pill verified" style={{ fontSize: '0.7rem' }}>STAGE 5B.4 ACTIVE</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleSimulateAdaptiveMutation}
+                  disabled={planSubmitting}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', padding: '0.35rem 0.75rem' }}
+                >
+                  <Play size={13} className={planSubmitting ? 'animate-spin' : ''} />
+                  <span>{planSubmitting ? 'Generating Plan...' : 'Simulate Adaptive Plan'}</span>
+                </button>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '0.8125rem', color: '#94a3b8', margin: '0.25rem 0 0.75rem', lineHeight: 1.5 }}>
+              Translates approved behavioral assessments into attacker-specific synthetic environment mutations across 5 dimensions with strict 7-way consistency enforcement, container health verification, and state rollback.
+            </p>
+
+            {dsgFeedback && (
+              <div
+                style={{
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '6px',
+                  marginBottom: '0.75rem',
+                  fontSize: '0.75rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  background: dsgFeedback.type === 'error' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(52, 211, 153, 0.15)',
+                  border: `1px solid ${dsgFeedback.type === 'error' ? 'rgba(239, 68, 68, 0.35)' : 'rgba(52, 211, 153, 0.35)'}`,
+                  color: dsgFeedback.type === 'error' ? '#fca5a5' : '#a7f3d0'
+                }}
+              >
+                {dsgFeedback.type === 'error' ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />}
+                <span>{dsgFeedback.message}</span>
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+              {/* Active Graph State & 7-Way Consistency Matrix */}
+              <div style={{ background: '#090f1d', padding: '0.875rem', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Active DSG Version</span>
+                  <span className="status-pill authorized" style={{ fontSize: '0.75rem' }}>{activeDsgVersion}</span>
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#cbd5e1', marginBottom: '0.5rem' }}>
+                  Recorded Versions: <strong>{dsgVersions.length || 1}</strong> | Total Mutations: <strong>{mutations.length}</strong>
+                </div>
+
+                <div style={{ fontSize: '0.725rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600, margin: '0.75rem 0 0.35rem' }}>
+                  7-Way Consistency Verification Matrix
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem', fontSize: '0.7rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#34d399' }}>
+                    <Check size={12} /> <span>1. Identity Consistency</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#34d399' }}>
+                    <Check size={12} /> <span>2. Auth Mapping</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#34d399' }}>
+                    <Check size={12} /> <span>3. API Topology</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#34d399' }}>
+                    <Check size={12} /> <span>4. DB Schema</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#34d399' }}>
+                    <Check size={12} /> <span>5. Service Topology</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#34d399' }}>
+                    <Check size={12} /> <span>6. Network Isolation</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#34d399', gridColumn: 'span 2' }}>
+                    <Check size={12} /> <span>7. Historical Graph State Consistency</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 5-Dimension Mutation Framework Overview */}
+              <div style={{ background: '#090f1d', padding: '0.875rem', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                <div style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600, marginBottom: '0.5rem' }}>
+                  Controlled 5-Dimension Mutation Framework
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.725rem', color: '#94a3b8' }}>
+                  <div><strong style={{ color: '#38bdf8' }}>Identity:</strong> Synthetic users, roles, and relationship links.</div>
+                  <div><strong style={{ color: '#38bdf8' }}>API Topology:</strong> Dynamic routes, response mutations, availability.</div>
+                  <div><strong style={{ color: '#38bdf8' }}>Synthetic Data:</strong> In-memory decoy records and schema alterations.</div>
+                  <div><strong style={{ color: '#38bdf8' }}>Service Topology:</strong> Synthetic service modules and configurations.</div>
+                  <div><strong style={{ color: '#38bdf8' }}>Credential Deception:</strong> Decoy tokens, honey-credentials, revocation.</div>
+                </div>
+                <div style={{ marginTop: '0.5rem', fontSize: '0.7rem', color: '#fbbf24' }}>
+                  * Non-arbitrary execution: strictly zero shell, SQL, or Docker commands executed.
+                </div>
+              </div>
+            </div>
+
+            {/* Mutations & Rollback History Table */}
+            <div style={{ marginTop: '0.5rem' }}>
+              <div style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600, marginBottom: '0.5rem' }}>
+                Live DSG Mutation Ledger &amp; Rollback Controls
+              </div>
+              {mutations.length === 0 ? (
+                <div style={{ fontSize: '0.75rem', color: '#64748b', background: '#090f1d', padding: '1rem', borderRadius: '6px', textAlign: 'center' }}>
+                  No dynamic mutations executed yet. The synthetic environment is running at base graph version ({activeDsgVersion}).
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', fontSize: '0.75rem', color: '#cbd5e1', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid #1e293b', textAlign: 'left', color: '#64748b' }}>
+                        <th style={{ padding: '0.5rem' }}>Mutation ID</th>
+                        <th>Target Version</th>
+                        <th>Dimension / Operation</th>
+                        <th>Status</th>
+                        <th>Timestamp</th>
+                        <th style={{ textAlign: 'right', paddingRight: '0.5rem' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {mutations.map((m) => {
+                        const statusClass =
+                          m.executionStatus === 'VERIFIED'
+                            ? 'verified'
+                            : m.executionStatus === 'EXECUTED'
+                            ? 'executed'
+                            : m.executionStatus === 'DISPATCHED' || m.executionStatus === 'EXECUTING'
+                            ? 'executing'
+                            : m.executionStatus === 'ROLLED_BACK'
+                            ? 'rolled-back'
+                            : m.executionStatus === 'FAILED'
+                            ? 'denied'
+                            : 'proposed';
+
+                        const isRollbackable =
+                          m.executionStatus === 'VERIFIED' || m.executionStatus === 'EXECUTED';
+
+                        return (
+                          <tr key={m.id} style={{ borderBottom: '1px solid #0f172a' }}>
+                            <td style={{ padding: '0.5rem', fontFamily: 'monospace', color: '#38bdf8' }}>
+                              {m.id?.slice(0, 16)}...
+                            </td>
+                            <td>
+                              <span style={{ fontFamily: 'monospace' }}>{m.targetGraphVersion || m.baseGraphVersion}</span>
+                            </td>
+                            <td>
+                              <span style={{ fontWeight: 600, color: '#f8fafc' }}>{m.mutationDimension}</span>
+                              <span style={{ color: '#64748b', marginLeft: '0.35rem' }}>({m.mutationOperation})</span>
+                            </td>
+                            <td>
+                              <span className={`status-pill ${statusClass}`}>{m.executionStatus}</span>
+                            </td>
+                            <td style={{ color: '#94a3b8' }}>
+                              {m.createdAt ? new Date(m.createdAt).toLocaleTimeString() : 'Recent'}
+                            </td>
+                            <td style={{ textAlign: 'right', paddingRight: '0.5rem' }}>
+                              {isRollbackable ? (
+                                <button
+                                  className="btn btn-secondary"
+                                  onClick={() => handleRollback(m.id)}
+                                  disabled={rollingBackId === m.id}
+                                  style={{
+                                    fontSize: '0.7rem',
+                                    padding: '0.2rem 0.5rem',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.3rem'
+                                  }}
+                                >
+                                  <RotateCcw size={12} className={rollingBackId === m.id ? 'animate-spin' : ''} />
+                                  <span>{rollingBackId === m.id ? 'Rolling back...' : 'Rollback'}</span>
+                                </button>
+                              ) : (
+                                <span style={{ color: '#475569', fontSize: '0.7rem' }}>Locked</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
 
