@@ -153,7 +153,8 @@ export function createGatewayApp(options = {}) {
       appContext,
       method,
       path: rawPath,
-      clientIp
+      clientIp,
+      headers: req.headers
     });
 
     // Stage 5: ROUTING_DECISION_MADE
@@ -184,6 +185,8 @@ export function createGatewayApp(options = {}) {
         forwardingResult: decision.action === 'BLOCK' ? 'BLOCKED_BY_POLICY' : 'FAIL_CLOSED',
         routingDecision: {
           intendedAction: decision.action,
+          routingOutcome: decision.routingOutcome || (decision.action === 'BLOCK' ? 'BLOCK_REQUEST' : 'FAIL_CLOSED'),
+          routingMode: decision.routingMode || 'SHADOW',
           outcomeStatus: decision.action === 'BLOCK' ? 'BLOCKED_AT_INGRESS' : 'FAIL_CLOSED_REJECTION',
           failureDetails: { reason: decision.reason }
         }
@@ -193,6 +196,7 @@ export function createGatewayApp(options = {}) {
     }
 
     // Stage 6: UPSTREAM_FORWARDING_ATTEMPTED
+    const isDeceptionRouting = decision.action === 'PROPOSE_DECEPTION';
     const targetOrigin = decision.targetDestination || appContext.upstreamUrl;
 
     const proxyOutcome = await proxyRequest({
@@ -202,7 +206,11 @@ export function createGatewayApp(options = {}) {
       validatedHost: appContext.domain,
       requestId: req.id,
       timeoutMs: appContext.timeoutMs,
-      options: options.proxyOptions || { dnsResolver: options.dnsResolver }
+      options: {
+        ...(options.proxyOptions || { dnsResolver: options.dnsResolver }),
+        isDeceptionRouting,
+        targetEnvironmentId: decision.environmentId
+      }
     });
 
     const endTime = process.hrtime.bigint();
@@ -224,9 +232,13 @@ export function createGatewayApp(options = {}) {
       forwardingResult: proxyOutcome.forwardingResult,
       routingDecision: {
         intendedAction: decision.action,
+        routingOutcome: decision.routingOutcome || (isDeceptionRouting ? 'DECEPTION_ROUTE_EXECUTED' : 'NORMAL_FORWARD'),
+        routingMode: decision.routingMode || 'SHADOW',
+        hypotheticalDestination: decision.hypotheticalDestination || null,
+        hypotheticalEnvironmentId: decision.hypotheticalEnvironmentId || null,
         outcomeStatus:
           proxyOutcome.forwardingResult === 'SUCCESS'
-            ? 'FORWARDED_TO_ORIGIN'
+            ? (isDeceptionRouting ? 'DIVERTED_TO_SANDBOX' : 'FORWARDED_TO_ORIGIN')
             : proxyOutcome.forwardingResult === 'TIMEOUT'
               ? 'FAILED_UPSTREAM_TIMEOUT'
               : 'FAILED_UPSTREAM_CONNECTION',

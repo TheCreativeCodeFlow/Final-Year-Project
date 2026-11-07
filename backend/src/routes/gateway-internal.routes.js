@@ -14,7 +14,10 @@ import crypto from 'node:crypto';
 import {
   resolveApplication,
   recordTelemetry,
-  getGatewayHealth
+  getGatewayHealth,
+  evaluateDecision,
+  getRoutingMode,
+  setRoutingMode
 } from '../controllers/gateway-internal.controller.js';
 
 export const gatewayInternalRouter = Router();
@@ -58,7 +61,10 @@ export function requireGatewayServiceToken(req, res, next) {
 // Subsystem health (unauthenticated or authenticated; allow unauthenticated for health probing)
 gatewayInternalRouter.get('/health', getGatewayHealth);
 
-// Application resolution and telemetry endpoints require service token
+// Application resolution, decision evaluation, and telemetry endpoints require service token
 gatewayInternalRouter.use(requireGatewayServiceToken);
 gatewayInternalRouter.get('/resolve-application', resolveApplication);
 gatewayInternalRouter.post('/telemetry', recordTelemetry);
+gatewayInternalRouter.post('/evaluate-decision', evaluateDecision);
+gatewayInternalRouter.get('/routing-mode', getRoutingMode);
+gatewayInternalRouter.post('/routing-mode', setRoutingMode);

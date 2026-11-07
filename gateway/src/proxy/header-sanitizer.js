@@ -128,3 +128,50 @@ export function sanitizeResponseHeaders(upstreamHeaders, requestId) {
 
   return sanitized;
 }
+
+// Credentials and sensitive auth headers that must NEVER reach synthetic deception containers
+const SENSITIVE_AUTH_HEADERS = new Set([
+  'authorization',
+  'cookie',
+  'x-api-key',
+  'x-auth-token',
+  'proxy-authorization',
+  'x-access-token'
+]);
+
+/**
+ * Sanitizes request headers specifically for forwarding to isolated synthetic deception environments.
+ * Strictly strips real user credentials, tokens, and cookies to prevent credential leakage.
+ * Injects synthetic deception headers for auditability.
+ *
+ * @param {import('node:http').IncomingHttpHeaders} incomingHeaders
+ * @param {object} context
+ * @param {string} context.clientIp
+ * @param {string} context.validatedHost
+ * @param {string} context.requestId
+ * @param {string} [context.protocol='http']
+ * @param {string} [context.targetEnvironmentId]
+ * @returns {Record<string, string>}
+ */
+export function sanitizeDeceptionForwardedHeaders(incomingHeaders, context) {
+  const baseHeaders = sanitizeForwardedHeaders(incomingHeaders, context);
+  const sanitized = {};
+
+  for (const [key, value] of Object.entries(baseHeaders)) {
+    const lowerKey = key.toLowerCase();
+    // Strictly strip real user authentication credentials from synthetic environments
+    if (SENSITIVE_AUTH_HEADERS.has(lowerKey)) {
+      continue;
+    }
+    sanitized[key] = value;
+  }
+
+  // Inject synthetic routing metadata headers
+  sanitized['x-deception-synthetic'] = 'true';
+  sanitized['x-correlation-id'] = context.requestId;
+  if (context.targetEnvironmentId) {
+    sanitized['x-deception-environment'] = context.targetEnvironmentId;
+  }
+
+  return sanitized;
+}

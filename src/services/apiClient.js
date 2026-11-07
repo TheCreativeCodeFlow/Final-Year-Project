@@ -588,6 +588,31 @@ export const apiClient = {
 
   getEnvironmentDsgState: async (tenantId, environmentId) => {
     return apiClient.get(`/tenants/${tenantId}/runtime/environments/${environmentId}/dsg-state`);
+  },
+
+  // ---------------------------------------------------------------------------
+  // Gateway Adaptive Routing & Operations (Stage 5B.5)
+  // ---------------------------------------------------------------------------
+  getGatewayOverview: async (tenantId) => {
+    return apiClient.get(`/tenants/${tenantId}/gateway/overview`);
+  },
+
+  getGatewayRequests: async (tenantId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    const qs = query ? `?${query}` : '';
+    return apiClient.get(`/tenants/${tenantId}/gateway/requests${qs}`);
+  },
+
+  getRequestExplorerDetail: async (tenantId, correlationId) => {
+    return apiClient.get(`/tenants/${tenantId}/gateway/requests/${correlationId}`);
+  },
+
+  updateGatewayRoutingMode: async (tenantId, payload) => {
+    return apiClient.post(`/tenants/${tenantId}/gateway/routing-mode`, payload);
+  },
+
+  getGatewaySafetyStatus: async (tenantId) => {
+    return apiClient.get(`/tenants/${tenantId}/gateway/safety-status`);
   }
 };
 

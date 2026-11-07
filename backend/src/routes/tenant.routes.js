@@ -21,6 +21,7 @@ import { behavioralFeaturesRouter, behavioralBaselinesRouter } from './behaviora
 import { detectionRouter } from './detection.routes.js';
 import { deceptionRouter } from './deception.routes.js';
 import { runtimeRouter } from './runtime.routes.js';
+import { gatewayOperationsRouter } from './gateway-operations.routes.js';
 
 export const tenantRouter = Router({ mergeParams: true });
 
@@ -39,3 +40,4 @@ tenantRouter.use('/behavioral-baselines', behavioralBaselinesRouter);
 tenantRouter.use('/detection', detectionRouter);
 tenantRouter.use('/deception', deceptionRouter);
 tenantRouter.use('/runtime', runtimeRouter);
+tenantRouter.use('/gateway', gatewayOperationsRouter);

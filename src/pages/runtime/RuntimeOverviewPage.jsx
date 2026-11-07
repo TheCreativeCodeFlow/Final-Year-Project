@@ -836,6 +836,16 @@ export default function RuntimeOverviewPage() {
 
           {/* Quick Navigation Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+            <Link to="/runtime/gateway" className="runtime-card" style={{ textDecoration: 'none', border: '1px solid #38bdf8' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: 600, color: '#38bdf8', fontSize: '0.925rem' }}>Gateway Operations (Stage 5B.5)</span>
+                <ArrowRight size={16} color="#38bdf8" />
+              </div>
+              <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '0.5rem 0 0' }}>
+                Unified observation, hybrid detection, shadow mode routing, and 14-stage Request Explorer.
+              </p>
+            </Link>
+
             <Link to="/runtime/authorizations" className="runtime-card" style={{ textDecoration: 'none' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontWeight: 600, color: '#f8fafc', fontSize: '0.925rem' }}>Authorizations</span>

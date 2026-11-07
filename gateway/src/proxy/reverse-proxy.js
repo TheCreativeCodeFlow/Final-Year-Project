@@ -15,7 +15,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import { resolveAndPinUpstreamDestination } from './ssrf-guard.js';
-import { sanitizeForwardedHeaders, sanitizeResponseHeaders } from './header-sanitizer.js';
+import { sanitizeForwardedHeaders, sanitizeDeceptionForwardedHeaders, sanitizeResponseHeaders } from './header-sanitizer.js';
 import { logger } from '../utils/logger.js';
 
 // Dedicated connection pools for controlled local test environments
@@ -61,6 +61,35 @@ export async function proxyRequest(params) {
     req.pause();
   }
 
+  // 0. Deception Management Endpoint Protection
+  if (options.isDeceptionRouting) {
+    const rawPath = req.url || '/';
+    if (rawPath.startsWith('/internal/') || rawPath.split('?')[0] === '/internal') {
+      logger.warn('Direct access to synthetic runtime internal management endpoint blocked', {
+        rawPath,
+        requestId
+      });
+      if (!res.headersSent) {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'PROHIBITED_ENDPOINT',
+            message: 'Direct access to synthetic runtime management endpoints is prohibited.'
+          },
+          requestId
+        });
+      }
+      return {
+        success: false,
+        statusCode: 403,
+        forwardingResult: 'BLOCKED_BY_POLICY',
+        requestSizeBytes: 0,
+        responseSizeBytes: 0,
+        errorDetails: 'Attempted to access internal synthetic management endpoint'
+      };
+    }
+  }
+
   // 1. SSRF Pre-flight & Pre-Connection DNS Resolution with Connection Pinning
   const pinResult = await resolveAndPinUpstreamDestination(upstreamBaseUrl, {
     allowLoopback: options.allowLoopback !== undefined ? options.allowLoopback : true,
@@ -102,12 +131,20 @@ export async function proxyRequest(params) {
   const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
 
   // 2. Sanitize Request Headers
-  const headers = sanitizeForwardedHeaders(req.headers, {
-    clientIp,
-    validatedHost,
-    requestId,
-    protocol: req.protocol || 'http'
-  });
+  const headers = options.isDeceptionRouting
+    ? sanitizeDeceptionForwardedHeaders(req.headers, {
+        clientIp,
+        validatedHost,
+        requestId,
+        protocol: req.protocol || 'http',
+        targetEnvironmentId: options.targetEnvironmentId
+      })
+    : sanitizeForwardedHeaders(req.headers, {
+        clientIp,
+        validatedHost,
+        requestId,
+        protocol: req.protocol || 'http'
+      });
 
   const transport = isHttps ? https : http;
   const agent = isHttps ? httpsAgent : httpAgent;

@@ -56,12 +56,13 @@ import StrategyCatalogPage from '../pages/deception/StrategyCatalogPage';
 import PolicyDecisionExplorerPage from '../pages/deception/PolicyDecisionExplorerPage';
 import DSGPlannerPage from '../pages/deception/DSGPlannerPage';
 
-// Deception Runtime Operations Pages (Stage 5B.1)
+// Deception Runtime Operations Pages (Stage 5B.1 & 5B.5)
 import RuntimeOverviewPage from '../pages/runtime/RuntimeOverviewPage';
 import ExecutionAuthorizationsPage from '../pages/runtime/ExecutionAuthorizationsPage';
 import EnvironmentRegistryPage from '../pages/runtime/EnvironmentRegistryPage';
 import RuntimeEventsPage from '../pages/runtime/RuntimeEventsPage';
 import ResourceGovernancePage from '../pages/runtime/ResourceGovernancePage';
+import GatewayOperationsPage from '../pages/runtime/GatewayOperationsPage';
 
 export default function AppRouter() {
   const { isAuthenticated, role, ROLES } = useAuth();
@@ -562,7 +563,20 @@ export default function AppRouter() {
         }
       />
 
+      <Route
+        path="/runtime/gateway"
+        element={
+          <RoleGuard allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.ANALYST]}>
+            <AppShell>
+              <GatewayOperationsPage />
+            </AppShell>
+          </RoleGuard>
+        }
+      />
+
       {/* Convenience redirects */}
+      <Route path="/gateway" element={<Navigate to="/runtime/gateway" replace />} />
+      <Route path="/gateway/operations" element={<Navigate to="/runtime/gateway" replace />} />
       <Route path="/owner/runtime" element={<Navigate to="/runtime/overview" replace />} />
       <Route path="/admin/runtime" element={<Navigate to="/runtime/overview" replace />} />
       <Route path="/owner/detection" element={<Navigate to="/detection/overview" replace />} />

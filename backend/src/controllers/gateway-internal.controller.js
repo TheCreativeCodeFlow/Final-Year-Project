@@ -199,6 +199,174 @@ export async function recordTelemetry(req, res, next) {
 }
 
 /**
+ * Evaluates an ingress gateway request through the unified decision pipeline.
+ */
+export async function evaluateDecision(req, res, next) {
+  const prisma = req.prisma || getPrismaClient();
+  const {
+    correlationId,
+    tenantId,
+    applicationId,
+    domain,
+    method,
+    path,
+    clientIp,
+    headers,
+    routingMode,
+    appContext
+  } = req.body;
+
+  try {
+    const { GatewayDecisionControllerService } = await import('../deception/gateway-decision-controller.service.js');
+    const controller = new GatewayDecisionControllerService({ prismaClient: prisma });
+
+    const decision = await controller.evaluateGatewayRequest({
+      correlationId,
+      tenantId,
+      applicationId,
+      domain,
+      method,
+      path,
+      clientIp,
+      headers,
+      routingMode,
+      appContext
+    });
+
+    res.status(200).json({
+      success: true,
+      status: 'success',
+      data: decision
+    });
+  } catch (err) {
+    logger.error('Gateway decision evaluation failed', {
+      correlationId,
+      error: err.message
+    });
+    next(err);
+  }
+}
+
+/**
+ * Retrieves the current gateway routing mode and safety status for a tenant or application.
+ */
+export async function getRoutingMode(req, res, next) {
+  const prisma = req.prisma || getPrismaClient();
+  const { tenantId, applicationId } = req.query;
+
+  try {
+    let app = null;
+    if (applicationId) {
+      app = await prisma.protectedApplication.findUnique({
+        where: { id: applicationId }
+      });
+    }
+
+    const { RuntimeSelectionService, ROUTING_MODES, getApplicationRoutingMode } = await import('../deception/runtime-selection.service.js');
+    const runtimeSelector = new RuntimeSelectionService({ prismaClient: prisma });
+
+    let labReadiness = { isReady: false, status: 'CONTROLLED_LAB_BLOCKED', blockers: [] };
+    if (tenantId) {
+      const activeEnv = await prisma.deceptionRuntimeEnvironment.findFirst({
+        where: { tenantId, lifecycleState: 'ACTIVE' }
+      });
+      if (activeEnv) {
+        labReadiness = await runtimeSelector.checkControlledLabReadiness(activeEnv.id, tenantId);
+      }
+    }
+
+    const currentMode = (applicationId && getApplicationRoutingMode(applicationId)) ||
+                        (tenantId && getApplicationRoutingMode(tenantId)) ||
+                        app?.routingMode ||
+                        ROUTING_MODES.SHADOW;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        currentMode,
+        defaultMode: ROUTING_MODES.SHADOW,
+        availableModes: Object.values(ROUTING_MODES),
+        controlledLabReadiness: labReadiness
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Updates the routing mode for a protected application with mandatory safety validation.
+ */
+export async function setRoutingMode(req, res, next) {
+  const prisma = req.prisma || getPrismaClient();
+  const { applicationId, routingMode, tenantId } = req.body;
+
+  try {
+    const { RuntimeSelectionService, ROUTING_MODES, setApplicationRoutingMode } = await import('../deception/runtime-selection.service.js');
+
+    if (!Object.values(ROUTING_MODES).includes(routingMode)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_ROUTING_MODE',
+          message: `Invalid routing mode "${routingMode}". Allowed: ${Object.values(ROUTING_MODES).join(', ')}`
+        }
+      });
+    }
+
+    // If activating CONTROLLED_LAB, verify all mandatory conditions
+    if (routingMode === ROUTING_MODES.CONTROLLED_LAB) {
+      const runtimeSelector = new RuntimeSelectionService({ prismaClient: prisma });
+      const env = await prisma.deceptionRuntimeEnvironment.findFirst({
+        where: { tenantId, lifecycleState: 'ACTIVE' }
+      });
+
+      if (!env) {
+        return res.status(422).json({
+          success: false,
+          error: {
+            code: 'CONTROLLED_LAB_BLOCKED',
+            message: 'Cannot enable CONTROLLED_LAB: No active deception runtime environment provisioned.',
+            blockers: ['No active deception runtime environment found.']
+          }
+        });
+      }
+
+      const readiness = await runtimeSelector.checkControlledLabReadiness(env.id, tenantId);
+      if (!readiness.isReady) {
+        return res.status(422).json({
+          success: false,
+          error: {
+            code: 'CONTROLLED_LAB_BLOCKED',
+            message: 'Cannot enable CONTROLLED_LAB: Mandatory safety conditions are not satisfied.',
+            blockers: readiness.blockers,
+            checklist: readiness.checklist
+          }
+        });
+      }
+    }
+
+    if (applicationId) {
+      setApplicationRoutingMode(applicationId, routingMode);
+    }
+    if (tenantId) {
+      setApplicationRoutingMode(tenantId, routingMode);
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        applicationId,
+        routingMode,
+        status: 'UPDATED'
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
  * Health check for the internal gateway communication interface.
  */
 export async function getGatewayHealth(req, res) {
