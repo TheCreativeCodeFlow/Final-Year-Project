@@ -259,6 +259,19 @@ export default function GatewayOperationsPage() {
               </div>
             </div>
 
+            {/* Shadow Mode Invariant Banner */}
+            {overview.activeRoutingMode === 'SHADOW' && (
+              <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#064e3b', border: '1px solid #059669', borderRadius: '6px', fontSize: '0.85rem', color: '#ecfdf5' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700 }}>
+                  <ShieldCheck size={18} color="#34d399" />
+                  <span>SHADOW MODE: ORIGIN FORWARDING PRESERVED</span>
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#a7f3d0', marginTop: '0.35rem', lineHeight: 1.4 }}>
+                  Every incoming request in SHADOW mode is guaranteed to continue to the original protected application. 0 actual requests are diverted to synthetic containers. Hypothetical deception decisions are evaluated and recorded separately for research and auditing.
+                </div>
+              </div>
+            )}
+
             {/* Controlled Lab Mandatory Safety Checklist Banner */}
             {overview.controlledLabReadiness?.blockers?.length > 0 && (
               <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#451a03', border: '1px solid #78350f', borderRadius: '6px', fontSize: '0.8rem', color: '#fef3c7' }}>
@@ -278,46 +291,54 @@ export default function GatewayOperationsPage() {
             )}
           </div>
 
-          {/* Metric Tiles */}
+          {/* Metric Tiles: Clearly distinguish Actual Origin, Actual Synthetic, and Hypothetical Decisions */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
             <div className="runtime-card" style={{ padding: '0.75rem 1rem' }}>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Total Ingress Observed</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#f8fafc', marginTop: '0.25rem' }}>
-                {overview.statistics?.totalRequestsObserved ?? 0}
-              </div>
-              <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Normalized requests</div>
-            </div>
-
-            <div className="runtime-card" style={{ padding: '0.75rem 1rem' }}>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Shadow Decisions</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#a855f7', marginTop: '0.25rem' }}>
-                {overview.statistics?.shadowDecisionsCount ?? 0}
-              </div>
-              <div style={{ fontSize: '0.7rem', color: '#a855f7' }}>Hypothetical diversions</div>
-            </div>
-
-            <div className="runtime-card" style={{ padding: '0.75rem 1rem' }}>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Normal Origin Forward</div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Actual Origin Requests</div>
               <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#38bdf8', marginTop: '0.25rem' }}>
-                {overview.statistics?.normalForwardCount ?? 0}
+                {overview.statistics?.actualOriginRequests ?? overview.statistics?.normalForwardCount ?? 0}
               </div>
               <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Real protected upstream</div>
             </div>
 
             <div className="runtime-card" style={{ padding: '0.75rem 1rem' }}>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Blocked by Policy</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#ef4444', marginTop: '0.25rem' }}>
-                {overview.statistics?.blockedRequestsCount ?? 0}
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Actual Synthetic Requests</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: overview.statistics?.actualSyntheticRequests > 0 ? '#10b981' : '#64748b', marginTop: '0.25rem' }}>
+                {overview.statistics?.actualSyntheticRequests ?? 0}
               </div>
-              <div style={{ fontSize: '0.7rem', color: '#ef4444' }}>HTTP 403 at ingress</div>
+              <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Live diverted (0 in shadow)</div>
             </div>
 
             <div className="runtime-card" style={{ padding: '0.75rem 1rem' }}>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Runtime Unavailable</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#f59e0b', marginTop: '0.25rem' }}>
-                {overview.statistics?.runtimeUnavailableCount ?? 0}
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Hypothetical Decisions</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#a855f7', marginTop: '0.25rem' }}>
+                {overview.statistics?.hypotheticalDeceptionDecisions ?? overview.statistics?.shadowDecisionsCount ?? 0}
               </div>
-              <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Safe origin deferrals</div>
+              <div style={{ fontSize: '0.7rem', color: '#a855f7' }}>Evaluated in shadow mode</div>
+            </div>
+
+            <div className="runtime-card" style={{ padding: '0.75rem 1rem' }}>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Blocked Controlled-Lab</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#f59e0b', marginTop: '0.25rem' }}>
+                {overview.statistics?.blockedControlledLabAttempts ?? 0}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Safety gate fallbacks</div>
+            </div>
+
+            <div className="runtime-card" style={{ padding: '0.75rem 1rem' }}>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Blocked by Policy</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#ef4444', marginTop: '0.25rem' }}>
+                {overview.statistics?.failedRoutingAttempts ?? overview.statistics?.blockedRequestsCount ?? 0}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: '#ef4444' }}>HTTP 403 / 503</div>
+            </div>
+
+            <div className="runtime-card" style={{ padding: '0.75rem 1rem' }}>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Total Ingress Observed</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#f8fafc', marginTop: '0.25rem' }}>
+                {overview.statistics?.totalRequestsObserved ?? 0}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Audited transactions</div>
             </div>
           </div>
 

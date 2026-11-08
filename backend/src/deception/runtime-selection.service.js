@@ -29,6 +29,7 @@ export const RUNTIME_REJECTION_REASONS = Object.freeze({
   RUNTIME_UNHEALTHY: 'RUNTIME_UNHEALTHY',
   RUNTIME_UNKNOWN_HEALTH: 'RUNTIME_UNKNOWN_HEALTH',
   RUNTIME_TERMINATED: 'RUNTIME_TERMINATED',
+  RUNTIME_DEGRADED_DISQUALIFIED: 'RUNTIME_DEGRADED_DISQUALIFIED',
   RUNTIME_LIFECYCLE_NOT_ACTIVE: 'RUNTIME_LIFECYCLE_NOT_ACTIVE',
   AUTHORIZATION_NOT_FOUND: 'AUTHORIZATION_NOT_FOUND',
   AUTHORIZATION_NOT_APPROVED: 'AUTHORIZATION_NOT_APPROVED',
@@ -41,6 +42,16 @@ export const RUNTIME_REJECTION_REASONS = Object.freeze({
   ROLLBACK_NOT_READY: 'ROLLBACK_NOT_READY',
   CAPACITY_EXHAUSTED: 'CAPACITY_EXHAUSTED'
 });
+
+/**
+ * Specifically documented and validated strategies permitted to evaluate on DEGRADED runtimes
+ * provided their explicit safety prerequisites (e.g. degradedPrerequisitesMet) are satisfied.
+ * All other strategies (active API facades, credential decoys, data records) are rejected by default.
+ */
+export const DEGRADED_TOLERANT_STRATEGIES = Object.freeze([
+  'strat-service-tarpit-latency-01',
+  'SERVICE_INTERACTION_DECEPTION'
+]);
 
 export const ROUTING_MODES = Object.freeze({
   OBSERVE_ONLY: 'OBSERVE_ONLY',
@@ -257,7 +268,36 @@ export class RuntimeSelectionService {
         continue;
       }
 
-      currentChecks.runtimeHealthVerified = ['HEALTHY', 'DEGRADED'].includes(healthStatus);
+      if (healthStatus === 'DEGRADED') {
+        // Explicit strategy-specific eligibility check:
+        // DEGRADED runtimes are rejected by default.
+        // A degraded runtime is ONLY eligible if the REQUEST specifically matches a degraded-tolerant strategy
+        // AND the environment matches that strategy AND prerequisites are met.
+        const isRequestedStrategyTolerant = Boolean(strategyId && DEGRADED_TOLERANT_STRATEGIES.includes(strategyId));
+        const isEnvStrategyTolerant = Boolean(env.strategyIdentifier && DEGRADED_TOLERANT_STRATEGIES.includes(env.strategyIdentifier));
+        const prereqsMet = Boolean(
+          env.runtimeEvidence &&
+          (env.runtimeEvidence.degradedPrerequisitesMet === true || env.runtimeEvidence.allowDegradedOperation === true)
+        );
+
+        if (!isRequestedStrategyTolerant || !isEnvStrategyTolerant || !prereqsMet) {
+          lastRejection = {
+            reasonCode: RUNTIME_REJECTION_REASONS.RUNTIME_DEGRADED_DISQUALIFIED,
+            rejectionReason: `Target environment "${env.id}" is in DEGRADED status. Degraded runtimes are rejected by default unless the request explicitly requires a validated degraded-tolerant strategy (requested=${strategyId}, env=${env.strategyIdentifier}, prereqsMet=${prereqsMet}).`
+          };
+          continue;
+        }
+
+        currentChecks.runtimeHealthVerified = true;
+      } else if (healthStatus === 'HEALTHY') {
+        currentChecks.runtimeHealthVerified = true;
+      } else {
+        lastRejection = {
+          reasonCode: RUNTIME_REJECTION_REASONS.RUNTIME_UNKNOWN_HEALTH,
+          rejectionReason: `Target environment "${env.id}" has unhandled health state "${healthStatus}".`
+        };
+        continue;
+      }
 
       // 2e. Execution Authorization Verification
       const auth = env.authorization;
@@ -410,7 +450,10 @@ export class RuntimeSelectionService {
     checklist.applicationConfigured = Boolean(env.applicationId || env.application);
     checklist.runtimeAuthorizationVerified = env.authorization?.authorizationStatus === 'APPROVED' &&
       new Date(env.authorization.expiresAt) > new Date();
-    checklist.runtimeHealthVerified = ['HEALTHY', 'DEGRADED'].includes(env.healthStatus);
+    const isDegradedTolerant = env.healthStatus === 'DEGRADED' &&
+      DEGRADED_TOLERANT_STRATEGIES.includes(env.strategyIdentifier) &&
+      Boolean(env.runtimeEvidence?.degradedPrerequisitesMet || env.runtimeEvidence?.allowDegradedOperation);
+    checklist.runtimeHealthVerified = env.healthStatus === 'HEALTHY' || isDegradedTolerant;
     checklist.networkIsolationVerified = ['SANDBOX_ISOLATED', 'STRICT_AIRGAP'].includes(env.networkIsolationMode);
     checklist.validGraphVersion = env.dsgGraphVersion >= 1;
     checklist.rollbackReadinessVerified = Boolean(env.syntheticStateSnapshot || env.dsgGraphVersion >= 1);

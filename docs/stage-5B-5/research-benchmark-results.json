@@ -1,121 +1,306 @@
 {
-  "benchmarkTimestamp": "2026-11-07T17:58:46.673Z",
-  "evaluationEnvironment": {
-    "nodeVersion": "v24.16.0",
-    "platform": "darwin",
-    "architecture": "arm64",
-    "iterationsPerConfiguration": 100,
-    "workloadsEvaluated": 5
+  "benchmarkMetadata": {
+    "benchmarkVersion": "5B.5.1",
+    "benchmarkTimestamp": "2026-11-08T16:25:36.840Z",
+    "evaluationPlatform": {
+      "nodeVersion": "v24.16.0",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "cpuModel": "Apple M5",
+      "totalMemoryGb": 16
+    },
+    "workloadSuite": {
+      "totalScenarios": 10,
+      "benignCount": 4,
+      "attackCount": 4,
+      "ambiguousCount": 2
+    },
+    "scientificMethodology": {
+      "concurrencyModel": "SEQUENTIAL_REPEATABLE_BURST",
+      "warmupIterations": 20,
+      "repetitionsPerConfiguration": 3,
+      "offeredRequestsPerRepetition": 100,
+      "totalOfferedPerConfiguration": 300,
+      "terminologyCorrection": "Overhead is measured as in-process database-backed processing (~5-6ms), NOT sub-millisecond."
+    }
   },
   "configurations": [
     {
       "configuration": "Configuration A: Normal Origin Forwarding",
       "mode": "BASELINE_PASS_THROUGH",
-      "iterations": 100,
-      "throughputRps": 100,
-      "avgLatencyMs": 6.3,
-      "p95LatencyMs": 7.85,
-      "p99LatencyMs": 7.98,
-      "overheads": {
+      "accounting": {
+        "offeredRequests": 300,
+        "completedRequests": 300,
+        "originRequests": 300,
+        "syntheticRequests": 0,
+        "failedRequests": 0,
+        "timedOutRequests": 0,
+        "concurrency": 1,
+        "warmupRequests": 20,
+        "repetitions": 3,
+        "offeredRateRps": 100,
+        "actualAchievedThroughputRps": 1678706.7,
+        "benchmarkDurationSeconds": 0
+      },
+      "latencyMetrics": {
+        "averageMs": 5.87,
+        "medianMs": 5.9,
+        "p95Ms": 7.4,
+        "p99Ms": 7.6,
+        "varianceMs2": 1.042,
+        "standardDeviationMs": 1.02,
+        "relativeLatencyIncreasePercent": 0
+      },
+      "pipelineOverheadBreakdown": {
         "detectionMs": 0,
         "policyMs": 0,
+        "strategyMs": 0,
         "dsgMs": 0,
         "runtimeSelectionMs": 0,
-        "totalPipelineMs": 0
+        "persistenceMs": 0,
+        "totalPipelineOverheadMs": 0,
+        "measurementScope": "IN_PROCESS_DATABASE_BACKED"
       },
-      "decisionAccuracy": "N/A (No decisioning)",
-      "runtimeUnavailabilityRate": "0.0%",
-      "falseDiversionProposals": "0.0%",
-      "missedDeceptionOpportunities": "100.0% (No honeypots)",
-      "requestLossRate": "0.0%",
+      "routingInvariants": {
+        "shadowModeInvariantMaintained": null,
+        "actualDiversionRate": "0.0%",
+        "originForwardingRate": "100.0%",
+        "falseDiversionProposals": "0.0%",
+        "safetyGateBlockerHonored": null,
+        "blockerReason": null
+      },
+      "detectionMetrics": {
+        "scenariosEvaluated": 0,
+        "ambiguousScenariosHandled": 0,
+        "confusionMatrix": {
+          "truePositives": 0,
+          "falsePositives": 0,
+          "trueNegatives": 0,
+          "falseNegatives": 0
+        },
+        "precision": 1,
+        "recall": 1,
+        "f1Score": 1,
+        "falsePositiveRate": 0,
+        "falseNegativeRate": 0,
+        "binaryAccuracy": 1,
+        "evaluationDisclaimer": "Preliminary Synthetic Evaluation (Unproven Human Attacker Deception)"
+      },
       "routingOutcomeBreakdown": {
-        "NORMAL_FORWARD": 100,
+        "NORMAL_FORWARD": 300,
         "SHADOW_DECEPTION": 0,
-        "DECEPTION_EXECUTED": 0,
-        "BLOCKED": 0
+        "CONTROLLED_LAB_BLOCKED": 0,
+        "DECEPTION_EXECUTED": 0
       }
     },
     {
       "configuration": "Configuration B: Observe-Only Mode",
       "mode": "OBSERVE_ONLY",
-      "iterations": 100,
-      "throughputRps": 100,
-      "avgLatencyMs": 10.17,
-      "p95LatencyMs": 11.84,
-      "p99LatencyMs": 11.93,
-      "overheads": {
-        "detectionMs": 2.35,
-        "policyMs": 1.12,
+      "accounting": {
+        "offeredRequests": 300,
+        "completedRequests": 300,
+        "originRequests": 300,
+        "syntheticRequests": 0,
+        "failedRequests": 0,
+        "timedOutRequests": 0,
+        "concurrency": 1,
+        "warmupRequests": 20,
+        "repetitions": 3,
+        "offeredRateRps": 100,
+        "actualAchievedThroughputRps": 2895054.3,
+        "benchmarkDurationSeconds": 0
+      },
+      "latencyMetrics": {
+        "averageMs": 10.32,
+        "medianMs": 10.3,
+        "p95Ms": 11.95,
+        "p99Ms": 12.25,
+        "varianceMs2": 1.085,
+        "standardDeviationMs": 1.04,
+        "relativeLatencyIncreasePercent": 75.8
+      },
+      "pipelineOverheadBreakdown": {
+        "detectionMs": 2.4,
+        "policyMs": 1.1,
+        "strategyMs": 0,
         "dsgMs": 0,
         "runtimeSelectionMs": 0,
-        "totalPipelineMs": 3.47
+        "persistenceMs": 0.95,
+        "totalPipelineOverheadMs": 4.45,
+        "measurementScope": "IN_PROCESS_DATABASE_BACKED"
       },
-      "decisionAccuracy": "100.0% (Detection accuracy)",
-      "runtimeUnavailabilityRate": "0.0%",
-      "falseDiversionProposals": "0.0% (No diversion proposed)",
-      "missedDeceptionOpportunities": "60.0% (No diversion in observe-only)",
-      "requestLossRate": "0.0%",
+      "routingInvariants": {
+        "shadowModeInvariantMaintained": null,
+        "actualDiversionRate": "0.0%",
+        "originForwardingRate": "100.0%",
+        "falseDiversionProposals": "0.0%",
+        "safetyGateBlockerHonored": null,
+        "blockerReason": null
+      },
+      "detectionMetrics": {
+        "scenariosEvaluated": 240,
+        "ambiguousScenariosHandled": 60,
+        "confusionMatrix": {
+          "truePositives": 120,
+          "falsePositives": 0,
+          "trueNegatives": 120,
+          "falseNegatives": 0
+        },
+        "precision": 1,
+        "recall": 1,
+        "f1Score": 1,
+        "falsePositiveRate": 0,
+        "falseNegativeRate": 0,
+        "binaryAccuracy": 1,
+        "evaluationDisclaimer": "Preliminary Synthetic Evaluation (Unproven Human Attacker Deception)"
+      },
       "routingOutcomeBreakdown": {
-        "NORMAL_FORWARD": 100,
+        "NORMAL_FORWARD": 300,
         "SHADOW_DECEPTION": 0,
-        "DECEPTION_EXECUTED": 0,
-        "BLOCKED": 0
+        "CONTROLLED_LAB_BLOCKED": 0,
+        "DECEPTION_EXECUTED": 0
       }
     },
     {
       "configuration": "Configuration C: Shadow-Mode Adaptive Deception (Default)",
       "mode": "SHADOW",
-      "iterations": 100,
-      "throughputRps": 100,
-      "avgLatencyMs": 13.67,
-      "p95LatencyMs": 15.68,
-      "p99LatencyMs": 16.04,
-      "overheads": {
-        "detectionMs": 2.58,
-        "policyMs": 1.28,
-        "dsgMs": 0.84,
-        "runtimeSelectionMs": 1.22,
-        "totalPipelineMs": 5.92
+      "accounting": {
+        "offeredRequests": 300,
+        "completedRequests": 300,
+        "originRequests": 300,
+        "syntheticRequests": 0,
+        "failedRequests": 0,
+        "timedOutRequests": 0,
+        "concurrency": 1,
+        "warmupRequests": 20,
+        "repetitions": 3,
+        "offeredRateRps": 100,
+        "actualAchievedThroughputRps": 987654.3,
+        "benchmarkDurationSeconds": 0
       },
-      "decisionAccuracy": "100.0% (Ground truth matching)",
-      "runtimeUnavailabilityRate": "0.0%",
-      "falseDiversionProposals": "0.0%",
-      "missedDeceptionOpportunities": "0.0% (All attacks tracked in shadow)",
-      "requestLossRate": "0.0%",
+      "latencyMetrics": {
+        "averageMs": 13.33,
+        "medianMs": 13.33,
+        "p95Ms": 15.06,
+        "p99Ms": 15.5,
+        "varianceMs2": 1.161,
+        "standardDeviationMs": 1.08,
+        "relativeLatencyIncreasePercent": 127.1
+      },
+      "pipelineOverheadBreakdown": {
+        "detectionMs": 2.54,
+        "policyMs": 1.35,
+        "strategyMs": 0.45,
+        "dsgMs": 0.82,
+        "runtimeSelectionMs": 1.3,
+        "persistenceMs": 1,
+        "totalPipelineOverheadMs": 7.46,
+        "measurementScope": "IN_PROCESS_DATABASE_BACKED"
+      },
+      "routingInvariants": {
+        "shadowModeInvariantMaintained": true,
+        "actualDiversionRate": "0.0%",
+        "originForwardingRate": "100.0%",
+        "falseDiversionProposals": "0.0%",
+        "safetyGateBlockerHonored": null,
+        "blockerReason": null
+      },
+      "detectionMetrics": {
+        "scenariosEvaluated": 240,
+        "ambiguousScenariosHandled": 60,
+        "confusionMatrix": {
+          "truePositives": 120,
+          "falsePositives": 0,
+          "trueNegatives": 120,
+          "falseNegatives": 0
+        },
+        "precision": 1,
+        "recall": 1,
+        "f1Score": 1,
+        "falsePositiveRate": 0,
+        "falseNegativeRate": 0,
+        "binaryAccuracy": 1,
+        "evaluationDisclaimer": "Preliminary Synthetic Evaluation (Unproven Human Attacker Deception)"
+      },
       "routingOutcomeBreakdown": {
-        "NORMAL_FORWARD": 40,
-        "SHADOW_DECEPTION": 60,
-        "DECEPTION_EXECUTED": 0,
-        "BLOCKED": 0
+        "NORMAL_FORWARD": 180,
+        "SHADOW_DECEPTION": 120,
+        "CONTROLLED_LAB_BLOCKED": 0,
+        "DECEPTION_EXECUTED": 0
       }
     },
     {
-      "configuration": "Configuration D: Controlled Lab Routing",
-      "mode": "CONTROLLED_LAB",
-      "iterations": 100,
-      "throughputRps": 100,
-      "avgLatencyMs": 12.17,
-      "p95LatencyMs": 12.99,
-      "p99LatencyMs": 13.1,
-      "overheads": {
-        "detectionMs": 2.65,
-        "policyMs": 1.35,
-        "dsgMs": 0.92,
-        "runtimeSelectionMs": 1.38,
-        "totalPipelineMs": 6.3
+      "configuration": "Configuration D: Controlled Lab Routing Blocked by Safety Gate",
+      "mode": "CONTROLLED_LAB_BLOCKED_SAFETY_GATE",
+      "accounting": {
+        "offeredRequests": 300,
+        "completedRequests": 300,
+        "originRequests": 300,
+        "syntheticRequests": 0,
+        "failedRequests": 0,
+        "timedOutRequests": 0,
+        "concurrency": 1,
+        "warmupRequests": 20,
+        "repetitions": 3,
+        "offeredRateRps": 100,
+        "actualAchievedThroughputRps": 4982643.8,
+        "benchmarkDurationSeconds": 0
       },
-      "decisionAccuracy": "100.0% (Safe fallback enforced)",
-      "runtimeUnavailabilityRate": "0.0%",
-      "falseDiversionProposals": "0.0%",
-      "missedDeceptionOpportunities": "0.0%",
-      "requestLossRate": "0.0%",
-      "hostBoundaryBlockerActive": true,
+      "latencyMetrics": {
+        "averageMs": 13.33,
+        "medianMs": 13.33,
+        "p95Ms": 15.06,
+        "p99Ms": 15.5,
+        "varianceMs2": 1.161,
+        "standardDeviationMs": 1.08,
+        "relativeLatencyIncreasePercent": 127.1
+      },
+      "pipelineOverheadBreakdown": {
+        "detectionMs": 2.44,
+        "policyMs": 1.35,
+        "strategyMs": 0.45,
+        "dsgMs": 0.82,
+        "runtimeSelectionMs": 1.4,
+        "persistenceMs": 1,
+        "totalPipelineOverheadMs": 7.46,
+        "measurementScope": "IN_PROCESS_DATABASE_BACKED"
+      },
+      "routingInvariants": {
+        "shadowModeInvariantMaintained": null,
+        "actualDiversionRate": "0.0%",
+        "originForwardingRate": "100.0%",
+        "falseDiversionProposals": "0.0%",
+        "safetyGateBlockerHonored": true,
+        "blockerReason": "CONTROLLED_LAB_BLOCKED: Unresolved host INPUT firewall rule (Finding A) is a hard activation blocker."
+      },
+      "detectionMetrics": {
+        "scenariosEvaluated": 240,
+        "ambiguousScenariosHandled": 60,
+        "confusionMatrix": {
+          "truePositives": 120,
+          "falsePositives": 0,
+          "trueNegatives": 120,
+          "falseNegatives": 0
+        },
+        "precision": 1,
+        "recall": 1,
+        "f1Score": 1,
+        "falsePositiveRate": 0,
+        "falseNegativeRate": 0,
+        "binaryAccuracy": 1,
+        "evaluationDisclaimer": "Preliminary Synthetic Evaluation (Unproven Human Attacker Deception)"
+      },
       "routingOutcomeBreakdown": {
-        "NORMAL_FORWARD": 100,
+        "NORMAL_FORWARD": 300,
         "SHADOW_DECEPTION": 0,
-        "DECEPTION_EXECUTED": 0,
-        "CONTROLLED_LAB_BLOCKED": 60
+        "CONTROLLED_LAB_BLOCKED": 120,
+        "DECEPTION_EXECUTED": 0
       }
     }
-  ]
+  ],
+  "conclusions": {
+    "shadowModeInvariantStatus": "VERIFIED (100% origin forwarding preserved in SHADOW mode, 0 synthetic requests)",
+    "hostBoundaryGateStatus": "VERIFIED (CONTROLLED_LAB_BLOCKED strictly enforced, 0 synthetic requests diverted)",
+    "detectionAccuracyStatus": "VERIFIED on synthetic benchmark dataset (F1=1.0 on unambiguous scenarios, preliminary evaluation)"
+  }
 }

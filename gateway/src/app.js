@@ -196,8 +196,39 @@ export function createGatewayApp(options = {}) {
     }
 
     // Stage 6: UPSTREAM_FORWARDING_ATTEMPTED
-    const isDeceptionRouting = decision.action === 'PROPOSE_DECEPTION';
-    const targetOrigin = decision.targetDestination || appContext.upstreamUrl;
+    // SHADOW-MODE ROUTING INVARIANT:
+    // Every successfully processed request in SHADOW mode (and OBSERVE_ONLY mode)
+    // MUST continue unconditionally to the original protected application origin.
+    // Hypothetical deception decisions MUST NEVER alter the actual upstream destination.
+    const activeRoutingMode = decision.routingMode || 'SHADOW';
+    let isDeceptionRouting = false;
+    let targetOrigin = appContext.upstreamUrl;
+
+    if (activeRoutingMode === 'SHADOW' || activeRoutingMode === 'OBSERVE_ONLY') {
+      // Enforce zero diversion in SHADOW and OBSERVE_ONLY modes
+      targetOrigin = appContext.upstreamUrl;
+      isDeceptionRouting = false;
+
+      // Fail-safe assertion: if controller erroneously returned synthetic target, override it
+      if (decision.targetDestination && decision.targetDestination !== appContext.upstreamUrl) {
+        logger.warn('Shadow-mode invariant guard: targetDestination overridden to protected origin', {
+          correlationId: req.id,
+          controllerTarget: decision.targetDestination,
+          originUrl: appContext.upstreamUrl
+        });
+      }
+    } else if (activeRoutingMode === 'CONTROLLED_LAB') {
+      if (decision.action === 'PROPOSE_DECEPTION' && decision.targetDestination && decision.targetDestination !== appContext.upstreamUrl) {
+        targetOrigin = decision.targetDestination;
+        isDeceptionRouting = true;
+      } else {
+        targetOrigin = appContext.upstreamUrl;
+        isDeceptionRouting = false;
+      }
+    } else {
+      targetOrigin = appContext.upstreamUrl;
+      isDeceptionRouting = false;
+    }
 
     const proxyOutcome = await proxyRequest({
       req,
@@ -209,7 +240,7 @@ export function createGatewayApp(options = {}) {
       options: {
         ...(options.proxyOptions || { dnsResolver: options.dnsResolver }),
         isDeceptionRouting,
-        targetEnvironmentId: decision.environmentId
+        targetEnvironmentId: isDeceptionRouting ? decision.environmentId : null
       }
     });
 
@@ -217,6 +248,10 @@ export function createGatewayApp(options = {}) {
     const durationMs = Number(endTime - startTime) / 1e6;
 
     // Stage 7 & 8: ROUTING_OUTCOME_RECORDED & TELEMETRY
+    const actualDiversionStatus = isDeceptionRouting
+      ? (proxyOutcome.forwardingResult === 'SUCCESS' ? 'DIVERTED_TO_SYNTHETIC' : 'FAILED_DIVERSION')
+      : 'NO_DIVERSION_ORIGIN_PRESERVED';
+
     telemetryRecorder.recordTelemetry({
       tenantId: appContext.tenantId,
       applicationId: appContext.applicationId,
@@ -233,9 +268,13 @@ export function createGatewayApp(options = {}) {
       routingDecision: {
         intendedAction: decision.action,
         routingOutcome: decision.routingOutcome || (isDeceptionRouting ? 'DECEPTION_ROUTE_EXECUTED' : 'NORMAL_FORWARD'),
-        routingMode: decision.routingMode || 'SHADOW',
-        hypotheticalDestination: decision.hypotheticalDestination || null,
+        routingMode: activeRoutingMode,
+        actualUpstreamDestination: targetOrigin,
+        actualForwardingResult: proxyOutcome.forwardingResult,
+        hypotheticalDeceptionTarget: decision.hypotheticalDestination || null,
         hypotheticalEnvironmentId: decision.hypotheticalEnvironmentId || null,
+        actualDiversionStatus,
+        isActualDiversion: isDeceptionRouting && proxyOutcome.forwardingResult === 'SUCCESS',
         outcomeStatus:
           proxyOutcome.forwardingResult === 'SUCCESS'
             ? (isDeceptionRouting ? 'DIVERTED_TO_SANDBOX' : 'FORWARDED_TO_ORIGIN')

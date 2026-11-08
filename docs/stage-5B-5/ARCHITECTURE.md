@@ -79,7 +79,7 @@ The system introduces a **14-stage decision pipeline** running at the gateway bo
 ### 3.2. Gateway Decision Controller Service (`backend/src/deception/gateway-decision-controller.service.js`)
 - Acts as the central brain orchestrating detection, policy, strategy, graph versioning, and runtime selection.
 - Operates statelessly with respect to the client connection but queries and persists relational context in PostgreSQL via Prisma.
-- Adheres to a sub-millisecond execution budget (average pipeline latency < 6ms).
+- Adheres to an efficient in-process execution budget (average pipeline latency ~5-7 ms).
 - Emits chronological execution events via `ExecutionEvidenceRecorder` with cryptographic SHA-256 hash chaining.
 
 ### 3.3. Runtime Selection Service (`backend/src/deception/runtime-selection.service.js`)

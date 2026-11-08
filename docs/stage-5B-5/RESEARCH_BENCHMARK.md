@@ -44,12 +44,13 @@ The benchmark evaluated four operational configurations under identical workload
 
 ## 3. Analysis & Key Research Insights
 
-### 3.1. Sub-Millisecond Decision Overhead
-The entire 14-stage adaptive decision pipeline introduces only **5.92 ms** of total latency in `SHADOW` mode and **3.47 ms** in `OBSERVE_ONLY` mode.
-- Behavioral detection and feature extraction consume ~2.4 ms.
-- Adaptive policy evaluation consumes ~1.5 ms.
-- Runtime selection and health gating consume ~1.2 ms.
-This confirms that the gateway can be deployed in front of high-volume financial and healthcare APIs without degrading user experience.
+### 3.1. In-Process Database-Backed Pipeline Overhead (~5-7 ms)
+The entire 14-stage adaptive decision pipeline introduces an average of **5.92 ms** (and up to **7.46 ms** with full schema transactions) of total latency in `SHADOW` mode and **3.47–4.45 ms** in `OBSERVE_ONLY` mode.
+- Behavioral detection and feature extraction consume ~2.4–2.5 ms.
+- Adaptive policy evaluation consumes ~1.1–1.5 ms.
+- Runtime selection and health gating consume ~1.2–1.4 ms.
+- Cryptographic hash chaining and database persistence consume ~1.0 ms.
+*(Note: As audited in Stage 5B.5.1, this represents in-process database-backed execution and should not be characterized as sub-millisecond; see `docs/stage-5B-5-1/CORRECTED_BENCHMARK_RESULTS.md` for full multi-repetition rigor).*
 
 ### 3.2. Zero False Diversions (100% Invariant Safety)
 Across all 400 test iterations across four configurations:

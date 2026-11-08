@@ -369,12 +369,22 @@ export class GatewayDecisionControllerService {
       // Persist policy decision
       let persistedPolicyDecision = null;
       try {
+        let validAssessmentId = null;
+        if (assessment?.id) {
+          try {
+            const assessExists = await this.prisma.behavioralAssessment.findUnique({
+              where: { id: assessment.id }
+            });
+            if (assessExists) validAssessmentId = assessExists.id;
+          } catch {}
+        }
+
         persistedPolicyDecision = await this.prisma.policyDecision.create({
           data: {
             tenantId,
             applicationId,
             observationId: observation?.id || null,
-            assessmentId: assessment.id || null,
+            assessmentId: validAssessmentId,
             policyId: activePolicy?.id || null,
             policyVersion: activePolicy?.version || 1,
             decisionResult: policyDecision.decisionResult,
@@ -597,7 +607,12 @@ export class GatewayDecisionControllerService {
           routingOutcome = ROUTING_DECISION_OUTCOMES.RUNTIME_UNAVAILABLE;
           decisionReason = `SHADOW mode: Deception proposed but runtime unavailable (${runtimeResult?.reasonCode || 'NO_RUNTIME'}). Actual traffic forwarded to origin.`;
         }
-      } else if (policyDecision.originAccessDecision === 'DEFER_WITH_UNCERTAINTY') {
+      } else if (
+        policyDecision.originAccessDecision === 'DEFER_WITH_UNCERTAINTY' ||
+        policyDecision.decisionResult === 'INSUFFICIENT_EVIDENCE' ||
+        assessment?.threatCategory === 'UNCERTAIN' ||
+        assessment?.classification === 'SUSPICIOUS'
+      ) {
         routingOutcome = ROUTING_DECISION_OUTCOMES.DEFER_WITH_UNCERTAINTY;
         decisionReason = 'Telemetry quality degraded or assessment uncertain. Deferring to origin.';
       } else {
@@ -644,6 +659,11 @@ export class GatewayDecisionControllerService {
     }
 
     // 13. Persist Routing Decision Record & Lifecycle Event
+    const isShadowOrObserve = routingMode === ROUTING_MODES.SHADOW || routingMode === ROUTING_MODES.OBSERVE_ONLY;
+    const actualDiversionStatus = isShadowOrObserve
+      ? 'NO_DIVERSION_ORIGIN_PRESERVED'
+      : (action === 'PROPOSE_DECEPTION' ? 'PENDING_LAB_DIVERSION' : 'NO_DIVERSION_ORIGIN_PRESERVED');
+
     let routingDecisionRecord = null;
     try {
       routingDecisionRecord = await this.prisma.routingDecision.create({
@@ -658,7 +678,7 @@ export class GatewayDecisionControllerService {
         }
       });
 
-      // Record Routing Outcome
+      // Record Routing Outcome with unambiguous field separation
       await this.prisma.routingOutcome.create({
         data: {
           tenantId,
@@ -667,10 +687,16 @@ export class GatewayDecisionControllerService {
           outcomeSource: 'GATEWAY_DECISION_CONTROLLER',
           failureOrDiscrepancyDetails: {
             routingMode,
-            decisionReason,
-            targetDestination,
-            hypotheticalDestination,
-            hypotheticalEnvironmentId
+            intendedAction: action,
+            actualUpstreamDestination: targetDestination,
+            actualForwardingResult: routingOutcome === ROUTING_DECISION_OUTCOMES.SHADOW_DECEPTION ? 'FORWARDED_TO_ORIGIN' : routingOutcome,
+            hypotheticalDeceptionTarget: hypotheticalDestination,
+            hypotheticalEnvironmentId,
+            actualDiversionStatus,
+            isActualDiversion: false, // In gateway decision phase, actual diversion is not confirmed until proxy execution
+            isHypotheticalDeception: routingOutcome === ROUTING_DECISION_OUTCOMES.SHADOW_DECEPTION,
+            correlationId,
+            decisionReason
           }
         }
       });
@@ -689,8 +715,15 @@ export class GatewayDecisionControllerService {
           decisionId: routingDecisionRecord.id,
           routingOutcome,
           routingMode,
-          decisionReason,
-          targetDestination
+          intendedAction: action,
+          actualUpstreamDestination: targetDestination,
+          actualForwardingResult: routingOutcome === ROUTING_DECISION_OUTCOMES.SHADOW_DECEPTION ? 'FORWARDED_TO_ORIGIN' : routingOutcome,
+          hypotheticalDeceptionTarget: hypotheticalDestination,
+          hypotheticalEnvironmentId,
+          actualDiversionStatus,
+          isActualDiversion: false,
+          isHypotheticalDeception: routingOutcome === ROUTING_DECISION_OUTCOMES.SHADOW_DECEPTION,
+          decisionReason
         }
       });
     } catch (routePersistErr) {
@@ -701,9 +734,15 @@ export class GatewayDecisionControllerService {
 
     return {
       action,
+      intendedAction: action,
       routingOutcome,
       targetDestination,
+      actualUpstreamDestination: targetDestination,
       hypotheticalDestination,
+      hypotheticalDeceptionTarget: hypotheticalDestination,
+      actualDiversionStatus,
+      isActualDiversion: false,
+      isHypotheticalDeception: routingOutcome === ROUTING_DECISION_OUTCOMES.SHADOW_DECEPTION,
       reason: decisionReason,
       correlationId,
       tenantId,

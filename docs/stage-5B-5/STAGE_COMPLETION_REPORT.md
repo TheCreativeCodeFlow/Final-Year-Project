@@ -13,7 +13,7 @@
 
 ## 1. Executive Summary
 
-Stage 5B.5 successfully unifies the gateway reverse proxy, hybrid behavioral anomaly detector, adaptive deception policy engine, Deception State Graph (DSG) execution engine, and isolated synthetic container runtime into a coherent, production-ready adaptive deception gateway platform.
+Stage 5B.5 successfully unifies the gateway reverse proxy, hybrid behavioral anomaly detector, adaptive deception policy engine, Deception State Graph (DSG) execution engine, and isolated synthetic container runtime into a coherent, integrated adaptive deception gateway research prototype.
 
 The system introduces a **14-stage decision pipeline** running at the gateway boundary, backed by three distinct operational routing modes:
 1. **`OBSERVE_ONLY`**: Zero intervention, passive telemetry observation.
@@ -26,7 +26,7 @@ The system introduces a **14-stage decision pipeline** running at the gateway bo
 
 ### 2.1. Gateway Decision Controller Service
 - Implemented in `backend/src/deception/gateway-decision-controller.service.js`.
-- Implements the complete 14-stage decision pipeline with sub-millisecond execution budget.
+- Implements the complete 14-stage decision pipeline with an efficient in-process database-backed execution budget (~5-7 ms).
 - Integrates database persistence (`SecurityObservation`, `BehavioralAssessment`, `PolicyDecision`, `RoutingDecision`, `RoutingOutcome`).
 - Emits cryptographic SHA-256 chained execution events via `ExecutionEvidenceRecorder`.
 

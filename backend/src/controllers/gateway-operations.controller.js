@@ -106,6 +106,12 @@ export async function getGatewayOverview(req, res, next) {
         detectionServiceHealth: { status: 'HEALTHY', engine: 'HYBRID_ASSESSMENT_4C1' },
         statistics: {
           totalRequestsObserved: decisionsCount,
+          actualOriginRequests: outcomeCounts.NORMAL_FORWARD + outcomeCounts.SHADOW_DECEPTION + outcomeCounts.DEFER_TO_ORIGIN + outcomeCounts.RUNTIME_UNAVAILABLE + outcomeCounts.DEFER_WITH_UNCERTAINTY,
+          actualSyntheticRequests: outcomeCounts.DECEPTION_ROUTE_EXECUTED,
+          hypotheticalDeceptionDecisions: outcomeCounts.SHADOW_DECEPTION,
+          blockedControlledLabAttempts: outcomeCounts.DEFER_TO_ORIGIN,
+          failedRoutingAttempts: outcomeCounts.BLOCK_REQUEST,
+          unknownOutcomes: outcomeCounts.OTHER,
           shadowDecisionsCount: outcomeCounts.SHADOW_DECEPTION,
           normalForwardCount: outcomeCounts.NORMAL_FORWARD + outcomeCounts.DEFER_TO_ORIGIN,
           blockedRequestsCount: outcomeCounts.BLOCK_REQUEST,
