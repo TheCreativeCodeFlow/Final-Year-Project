@@ -1,0 +1,75 @@
+{
+  "timestamp": "2026-11-10T13:31:06.340Z",
+  "dockerVersion": "29.5.2",
+  "apiVersion": "1.54",
+  "imageRef": "deception-synthetic-service:1.0.0",
+  "isolationControls": {
+    "internalBridgeNoEgress": true,
+    "nonRootUidGid": "1000:1000",
+    "readonlyRootfs": true,
+    "capDropAll": true,
+    "portBindings": {}
+  },
+  "parityResults": [
+    {
+      "paradigm": "STATIC_HONEYPOT",
+      "containerId": "5729b8190d46",
+      "networkInternalAirgapped": true,
+      "provisioningTimeMs": 475.16,
+      "mutationCountExecuted": 0,
+      "mutationsRejectedAtGate": 0,
+      "consistencyViolations": 0,
+      "meanMutationExecLatencyMs": 0,
+      "meanContainerQueryLatencyMs": 29.13,
+      "rollbackTimeMs": null,
+      "endpoint200ResponsesOf3": 2,
+      "identityCoherentResponsesOf2": 0,
+      "containerResources": {
+        "memoryUsageMb": 9.43,
+        "memoryLimitMb": 256,
+        "cpuPercent": 0,
+        "pidsCurrent": 11
+      }
+    },
+    {
+      "paradigm": "GENERIC_ADAPTIVE",
+      "containerId": "7c4244a2679e",
+      "networkInternalAirgapped": true,
+      "provisioningTimeMs": 464.24,
+      "mutationCountExecuted": 2,
+      "mutationsRejectedAtGate": 0,
+      "consistencyViolations": 1,
+      "meanMutationExecLatencyMs": 33.22,
+      "meanContainerQueryLatencyMs": 42.13,
+      "rollbackTimeMs": null,
+      "endpoint200ResponsesOf3": 3,
+      "identityCoherentResponsesOf2": 0,
+      "containerResources": {
+        "memoryUsageMb": 9.59,
+        "memoryLimitMb": 256,
+        "cpuPercent": 0,
+        "pidsCurrent": 11
+      }
+    },
+    {
+      "paradigm": "ATTACKER_SPECIFIC_DSG",
+      "containerId": "d07d43e97f11",
+      "networkInternalAirgapped": true,
+      "provisioningTimeMs": 472.04,
+      "mutationCountExecuted": 3,
+      "mutationsRejectedAtGate": 1,
+      "consistencyViolations": 0,
+      "meanMutationExecLatencyMs": 33.11,
+      "meanContainerQueryLatencyMs": 45.49,
+      "rollbackTimeMs": 30.34,
+      "endpoint200ResponsesOf3": 3,
+      "identityCoherentResponsesOf2": 2,
+      "containerResources": {
+        "memoryUsageMb": 9.39,
+        "memoryLimitMb": 256,
+        "cpuPercent": 0,
+        "pidsCurrent": 11
+      }
+    }
+  ]
+}

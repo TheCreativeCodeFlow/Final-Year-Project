@@ -540,6 +540,9 @@ export async function verifyEvidenceCompleteness({
   };
 }
 
+// Module-level serialization queues per chainScope to prevent sub-millisecond chain forks
+const SCOPE_WRITE_QUEUES = new Map();
+
 export class ExecutionEvidenceRecorder {
   /**
    * @param {Object} [prismaClient]
@@ -554,6 +557,7 @@ export class ExecutionEvidenceRecorder {
 
   /**
    * Record a runtime lifecycle event with append-linked SHA-256 chaining.
+   * Serialized per chain scope with monotonic millisecond timestamps to prevent tie-ordering forks.
    *
    * @param {Object} params
    * @param {string} params.tenantId
@@ -569,60 +573,96 @@ export class ExecutionEvidenceRecorder {
    * @param {Object} [params.eventPayload]
    * @returns {Promise<Object>}
    */
-  async recordEvent({
-    tenantId,
-    authorizationId = null,
-    environmentId = null,
-    eventType,
-    severity = 'INFO',
-    message,
-    actorIdentifier = 'RUNTIME_ORCHESTRATOR',
-    actorRole = 'SYSTEM',
-    outcomeStatus = 'RECORDED',
-    evidenceStatus = 'MISSING',
-    eventPayload = {}
-  }) {
+  async recordEvent(params) {
+    const chainScope = params.environmentId
+      ? `environment:${params.environmentId}`
+      : params.authorizationId
+      ? `authorization:${params.authorizationId}`
+      : `tenant:${params.tenantId}`;
+
+    const prevLock = SCOPE_WRITE_QUEUES.get(chainScope) || Promise.resolve();
+    const runTask = prevLock.then(
+      () => this._recordEventSerialized(params, chainScope),
+      () => this._recordEventSerialized(params, chainScope)
+    );
+    SCOPE_WRITE_QUEUES.set(chainScope, runTask.catch(() => {}));
+    return runTask;
+  }
+
+  async _recordEventSerialized(
+    {
+      tenantId,
+      authorizationId = null,
+      environmentId = null,
+      eventType,
+      severity = 'INFO',
+      message,
+      actorIdentifier = 'RUNTIME_ORCHESTRATOR',
+      actorRole = 'SYSTEM',
+      outcomeStatus = 'RECORDED',
+      evidenceStatus = 'MISSING',
+      eventPayload = {}
+    },
+    chainScope
+  ) {
     const prisma = this.getDb();
 
-    // Determine chain scope and fetch last event to link hashes
+    // Determine chain scope and fetch recent tail events to deterministically break timestamp ties
     const scopeWhere = { tenantId };
     if (environmentId) scopeWhere.environmentId = environmentId;
     else if (authorizationId) scopeWhere.authorizationId = authorizationId;
 
     let previousEventHash = GENESIS_PREVIOUS_HASH;
     let sequenceNumber = 1;
+    let minRecordedMs = 0;
 
     try {
-      const lastEvent = await prisma.deceptionExecutionEvent.findFirst({
+      const recentEvents = await prisma.deceptionExecutionEvent.findMany({
         where: scopeWhere,
-        orderBy: { recordedAt: 'desc' }
+        orderBy: { recordedAt: 'desc' },
+        take: 10
       });
 
-      if (lastEvent?.eventPayload) {
-        const lastPayload = typeof lastEvent.eventPayload === 'string'
-          ? JSON.parse(lastEvent.eventPayload)
-          : lastEvent.eventPayload;
-
-        if (lastPayload.eventHash) {
-          previousEventHash = lastPayload.eventHash;
-        } else if (lastPayload.evidenceHash) {
-          previousEventHash = lastPayload.evidenceHash;
+      if (recentEvents.length > 0) {
+        let lastEvent = recentEvents[0];
+        let maxSeq = Number(lastEvent?.eventPayload?.sequenceNumber ?? -1);
+        for (const cand of recentEvents) {
+          const candPayload = typeof cand.eventPayload === 'string'
+            ? JSON.parse(cand.eventPayload)
+            : (cand.eventPayload || {});
+          const candSeq = Number(candPayload.sequenceNumber ?? -1);
+          if (candSeq > maxSeq) {
+            maxSeq = candSeq;
+            lastEvent = cand;
+          }
+          const recTime = cand.recordedAt ? new Date(cand.recordedAt).getTime() : 0;
+          if (recTime > minRecordedMs) minRecordedMs = recTime;
         }
 
-        if (typeof lastPayload.sequenceNumber === 'number') {
-          sequenceNumber = lastPayload.sequenceNumber + 1;
+        if (lastEvent?.eventPayload) {
+          const lastPayload = typeof lastEvent.eventPayload === 'string'
+            ? JSON.parse(lastEvent.eventPayload)
+            : lastEvent.eventPayload;
+
+          if (lastPayload.eventHash) {
+            previousEventHash = lastPayload.eventHash;
+          } else if (lastPayload.evidenceHash) {
+            previousEventHash = lastPayload.evidenceHash;
+          }
+
+          if (typeof lastPayload.sequenceNumber === 'number') {
+            sequenceNumber = lastPayload.sequenceNumber + 1;
+          }
         }
       }
     } catch {
       // Fallback to genesis if query fails
     }
 
-    const recordedTimestamp = new Date().toISOString();
-    const chainScope = environmentId
-      ? `environment:${environmentId}`
-      : authorizationId
-      ? `authorization:${authorizationId}`
-      : `tenant:${tenantId}`;
+    const nowMs = Date.now();
+    const monotonicMs = Math.max(nowMs, minRecordedMs + 1);
+    const recordedAtDate = new Date(monotonicMs);
+    const recordedTimestamp = recordedAtDate.toISOString();
 
     const payloadWithoutHash = {
       ...eventPayload,
@@ -657,6 +697,7 @@ export class ExecutionEvidenceRecorder {
         actorRole,
         outcomeStatus,
         evidenceStatus,
+        recordedAt: recordedAtDate,
         eventPayload: finalPayload
       }
     });

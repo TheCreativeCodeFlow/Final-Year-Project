@@ -328,7 +328,7 @@ export class HybridAssessmentService {
       fusionStrategy,
       deceptionEligible,
       evaluatedAt: new Date().toISOString(),
-      ruleFindings: ruleResult?.allFindings || [],
+      ruleFindings: ruleResult?.triggeredFindings || ruleResult?.allFindings || [],
       triggeredRulesCount: ruleResult?.triggeredCount || 0,
       mlResult: {
         modelStatus: mlResult?.modelStatus || 'ACTIVE',
@@ -344,6 +344,8 @@ export class HybridAssessmentService {
         telemetryLossDetected,
         observationCount
       },
+      dataQualityState: qualityMetadata.completenessStatus || 'COMPLETE',
+      telemetryLossDetected,
       uncertaintyNotes,
       contributingFactors,
       executionEvidenceStatus: 'MISSING', // Stage 4C invariant: countermeasure execution is never claimed

@@ -118,8 +118,8 @@ export class PolicyEvaluationEngine {
         0
       ),
       riskScore: Number(assessment.riskScore ?? 0),
-      dataQualityState: assessment.dataQualityState || 'COMPLETE',
-      telemetryLossDetected: Boolean(assessment.telemetryLossDetected),
+      dataQualityState: assessment.dataQualityState || assessment.qualityAssessment?.completenessStatus || 'COMPLETE',
+      telemetryLossDetected: Boolean(assessment.telemetryLossDetected ?? assessment.qualityAssessment?.telemetryLossDetected),
       deceptionEligible: PolicyEvaluationEngine.isDeceptionEligible(assessment),
       ruleFindingCount: Array.isArray(assessment.ruleFindings) ? assessment.ruleFindings.length : 0,
       mlAnomalyDetected: Boolean(assessment.mlAnomalyResult?.anomalyDetected),
@@ -270,7 +270,7 @@ export class PolicyEvaluationEngine {
     // -------------------------------------------------------------------------
     // Guard 3: Telemetry Degradation and Missing Evidence
     // -------------------------------------------------------------------------
-    if (assessment.telemetryLossDetected || assessment.dataQualityState === 'DEGRADED') {
+    if (assessmentSnapshot.telemetryLossDetected || assessmentSnapshot.dataQualityState === 'DEGRADED') {
       reasonCodes.push(REASON_CODES.TELEMETRY_LOSS_DEGRADATION);
       reasonCodes.push(REASON_CODES.DEGRADED_TELEMETRY_NO_ASSUMPTION_OF_BENIGN);
       return createResult({
@@ -297,7 +297,7 @@ export class PolicyEvaluationEngine {
     // -------------------------------------------------------------------------
     // Guard 4: Benign Behavior
     // -------------------------------------------------------------------------
-    if (assessment.assessmentLabel === 'BENIGN') {
+    if (assessment.assessmentLabel === 'BENIGN' || assessment.assessmentLabel === 'NORMAL') {
       reasonCodes.push(REASON_CODES.ASSESSMENT_BENIGN);
       reasonCodes.push(REASON_CODES.BENIGN_TRAFFIC_DECEPTION_NOT_PROPOSED);
       return createResult({
@@ -314,7 +314,7 @@ export class PolicyEvaluationEngine {
     // -------------------------------------------------------------------------
     if (deceptionEligible !== true) {
       const ruleCount = Array.isArray(assessment.ruleFindings) ? assessment.ruleFindings.length : 0;
-      const isMlOnly = ruleCount === 0 && Boolean(assessment.mlAnomalyResult?.anomalyDetected);
+      const isMlOnly = ruleCount === 0 && Boolean(assessment.mlAnomalyResult?.anomalyDetected || assessment.mlResult?.isAnomaly);
 
       if (isMlOnly) {
         reasonCodes.push(REASON_CODES.ML_ONLY_UNVERIFIED_ANOMALY);
@@ -380,14 +380,14 @@ export class PolicyEvaluationEngine {
 
     // 6c. Telemetry quality requirement
     const requiredQuality = criteria.requiredTelemetryQuality || 'COMPLETE';
-    if (requiredQuality === 'COMPLETE' && assessment.dataQualityState !== 'COMPLETE') {
+    if (requiredQuality === 'COMPLETE' && assessmentSnapshot.dataQualityState !== 'COMPLETE') {
       reasonCodes.push(REASON_CODES.TELEMETRY_QUALITY_INSUFFICIENT);
       reasonCodes.push(REASON_CODES.DEGRADED_TELEMETRY_NO_ASSUMPTION_OF_BENIGN);
       return createResult({
         decisionResult: DECISION_RESULTS.INSUFFICIENT_EVIDENCE,
         deceptionDisposition: DECEPTION_DISPOSITIONS.REJECTED,
         originAccessDecision: ORIGIN_ACCESS_DECISIONS.DEFER_WITH_UNCERTAINTY,
-        decisionRationale: `Policy requires "${requiredQuality}" telemetry quality, but assessment reports "${assessment.dataQualityState}". Deception rejected.`
+        decisionRationale: `Policy requires "${requiredQuality}" telemetry quality, but assessment reports "${assessmentSnapshot.dataQualityState}". Deception rejected.`
       });
     }
 

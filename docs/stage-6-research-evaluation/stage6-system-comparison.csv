@@ -1,0 +1,4 @@
+paradigm,precision,recall,f1,fpr,fnr,insufficient_rate,meaningful_interactions,decoy_interactions,stages_completed,assets_explored,consistency_violations,premature_indicators,transitions_proposed,transitions_validated,transitions_executed,transitions_rejected,mean_latency_ms,p95_latency_ms,p99_latency_ms
+STATIC_HONEYPOT,1,0.7778,0.875,0,0.2222,0.1429,15,41,7,15,0,21,0,0,0,0,0.8828,0.9663,1.0599
+GENERIC_ADAPTIVE,1,0.7778,0.875,0,0.2222,0.1429,12,41,7,21,22,12,37,15,37,0,0.9095,1.0766,1.249
+ATTACKER_SPECIFIC_DSG,1,0.7778,0.875,0,0.2222,0.1429,36,41,16,31,0,0,29,24,24,5,0.9026,1.0823,1.2116
